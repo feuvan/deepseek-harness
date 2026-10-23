@@ -552,20 +552,50 @@ describe('Transcript clear, cards, reasoning, and notices', () => {
     expect(transcript.renderedBlocks()).toEqual([])
   })
 
-  it('toggles reasoning visibility for assistant blocks only', () => {
-    const { transcript } = transcriptHarness()
+  it('defaults to the standard level and re-renders existing blocks on a level change', () => {
+    const { transcript, requestRender } = transcriptHarness()
+    const reasoning = ['thought one', 'thought two', 'thought three', 'thought four', 'thought five', 'thought six'].join('\n')
     transcript.append(assistantMessage(0, 1, 1, [
       { type: 'text', text: 'visible answer' },
-      { type: 'reasoning', text: 'hidden reasoning' },
+      { type: 'reasoning', text: reasoning },
     ]))
     transcript.notice('plain notice')
 
-    expect(renderedText(transcript)).toContain('hidden reasoning')
-    transcript.toggleReasoning()
-    expect(renderedText(transcript)).not.toContain('hidden reasoning')
+    expect(transcript.reasoningLevel()).toBe('standard')
+    expect(renderedText(transcript)).toContain('thought four')
+    expect(renderedText(transcript)).not.toContain('thought five')
+    expect(renderedText(transcript)).toContain(copy.notice.hiddenLines(2))
+
+    transcript.setReasoningLevel('verbose')
+    expect(transcript.reasoningLevel()).toBe('verbose')
+    expect(renderedText(transcript)).toContain('thought six')
+    expect(renderedText(transcript)).not.toContain(copy.notice.hiddenLines(1))
+
+    transcript.setReasoningLevel('compact')
+    expect(renderedText(transcript)).toContain('thought one')
+    expect(renderedText(transcript)).not.toContain('thought two')
+    expect(renderedText(transcript)).toContain(copy.notice.hiddenLines(5))
     expect(renderedText(transcript)).toContain('plain notice')
-    transcript.toggleReasoning()
-    expect(renderedText(transcript)).toContain('hidden reasoning')
+    expect(requestRender).toHaveBeenCalledTimes(4)
+  })
+
+  it('applies the current level to appended messages and live frames', () => {
+    const { transcript } = transcriptHarness()
+    transcript.setReasoningLevel('compact')
+    bindAgent(transcript)
+
+    transcript.append(assistantMessage(0, 1, 1, [
+      { type: 'reasoning', text: 'settled one\nsettled two' },
+    ]))
+    transcript.live(startFrame('attempt-2'))
+    transcript.live(chunkFrame('attempt-2', { type: 'reasoning-delta', index: 0, text: 'live one\nlive two' }))
+
+    const text = renderedText(transcript)
+    expect(text).toContain('settled one')
+    expect(text).not.toContain('settled two')
+    expect(text).toContain('live one')
+    expect(text).not.toContain('live two')
+    expect(text).toContain(copy.notice.hiddenLines(1))
   })
 
   it('appends terminal-only notices with an explicit tone', () => {

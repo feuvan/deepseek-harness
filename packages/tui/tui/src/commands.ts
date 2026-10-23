@@ -10,6 +10,7 @@ import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SlashCommand } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
+import { REASONING_LEVELS } from './reasoning.ts'
 
 /** Terminal-local controls the composer owns instead of dispatching to the agent. */
 export interface LocalCommands {
@@ -21,8 +22,8 @@ export interface LocalCommands {
   model(): void
   /** Clear the rendered transcript without touching the Session log. */
   clear(): void
-  /** Toggle reasoning visibility. */
-  reasoning(): void
+  /** Cycle or set the reasoning visibility; an absent argument advances the level. */
+  reasoning(argument: string | undefined): void | Promise<void>
   /** Cycle tool-card density. */
   cards(): void
   /** Repaint the screen. */
@@ -94,7 +95,7 @@ export class Composer {
       status: { description: copy.commands.status, run: () => { deps.local.status() } },
       model: { description: copy.commands.model, run: () => { deps.local.model() } },
       clear: { description: copy.commands.clear, run: () => { deps.local.clear() } },
-      reasoning: { description: copy.commands.reasoning, run: () => { deps.local.reasoning() } },
+      reasoning: { description: copy.commands.reasoning, run: (argument) => { void deps.local.reasoning(argument) } },
       cards: { description: copy.commands.cards, run: () => { deps.local.cards() } },
       redraw: { description: copy.commands.redraw, run: () => { deps.local.redraw() } },
       effort: { description: copy.commands.effort, run: (argument) => { void deps.local.effort(argument) } },
@@ -183,11 +184,14 @@ export class Composer {
     const efforts = this.deps.choices?.efforts
     const permissions = this.deps.choices?.permissions
     const local = Object.entries(this.locals).map(([name, entry]): SlashCommand => {
-      const argument = name === 'effort'
-        ? { argumentHint: '<level>', getArgumentCompletions: (prefix: string) => this.argumentChoices(efforts, prefix) }
-        : name === 'permission' && permissions !== undefined
-          ? { argumentHint: '<preset>', getArgumentCompletions: (prefix: string) => this.argumentChoices(() => Promise.resolve(permissions()), prefix) }
-          : {}
+      let argument: Pick<SlashCommand, 'argumentHint' | 'getArgumentCompletions'> = {}
+      if (name === 'effort') {
+        argument = { argumentHint: '<level>', getArgumentCompletions: (prefix: string) => this.argumentChoices(efforts, prefix) }
+      } else if (name === 'reasoning') {
+        argument = { argumentHint: '<level>', getArgumentCompletions: (prefix: string) => this.reasoningChoices(prefix) }
+      } else if (name === 'permission' && permissions !== undefined) {
+        argument = { argumentHint: '<preset>', getArgumentCompletions: (prefix: string) => this.argumentChoices(() => Promise.resolve(permissions()), prefix) }
+      }
       return { name, description: entry.description, ...argument }
     })
     const agent = this.deps.agent()
@@ -200,6 +204,18 @@ export class Composer {
         ...(command.input === undefined ? {} : { argumentHint: command.input.hint }),
       }))
     return [...local, ...registered]
+  }
+
+  /**
+   * List the static reasoning-visibility level choices.
+   * @param prefix - typed argument prefix.
+   * @returns matching completion items.
+   */
+  private reasoningChoices(prefix: string): { value: string; label: string }[] {
+    const query = prefix.trim().toLowerCase()
+    return REASONING_LEVELS
+      .map(level => ({ value: level, label: copy.reasoning.levels[level] }))
+      .filter(item => item.value.includes(query) || item.label.toLowerCase().includes(query))
   }
 
   /**

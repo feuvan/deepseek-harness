@@ -27,6 +27,8 @@ export interface StatusDeps {
   readonly config: ResolvedConfig
   /** @returns the effort the next request uses, including an advertised default. */
   readonly effort: () => { readonly level: string | undefined; readonly implicit: boolean }
+  /** @returns the active reasoning-visibility level. */
+  readonly reasoning: () => import('./reasoning.ts').ReasoningVisibility
   /** @returns when the running turn started, or undefined while idle. */
   readonly turnStartedAt: () => number | undefined
   /** Ask for a frame after a projection change. */
@@ -71,6 +73,7 @@ export class StatusModel {
         model: 'starting',
         effort: undefined,
         effortImplicit: false,
+        reasoning: copy.reasoning.label(copy.reasoning.levels['standard']),
         inputTokens: 0,
         outputTokens: 0,
         cacheRate: undefined,
@@ -111,6 +114,7 @@ export class StatusModel {
       model: selection.model,
       effort: effort.level,
       effortImplicit: effort.implicit,
+      reasoning: copy.reasoning.label(copy.reasoning.levels[this.deps.reasoning()]),
       inputTokens,
       outputTokens: usage?.outputTokens ?? 0,
       cacheRate,

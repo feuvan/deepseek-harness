@@ -1,7 +1,7 @@
 /**
- * Row loading and interaction tests for the `/config` panel: the loader over a
- * real Cordis context with provided service doubles, and the rendered panel's
- * navigation, filtering, activation, and failure reporting.
+ * Row loading and bottom-dock tests for the `/config` panel: the loader over a
+ * real Cordis context with provided service doubles, and the rendered dock's
+ * tabs, scrolling, activation, and failure reporting.
  *
  * @module tests/features/config-panel
  */
@@ -20,11 +20,45 @@ import {
   type ConfigPanelActions,
   type ConfigPermissionOption,
   type ConfigRow,
+  type ConfigSection,
 } from '../../src/config-panel.ts'
 import { copy } from '../../src/copy.ts'
 import { createPalette } from '../../src/palette.ts'
 import { freshContext } from '../core/harness.ts'
 import { visibleLines } from '../support/terminal.ts'
+
+/** Up-arrow escape sequence. */
+const UP = '\u001b[A'
+
+/** Down-arrow escape sequence. */
+const DOWN = '\u001b[B'
+
+/** Right-arrow escape sequence. */
+const RIGHT = '\u001b[C'
+
+/** Left-arrow escape sequence. */
+const LEFT = '\u001b[D'
+
+/** Tab key. */
+const TAB = '\t'
+
+/** Shift+Tab escape sequence. */
+const SHIFT_TAB = '\u001b[Z'
+
+/** Page-up escape sequence. */
+const PAGE_UP = '\u001b[5~'
+
+/** Page-down escape sequence. */
+const PAGE_DOWN = '\u001b[6~'
+
+/** Enter key. */
+const ENTER = '\r'
+
+/** Escape key. */
+const ESCAPE = '\u001b'
+
+/** The styled palette used to assert the active tab's styling. */
+const COLORED = createPalette(true)
 
 /** The model route the loader tests start from. */
 const MODEL: ConfigModelState = { provider: 'alpha', model: 'alpha-1', effort: 'high', effortImplicit: false }
@@ -179,6 +213,8 @@ interface PanelOptions {
   readonly handlers?: Partial<PanelHarnessHandlers>
   /** Whether the palette styles text. */
   readonly color?: boolean
+  /** Body height; the panel defaults to 8 and clamps to 3–10. */
+  readonly visibleRows?: number
 }
 
 /** Panel handlers with every callback required, for replacement by tests. */
@@ -195,7 +231,7 @@ interface PanelHarnessHandlers {
 
 /**
  * Build one panel with recording callbacks.
- * @param options - rows, handler replacements, and palette color.
+ * @param options - rows, handler replacements, palette color, and body height.
  * @returns the panel and its recorded outcomes.
  */
 function panelFor(options: PanelOptions): PanelHarness {
@@ -209,18 +245,44 @@ function panelFor(options: PanelOptions): PanelHarness {
     onNotice: (message: string) => { notices.push(message) },
     onRestartNotice: (message: string) => { restarts.push(message) },
   }, options.handlers)
-  const panel = new ConfigPanel({ rows: options.rows, palette: createPalette(options.color ?? false), handlers })
+  const panel = new ConfigPanel({
+    rows: options.rows,
+    palette: createPalette(options.color ?? false),
+    handlers,
+    ...(options.visibleRows === undefined ? {} : { visibleRows: options.visibleRows }),
+  })
   return { panel, activations, notices, restarts, cancels }
 }
 
 /**
- * Build one actionable row in the display section.
+ * Build one actionable row.
  * @param id - row identity and label.
  * @param activate - the row's action.
+ * @param section - owning section; defaults to the initially active model tab.
  * @returns the row.
  */
-function actionRow(id: string, activate: () => ConfigActionOutcome): ConfigRow {
-  return { id, section: 'display', label: id, value: '', scope: 'session', readOnly: false, activate }
+function actionRow(id: string, activate: () => ConfigActionOutcome, section: ConfigSection = 'model'): ConfigRow {
+  return { id, section, label: id, value: '', scope: undefined, readOnly: false, activate }
+}
+
+/**
+ * Build one read-only row without markers.
+ * @param section - owning section.
+ * @param id - row identity and label.
+ * @returns the row.
+ */
+function plainRow(section: ConfigSection, id: string): ConfigRow {
+  return { id, section, label: id, value: '', scope: undefined, readOnly: true }
+}
+
+/**
+ * Build a numbered run of read-only rows in one section.
+ * @param section - owning section.
+ * @param count - number of rows.
+ * @returns the rows, labelled `row-00`, `row-01`, and so on.
+ */
+function manyRows(section: ConfigSection, count: number): ConfigRow[] {
+  return Array.from({ length: count }, (_, index) => plainRow(section, `row-${String(index).padStart(2, '0')}`))
 }
 
 /**
@@ -229,17 +291,18 @@ function actionRow(id: string, activate: () => ConfigActionOutcome): ConfigRow {
  * @param width - terminal columns.
  * @returns the rendered text joined with line feeds.
  */
-function rendered(panel: ConfigPanel, width = 100): string {
+function rendered(panel: ConfigPanel, width = 120): string {
   return visibleLines(panel.render(width)).join('\n')
 }
 
 /**
- * Type one printable string into the panel's filter.
+ * Render only the body lines, excluding the tab bar and the hint.
  * @param panel - the panel.
- * @param text - characters to type.
+ * @param visibleRows - body height the panel was constructed with.
+ * @returns the body text joined with line feeds.
  */
-function typeText(panel: ConfigPanel, text: string): void {
-  for (const character of text) panel.handleInput(character)
+function body(panel: ConfigPanel, visibleRows = 8): string {
+  return visibleLines(panel.render(120)).slice(1, 1 + visibleRows).join('\n')
 }
 
 /**
@@ -248,6 +311,30 @@ function typeText(panel: ConfigPanel, text: string): void {
  */
 async function settle(): Promise<void> {
   await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+}
+
+/**
+ * The localized heading of one section, as the tab bar renders it.
+ * @param section - the section.
+ * @returns the heading text.
+ */
+function heading(section: ConfigSection): string {
+  switch (section) {
+    case 'model': return copy.config.modelSection
+    case 'permissions': return copy.config.permissionSection
+    case 'experimental': return copy.config.experimentalSection
+    case 'display': return copy.config.displaySection
+  }
+}
+
+/**
+ * Switch from the initial model tab to the display tab.
+ * @param panel - the panel.
+ */
+function goToDisplay(panel: ConfigPanel): void {
+  panel.handleInput(TAB)
+  panel.handleInput(TAB)
+  panel.handleInput(TAB)
 }
 
 describe('loadConfigRows', () => {
@@ -368,42 +455,203 @@ describe('loadConfigRows', () => {
   })
 })
 
+describe('ConfigPanel tab bar', () => {
+  it('renders one tab per section in fixed order with the active tab highlighted', async () => {
+    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const harness = panelFor({ rows, color: true })
+
+    const line = harness.panel.render(200)[0] ?? ''
+
+    const positions = [heading('model'), heading('permissions'), heading('experimental'), heading('display')]
+      .map(title => line.indexOf(title))
+    expect(positions[0]).toBeGreaterThanOrEqual(0)
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions)
+    expect(line).toContain(COLORED.inverse(` ${heading('model')} `))
+    expect(line).toContain(COLORED.dim(` ${heading('permissions')} `))
+
+    harness.panel.handleInput(TAB)
+
+    const next = harness.panel.render(200)[0] ?? ''
+    expect(next).toContain(COLORED.inverse(` ${heading('permissions')} `))
+    expect(next).toContain(COLORED.dim(` ${heading('model')} `))
+  })
+
+  it('cycles tabs with Tab/Shift+Tab and the left/right arrows', async () => {
+    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const harness = panelFor({ rows })
+
+    expect(rendered(harness.panel)).toContain('alpha/alpha-1')
+    harness.panel.handleInput(TAB)
+    expect(rendered(harness.panel)).toContain('Read only')
+    expect(rendered(harness.panel)).not.toContain('alpha/alpha-1')
+    harness.panel.handleInput(RIGHT)
+    expect(rendered(harness.panel)).toContain('optional-bundle')
+    harness.panel.handleInput(LEFT)
+    expect(rendered(harness.panel)).toContain('Read only')
+    harness.panel.handleInput(SHIFT_TAB)
+    expect(rendered(harness.panel)).toContain('alpha/alpha-1')
+
+    harness.panel.handleInput(SHIFT_TAB)
+    expect(rendered(harness.panel)).toContain('previewLines')
+    harness.panel.handleInput(SHIFT_TAB)
+    expect(rendered(harness.panel)).toContain('optional-bundle')
+    harness.panel.handleInput(SHIFT_TAB)
+    expect(rendered(harness.panel)).toContain('Read only')
+    harness.panel.handleInput(SHIFT_TAB)
+    expect(rendered(harness.panel)).toContain('alpha/alpha-1')
+
+    harness.panel.handleInput(TAB)
+    harness.panel.handleInput(TAB)
+    harness.panel.handleInput(TAB)
+    expect(rendered(harness.panel)).toContain('previewLines')
+    harness.panel.handleInput(TAB)
+    expect(rendered(harness.panel)).toContain('alpha/alpha-1')
+  })
+
+  it('resets the row cursor when switching tabs', async () => {
+    const { rows } = await loadRows({ presets: PRESETS })
+    const harness = panelFor({ rows })
+
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(DOWN)
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.statusPanel.effort}`)
+
+    harness.panel.handleInput(TAB)
+    harness.panel.handleInput(SHIFT_TAB)
+
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.statusPanel.model}`)
+  })
+})
+
+describe('ConfigPanel row navigation', () => {
+  it('moves the cursor with wrap-around inside the active tab', async () => {
+    const { rows } = await loadRows({ presets: PRESETS })
+    const harness = panelFor({ rows })
+
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.statusPanel.model}`)
+    harness.panel.handleInput(UP)
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.config.changeEffort}`)
+    harness.panel.handleInput(DOWN)
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.statusPanel.model}`)
+    harness.panel.handleInput(DOWN)
+    expect(rendered(harness.panel)).toContain(`❯ ${copy.config.changeModel}`)
+  })
+
+  it('jumps by the body height with PageDown and PageUp', () => {
+    const harness = panelFor({ rows: manyRows('display', 20), visibleRows: 5 })
+    goToDisplay(harness.panel)
+
+    expect(rendered(harness.panel)).toContain('❯ row-00')
+    for (const expected of ['row-05', 'row-10', 'row-15', 'row-19']) {
+      harness.panel.handleInput(PAGE_DOWN)
+      expect(rendered(harness.panel)).toContain(`❯ ${expected}`)
+    }
+    for (const expected of ['row-14', 'row-09', 'row-04', 'row-00']) {
+      harness.panel.handleInput(PAGE_UP)
+      expect(rendered(harness.panel)).toContain(`❯ ${expected}`)
+    }
+  })
+})
+
+describe('ConfigPanel scrolling', () => {
+  it('shows a bottom indicator at the start of the list', () => {
+    const harness = panelFor({ rows: manyRows('display', 20), visibleRows: 5 })
+    goToDisplay(harness.panel)
+
+    expect(body(harness.panel, 5)).toContain(`↓ ${copy.moreRows(16)}`)
+    expect(body(harness.panel, 5)).not.toContain('↑ ')
+  })
+
+  it('shows both indicators in the middle of the list', () => {
+    const harness = panelFor({ rows: manyRows('display', 20), visibleRows: 5 })
+    goToDisplay(harness.panel)
+    harness.panel.handleInput(PAGE_DOWN)
+    harness.panel.handleInput(PAGE_DOWN)
+
+    expect(body(harness.panel, 5)).toContain(`↑ ${copy.moreRows(8)}`)
+    expect(body(harness.panel, 5)).toContain(`↓ ${copy.moreRows(9)}`)
+  })
+
+  it('shows only a top indicator at the end of the list', () => {
+    const harness = panelFor({ rows: manyRows('display', 20), visibleRows: 5 })
+    goToDisplay(harness.panel)
+    for (let page = 0; page < 4; page += 1) harness.panel.handleInput(PAGE_DOWN)
+
+    expect(body(harness.panel, 5)).toContain(`↑ ${copy.moreRows(16)}`)
+    expect(body(harness.panel, 5)).not.toContain('↓ ')
+  })
+
+  it('caps the rendered lines at the configured body height', () => {
+    const rows = manyRows('display', 20)
+
+    expect(panelFor({ rows }).panel.render(100)).toHaveLength(10)
+    expect(panelFor({ rows, visibleRows: 5 }).panel.render(100)).toHaveLength(7)
+    expect(panelFor({ rows, visibleRows: 99 }).panel.render(100)).toHaveLength(12)
+    expect(panelFor({ rows, visibleRows: 1 }).panel.render(100)).toHaveLength(5)
+  })
+
+  it('pads a short tab body to the configured height', async () => {
+    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const harness = panelFor({ rows })
+
+    const lines = harness.panel.render(100)
+
+    expect(lines).toHaveLength(10)
+    expect(lines.slice(5, 9)).toEqual(['', '', '', ''])
+  })
+})
+
 describe('ConfigPanel rendering', () => {
-  it('renders the section headings, row markers, and the filter hint', async () => {
+  it('renders row values and scope, read-only, and custom markers', async () => {
     const { rows } = await loadRows({ presets: PRESETS, permission: 'read-only', bundles: BUNDLES })
     const harness = panelFor({ rows })
 
-    const text = rendered(harness.panel)
+    expect(rendered(harness.panel)).toContain('alpha/alpha-1')
+    expect(rendered(harness.panel)).toContain(`(${copy.config.readOnly})`)
+    expect(rendered(harness.panel)).toContain(`(${copy.config.scopeSession})`)
 
-    expect(text.split('\n')[0]).toBe(copy.config.title)
-    expect(text.indexOf(copy.config.modelSection)).toBeLessThan(text.indexOf(copy.config.permissionSection))
-    expect(text.indexOf(copy.config.permissionSection)).toBeLessThan(text.indexOf(copy.config.experimentalSection))
-    expect(text.indexOf(copy.config.experimentalSection)).toBeLessThan(text.indexOf(copy.config.displaySection))
-    expect(text).toContain(copy.statusPanel.model)
-    expect(text).toContain('alpha/alpha-1')
-    expect(text).toContain(copy.prompt.permissionCurrent)
-    expect(text).toContain(`(${copy.config.scopeSession})`)
-    expect(text).toContain(`(${copy.config.scopeProfile} · ${copy.config.readOnly})`)
-    expect(text).toContain(copy.config.readOnly)
-    expect(text).toContain(copy.config.on)
-    expect(text).toContain(copy.config.hint)
+    harness.panel.handleInput(TAB)
+    expect(rendered(harness.panel)).toContain(copy.prompt.permissionCurrent)
+
+    harness.panel.handleInput(RIGHT)
+    expect(rendered(harness.panel)).toContain('locked-bundle')
+    expect(rendered(harness.panel)).toContain('management-required')
+
+    harness.panel.handleInput(RIGHT)
+    expect(rendered(harness.panel)).toContain(`(${copy.config.scopeProfile} · ${copy.config.readOnly})`)
+    expect(rendered(harness.panel)).toContain(copy.config.on)
   })
 
-  it('renders loader and custom markers', () => {
-    const rows: ConfigRow[] = [
-      { id: 'scoped', section: 'display', label: 'Scoped', value: '', scope: 'repository', readOnly: false },
-      { id: 'marked', section: 'display', label: 'Marked', value: 'value', scope: undefined, readOnly: false, marker: 'beta' },
-      { id: 'bare', section: 'display', label: 'Bare', value: '', scope: undefined, readOnly: false },
-    ]
-    const harness = panelFor({ rows })
+  it('renders a bare row without markers', () => {
+    const harness = panelFor({
+      rows: [
+        { id: 'scoped', section: 'model', label: 'Scoped', value: '', scope: 'repository', readOnly: false },
+        { id: 'marked', section: 'model', label: 'Marked', value: 'value', scope: undefined, readOnly: false, marker: 'beta' },
+        { id: 'bare', section: 'model', label: 'Bare', value: '', scope: undefined, readOnly: false },
+      ],
+    })
 
     const text = rendered(harness.panel)
 
     expect(text).toContain(`(${copy.config.scopeRepository})`)
     expect(text).toContain('(beta)')
-    const bare = visibleLines(harness.panel.render(100)).find(line => line.includes('Bare'))
+    const bare = visibleLines(harness.panel.render(120)).find(line => line.includes('Bare'))
     expect(bare).toBeDefined()
     expect(bare).not.toContain('(')
+  })
+
+  it('renders none for a tab without rows and keeps it inert', () => {
+    const harness = panelFor({ rows: [plainRow('display', 'only')] })
+
+    expect(rendered(harness.panel)).toContain(copy.config.none)
+
+    for (const key of [UP, DOWN, PAGE_UP, PAGE_DOWN, ENTER]) harness.panel.handleInput(key)
+
+    expect(harness.activations).toEqual([])
+    expect(rendered(harness.panel)).toContain(copy.config.none)
+
+    goToDisplay(harness.panel)
+    expect(rendered(harness.panel)).toContain('only')
   })
 
   it('truncates every line to the available width', async () => {
@@ -414,99 +662,40 @@ describe('ConfigPanel rendering', () => {
     })
     const harness = panelFor({ rows })
 
-    typeText(harness.panel, 'a-very-long-filter-query-that-does-not-fit')
+    const lines = harness.panel.render(20)
 
-    for (const line of harness.panel.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20)
+    for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(20)
+    expect(lines).toHaveLength(10)
   })
 
   it('invalidates without cached state', () => {
-    const harness = panelFor({ rows: [actionRow('a', () => {})] })
-
-    expect(() => { harness.panel.invalidate() }).not.toThrow()
-    expect(rendered(harness.panel)).toContain('a')
-  })
-})
-
-describe('ConfigPanel navigation', () => {
-  it('moves the highlight with the arrow keys and wraps at both ends', () => {
-    const rows = [actionRow('a', () => {}), actionRow('b', () => {}), actionRow('c', () => {})]
-    const harness = panelFor({ rows })
-
-    expect(rendered(harness.panel)).toContain('❯ a')
-    harness.panel.handleInput('\u001b[B')
-    expect(rendered(harness.panel)).toContain('❯ b')
-    harness.panel.handleInput('\u001b[B')
-    expect(rendered(harness.panel)).toContain('❯ c')
-    harness.panel.handleInput('\u001b[B')
-    expect(rendered(harness.panel)).toContain('❯ a')
-    harness.panel.handleInput('\u001b[A')
-    expect(rendered(harness.panel)).toContain('❯ c')
-  })
-
-  it('activates the highlighted row on Enter and ignores read-only rows', async () => {
-    const { rows } = await loadRows({ presets: PRESETS })
-    const harness = panelFor({ rows })
-
-    harness.panel.handleInput('\r')
-    expect(harness.activations).toEqual([])
-
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
-    expect(harness.activations.map(row => row.id)).toEqual(['model.change'])
-  })
-
-  it('clears the filter before cancelling', () => {
-    const harness = panelFor({ rows: [actionRow('alpha', () => {}), actionRow('beta', () => {})] })
-
-    typeText(harness.panel, 'beta')
-    expect(rendered(harness.panel)).not.toContain('alpha')
-
-    harness.panel.handleInput('\u001b')
-    expect(harness.cancels).toEqual([])
-    expect(rendered(harness.panel)).toContain('alpha')
-
-    harness.panel.handleInput('\u001b')
-    expect(harness.cancels).toEqual([1])
-  })
-})
-
-describe('ConfigPanel filtering', () => {
-  it('filters by section heading, row label, and row value', async () => {
-    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
-    const harness = panelFor({ rows })
-
-    typeText(harness.panel, 'perm')
-    expect(rendered(harness.panel)).toContain(copy.config.permissionSection)
-    expect(rendered(harness.panel)).not.toContain(copy.config.modelSection)
-
-    harness.panel.handleInput('\u001b')
-    typeText(harness.panel, 'preview')
-    expect(rendered(harness.panel)).toContain('previewLines')
-    expect(rendered(harness.panel)).not.toContain(copy.config.permissionSection)
-
-    harness.panel.handleInput('\u001b')
-    typeText(harness.panel, '200')
-    expect(rendered(harness.panel)).toContain('windowBlocks')
-    expect(rendered(harness.panel)).not.toContain('previewLines')
-  })
-
-  it('reports no matching rows and ignores navigation and activation', () => {
     const harness = panelFor({ rows: [actionRow('alpha', () => {})] })
 
-    typeText(harness.panel, 'zzz')
-    const text = rendered(harness.panel)
-    expect(text).toContain(copy.config.noMatches)
-    expect(text).not.toContain('❯')
-
-    harness.panel.handleInput('\u001b[A')
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
-
-    expect(harness.activations).toEqual([])
+    expect(() => { harness.panel.invalidate() }).not.toThrow()
+    expect(rendered(harness.panel)).toContain('alpha')
   })
 })
 
 describe('ConfigPanel activation results', () => {
+  it('activates the cursor row on the active tab and ignores read-only rows', async () => {
+    const { rows, calls } = await loadRows({ presets: PRESETS })
+    const harness = panelFor({ rows })
+
+    harness.panel.handleInput(ENTER)
+    expect(harness.activations).toEqual([])
+
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(ENTER)
+    expect(harness.activations.map(row => row.id)).toEqual(['model.change'])
+    expect(calls).toEqual(['pickModel'])
+    await settle()
+
+    harness.panel.handleInput(TAB)
+    harness.panel.handleInput(ENTER)
+    expect(harness.activations.map(row => row.id)).toEqual(['model.change', 'permission.read-only'])
+    expect(calls).toEqual(['pickModel', 'setPermission:read-only'])
+  })
+
   it('surfaces an action notice and a restart requirement', async () => {
     const harness = panelFor({
       rows: [
@@ -517,24 +706,28 @@ describe('ConfigPanel activation results', () => {
       ],
     })
 
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(harness.notices).toEqual(['changed']) })
     await settle()
     expect(harness.restarts).toEqual([])
 
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(harness.restarts).toEqual([copy.config.restartRequired]) })
     expect(rendered(harness.panel)).toContain(copy.config.restartMarker)
+    expect(rendered(harness.panel)).not.toContain(copy.config.restartRequired)
+    expect(rendered(harness.panel)).toContain(`(${copy.config.restartMarker})`)
     expect(harness.notices).toEqual(['changed'])
     await settle()
 
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(ENTER)
     await settle()
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
-    await vi.waitFor(() => { expect(harness.activations.map(row => row.id)).toEqual(['notify', 'restart', 'quiet', 'silent']) })
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(ENTER)
+    await vi.waitFor(() => {
+      expect(harness.activations.map(row => row.id)).toEqual(['notify', 'restart', 'quiet', 'silent'])
+    })
     expect(harness.notices).toEqual(['changed'])
     expect(harness.restarts).toEqual([copy.config.restartRequired])
   })
@@ -547,11 +740,11 @@ describe('ConfigPanel activation results', () => {
       ],
     })
 
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(harness.notices).toEqual([copy.config.writeFailed('disk full')]) })
 
-    harness.panel.handleInput('\u001b[B')
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(DOWN)
+    harness.panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(harness.notices).toEqual([
       copy.config.writeFailed('disk full'),
       copy.config.writeFailed('offline'),
@@ -561,7 +754,7 @@ describe('ConfigPanel activation results', () => {
   it('reports a failed asynchronous action', async () => {
     const harness = panelFor({ rows: [actionRow('reject', () => Promise.reject(new Error('nope')))] })
 
-    harness.panel.handleInput('\r')
+    harness.panel.handleInput(ENTER)
 
     await vi.waitFor(() => { expect(harness.notices).toEqual([copy.config.writeFailed('nope')]) })
   })
@@ -576,14 +769,14 @@ describe('ConfigPanel activation results', () => {
       })],
     })
 
-    harness.panel.handleInput('\r')
-    harness.panel.handleInput('\r')
-    harness.panel.handleInput('\u001b[B')
+    harness.panel.handleInput(ENTER)
+    harness.panel.handleInput(ENTER)
+    harness.panel.handleInput(DOWN)
     expect(calls).toEqual(['slow'])
 
     release?.()
     await vi.waitFor(() => {
-      harness.panel.handleInput('\r')
+      harness.panel.handleInput(ENTER)
       expect(calls).toEqual(['slow', 'slow'])
     })
   })
@@ -606,19 +799,19 @@ describe('ConfigPanel activation results', () => {
       },
     })
 
-    panel.handleInput('\r')
+    panel.handleInput(ENTER)
     await settle()
-    panel.handleInput('\u001b[B')
-    panel.handleInput('\r')
+    panel.handleInput(DOWN)
+    panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(activations.map(row => row.id)).toEqual(['notify', 'explode']) })
 
-    panel.handleInput('\u001b[B')
-    panel.handleInput('\r')
+    panel.handleInput(DOWN)
+    panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(activations).toHaveLength(3) })
     await settle()
 
-    panel.handleInput('\u001b[B')
-    panel.handleInput('\r')
+    panel.handleInput(DOWN)
+    panel.handleInput(ENTER)
     await vi.waitFor(() => { expect(restarts).toEqual([copy.config.restartRequired]) })
   })
 
@@ -629,9 +822,20 @@ describe('ConfigPanel activation results', () => {
       handlers: { onCancel: () => {}, onRestartNotice: () => {} },
     })
 
-    panel.handleInput('\r')
+    panel.handleInput(ENTER)
     await settle()
 
     expect(rendered(panel)).toContain('notify')
+  })
+
+  it('closes on Escape through the cancel handler and ignores unrelated keys', () => {
+    const harness = panelFor({ rows: [actionRow('alpha', () => {})] })
+
+    harness.panel.handleInput('x')
+    expect(harness.cancels).toEqual([])
+
+    harness.panel.handleInput(ESCAPE)
+
+    expect(harness.cancels).toEqual([1])
   })
 })

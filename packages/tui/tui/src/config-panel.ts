@@ -1,15 +1,14 @@
 /**
- * The `/config` overlay: one panel listing the model and reasoning effort,
- * the permission preset, the optional bundles, and the terminal display
- * values. Actionable rows mutate the live application through injected
- * actions; rows owned by the profile configuration show read-only values.
- * {@link loadConfigRows} reads the rows from the composed services and
- * {@link ConfigPanel} renders and navigates them.
+ * The `/config` bottom dock: one tab per configuration category, each listing
+ * its rows in a scrolling window. Actionable rows mutate the live application
+ * through injected actions; rows owned by the profile configuration show
+ * read-only values. {@link loadConfigRows} reads the rows from the composed
+ * services and {@link ConfigPanel} renders and navigates them.
  *
  * @module @deepseek-ai/dsh-tui/config-panel
  */
 
-import { Input, matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'
+import { matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { displayText } from './display-text.ts'
 import type { LocaleConfig } from './locale.ts'
@@ -193,13 +192,37 @@ export interface ConfigPanelOptions {
   readonly palette: Palette
   /** Callbacks the panel reports through. */
   readonly handlers: ConfigPanelHandlers
+  /**
+   * Body rows rendered below the tab bar; defaults to 8 and is clamped to
+   * 3–10 so the tab bar, body, and hint stay within the dock's line budget.
+   */
+  readonly visibleRows?: number
 }
 
 /** Section order shared by the loader and the panel. */
 const SECTION_ORDER: readonly ConfigSection[] = ['model', 'permissions', 'experimental', 'display']
 
+/** Default number of body rows rendered below the tab bar. */
+const DEFAULT_VISIBLE_ROWS = 8
+
+/** Smallest body height that still fits both scroll indicators and one row. */
+const MIN_VISIBLE_ROWS = 3
+
+/** Largest body height, keeping the whole dock at twelve lines. */
+const MAX_VISIBLE_ROWS = 10
+
 /** The kind of fallback row a section without data shows. */
 type ConfigFallback = 'unavailable' | 'empty'
+
+/** One scroll window over the active tab's rows. */
+interface ScrollWindow {
+  /** Index of the first visible row. */
+  readonly start: number
+  /** Number of rows rendered inside the window. */
+  readonly capacity: number
+  /** Rows hidden below the window. */
+  readonly below: number
+}
 
 /**
  * The localized heading of one configuration section.
@@ -226,6 +249,21 @@ function scopeLabel(scope: ConfigScope): string {
     case 'session': return copy.config.scopeSession
     case 'profile': return copy.config.scopeProfile
     case 'repository': return copy.config.scopeRepository
+  }
+}
+
+/**
+ * The tab adjacent to one section, cycling through the fixed order.
+ * @param section - the current section.
+ * @param delta - `1` for the next tab, `-1` for the previous one.
+ * @returns the adjacent section.
+ */
+function adjacentSection(section: ConfigSection, delta: 1 | -1): ConfigSection {
+  switch (section) {
+    case 'model': return delta === 1 ? 'permissions' : 'display'
+    case 'permissions': return delta === 1 ? 'experimental' : 'model'
+    case 'experimental': return delta === 1 ? 'display' : 'permissions'
+    case 'display': return delta === 1 ? 'model' : 'experimental'
   }
 }
 
@@ -411,126 +449,218 @@ export async function loadConfigRows(deps: ConfigPanelDeps): Promise<ConfigRow[]
   ]
 }
 
-/** The `/config` overlay: sectioned configuration rows with a filter input. */
+/** The `/config` bottom dock: one tab per section over a scrolling row list. */
 export class ConfigPanel implements Component {
   private readonly rows: readonly ConfigRow[]
   private readonly palette: Palette
   private readonly handlers: ConfigPanelHandlers
-  private readonly filter: Input
+  private readonly bodyHeight: number
   private readonly restartMarkers = new Map<string, string>()
-  private index = 0
+  private section: ConfigSection = 'model'
+  private cursor = 0
+  private scroll = 0
   private busy = false
 
   /**
-   * @param options - rows to present, the terminal style table, and callbacks.
+   * @param options - rows, the terminal style table, callbacks, and the body height.
    */
   constructor(options: ConfigPanelOptions) {
     this.rows = options.rows
     this.palette = options.palette
     this.handlers = options.handlers
-    this.filter = new Input({ prompt: options.palette.accent('› '), placeholder: copy.config.filter })
-    this.filter.focused = true
+    const requested = options.visibleRows ?? DEFAULT_VISIBLE_ROWS
+    this.bodyHeight = Math.min(MAX_VISIBLE_ROWS, Math.max(MIN_VISIBLE_ROWS, Math.floor(requested)))
   }
 
   /**
-   * Handle one input sequence while the panel has focus.
+   * Handle one input sequence while the dock has focus.
    * @param data - raw terminal input.
    */
   handleInput(data: string): void {
     if (this.busy) return
+    if (matchesKey(data, 'tab') || matchesKey(data, 'right')) {
+      this.switchSection(1)
+      return
+    }
+    if (matchesKey(data, 'shift+tab') || matchesKey(data, 'left')) {
+      this.switchSection(-1)
+      return
+    }
     if (matchesKey(data, 'up')) {
-      this.move(-1)
+      this.moveCursor(-1)
       return
     }
     if (matchesKey(data, 'down')) {
-      this.move(1)
+      this.moveCursor(1)
+      return
+    }
+    if (matchesKey(data, 'pageUp')) {
+      this.pageCursor(-1)
+      return
+    }
+    if (matchesKey(data, 'pageDown')) {
+      this.pageCursor(1)
       return
     }
     if (matchesKey(data, 'enter')) {
       this.activateCurrent()
       return
     }
-    if (matchesKey(data, 'escape')) {
-      this.handleEscape()
-      return
-    }
-    this.filter.handleInput(data)
-    this.clampIndex()
+    if (matchesKey(data, 'escape')) this.handlers.onCancel()
   }
 
   /**
-   * Render the panel.
+   * Render the dock.
    * @param width - available terminal columns.
-   * @returns the panel lines, each truncated to the panel width.
+   * @returns the tab bar, exactly the body height of body lines, and the hint line.
    */
   render(width: number): string[] {
-    const palette = this.palette
-    const visible = this.visibleRows()
-    const cursor = visible[this.index]
-    const lines = [palette.heading(truncateToWidth(copy.config.title, width))]
-    for (const section of SECTION_ORDER) {
-      const rows = visible.filter(row => row.section === section)
-      if (rows.length === 0) continue
-      lines.push('', palette.heading(truncateToWidth(`  ${sectionTitle(section)}`, width)))
-      for (const row of rows) {
-        const marker = row === cursor ? palette.accent('❯') : ' '
-        lines.push(truncateToWidth(
-          `  ${marker} ${displayText(row.label)}${this.valueOf(row)}${this.markersOf(row)}`,
-          width,
-        ))
+    return [
+      this.tabBar(width),
+      ...this.bodyLines(this.activeRows(), width),
+      this.palette.dim(truncateToWidth(`  ${copy.config.tabHint}`, width)),
+    ]
+  }
+
+  /** No cached state exists: the tab, cursor, and scroll window are read on each render. */
+  invalidate(): void {}
+
+  /** @returns the rows of the active tab, in loader order. */
+  private activeRows(): readonly ConfigRow[] {
+    return this.rows.filter(row => row.section === this.section)
+  }
+
+  /**
+   * Move to the adjacent tab and reset the row cursor.
+   * @param delta - `1` for the next tab, `-1` for the previous one.
+   */
+  private switchSection(delta: 1 | -1): void {
+    this.section = adjacentSection(this.section, delta)
+    this.cursor = 0
+    this.scroll = 0
+  }
+
+  /**
+   * Move the row cursor with wrap-around inside the active tab.
+   * @param delta - `-1` up or `1` down.
+   */
+  private moveCursor(delta: number): void {
+    const count = this.activeRows().length
+    if (count === 0) return
+    this.cursor = (this.cursor + delta + count) % count
+  }
+
+  /**
+   * Jump the row cursor by one body height, clamped to the active tab.
+   * @param direction - `-1` toward the first row, `1` toward the last.
+   */
+  private pageCursor(direction: 1 | -1): void {
+    const count = this.activeRows().length
+    if (count === 0) return
+    this.cursor = Math.min(count - 1, Math.max(0, this.cursor + direction * this.bodyHeight))
+  }
+
+  /**
+   * Render the scrolling body of one tab.
+   * @param rows - the active tab's rows.
+   * @param width - available terminal columns.
+   * @returns exactly the configured body height lines.
+   */
+  private bodyLines(rows: readonly ConfigRow[], width: number): string[] {
+    const lines: string[] = []
+    if (rows.length === 0) {
+      lines.push(this.palette.dim(truncateToWidth(`  ${copy.config.none}`, width)))
+    } else {
+      const window = this.windowFor(rows.length)
+      if (window.start > 0) lines.push(this.indicator('↑', window.start, width))
+      const visible = rows.slice(window.start, window.start + window.capacity)
+      for (const [offset, row] of visible.entries()) {
+        lines.push(this.rowLine(row, window.start + offset === this.cursor, width))
       }
+      if (window.below > 0) lines.push(this.indicator('↓', window.below, width))
     }
-    if (visible.length === 0) {
-      lines.push('', palette.dim(truncateToWidth(`  ${copy.config.noMatches}`, width)))
-    }
-    lines.push('')
-    lines.push(truncateToWidth(`  ${this.filter.render(Math.max(1, width - 2)).join('')}`, width))
-    lines.push(palette.dim(truncateToWidth(`  ${copy.config.hint}`, width)))
+    while (lines.length < this.bodyHeight) lines.push('')
     return lines
   }
 
-  /** No cached state exists: every row is read from the filter and rows on each render. */
-  invalidate(): void {}
-
-  /** @returns the rows matching the current filter, in loader order. */
-  private visibleRows(): readonly ConfigRow[] {
-    const query = this.filter.getValue().trim().toLowerCase()
-    if (query === '') return this.rows
-    return this.rows.filter(row =>
-      sectionTitle(row.section).toLowerCase().startsWith(query)
-      || row.label.toLowerCase().startsWith(query)
-      || row.value.toLowerCase().startsWith(query))
+  /**
+   * Derive the scroll window that keeps the cursor visible.
+   * @param count - number of rows in the active tab.
+   * @returns the window and the number of rows hidden above and below it.
+   */
+  private windowFor(count: number): ScrollWindow {
+    if (count <= this.bodyHeight) return { start: 0, capacity: count, below: 0 }
+    let start = Math.min(this.scroll, count - 1)
+    for (;;) {
+      const capacity = this.capacityFor(start, count)
+      if (this.cursor < start) {
+        start = this.cursor
+        continue
+      }
+      if (this.cursor >= start + capacity) {
+        start = this.cursor - capacity + 1
+        continue
+      }
+      this.scroll = start
+      return { start, capacity, below: count - start - capacity }
+    }
   }
 
   /**
-   * Advance the highlight with wrap-around.
-   * @param delta - the direction, `-1` up or `1` down.
+   * Rows that fit in the body budget at one scroll position.
+   * @param start - index of the first visible row.
+   * @param count - number of rows in the active tab.
+   * @returns the number of rows the window may render.
    */
-  private move(delta: number): void {
-    const count = this.visibleRows().length
-    if (count === 0) return
-    this.index = (this.index + delta + count) % count
+  private capacityFor(start: number, count: number): number {
+    let capacity = this.bodyHeight - (start > 0 ? 1 : 0)
+    capacity = Math.min(capacity, count - start)
+    if (start + capacity < count) capacity -= 1
+    return capacity
   }
 
-  /** Keep the highlight inside the visible rows after a filter change. */
-  private clampIndex(): void {
-    const count = this.visibleRows().length
-    this.index = count === 0 ? 0 : Math.min(this.index, count - 1)
+  /**
+   * Render one scroll indicator line.
+   * @param direction - `↑` for rows hidden above, `↓` for rows hidden below.
+   * @param count - number of hidden rows.
+   * @param width - available terminal columns.
+   * @returns the dim indicator line.
+   */
+  private indicator(direction: '↑' | '↓', count: number, width: number): string {
+    return this.palette.dim(truncateToWidth(`  ${direction} ${copy.moreRows(count)}`, width))
   }
 
-  /** Clear the filter first; a second Escape closes the panel. */
-  private handleEscape(): void {
-    if (this.filter.getValue() !== '') {
-      this.filter.setValue('')
-      this.clampIndex()
-      return
-    }
-    this.handlers.onCancel()
+  /**
+   * Render the tab bar.
+   * @param width - available terminal columns.
+   * @returns the styled tab labels on one line.
+   */
+  private tabBar(width: number): string {
+    const bar = SECTION_ORDER.map((section) => {
+      const label = ` ${sectionTitle(section)} `
+      return section === this.section ? this.palette.inverse(label) : this.palette.dim(label)
+    }).join('')
+    return truncateToWidth(bar, width)
+  }
+
+  /**
+   * Render one body row.
+   * @param row - the row.
+   * @param selected - whether the cursor is on the row.
+   * @param width - available terminal columns.
+   * @returns the row line.
+   */
+  private rowLine(row: ConfigRow, selected: boolean, width: number): string {
+    const marker = selected ? this.palette.accent('❯') : ' '
+    return truncateToWidth(
+      `  ${marker} ${displayText(row.label)}${this.valueOf(row)}${this.markersOf(row)}`,
+      width,
+    )
   }
 
   /** Invoke the highlighted row's action and report its result. */
   private activateCurrent(): void {
-    const row = this.visibleRows()[this.index]
+    const row = this.activeRows()[this.cursor]
     if (row?.activate === undefined) return
     this.busy = true
     this.handlers.onActivate?.(row)

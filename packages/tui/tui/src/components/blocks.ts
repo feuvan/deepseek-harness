@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-tui/components/blocks
  */
 
-import { Markdown, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type MarkdownTheme } from '@earendil-works/pi-tui'
+import { Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type MarkdownTheme } from '@earendil-works/pi-tui'
 import { diffLines } from 'diff'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { FileDiff, ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools'
@@ -106,10 +106,9 @@ export class UserMessageBlock implements Component {
 export class AssistantBlock implements Component {
   private text = ''
   private reasoning = ''
-  private visible = true
+  private reasoningPreview = 4
   private readonly context: BlockContext
   private readonly markdown: Markdown
-  private readonly reasoningText: Text
 
   /**
    * @param context - render values.
@@ -117,7 +116,6 @@ export class AssistantBlock implements Component {
   constructor(context: BlockContext) {
     this.context = context
     this.markdown = new Markdown('', 1, 0, context.markdown)
-    this.reasoningText = new Text('', 1, 0)
   }
 
   /**
@@ -135,15 +133,14 @@ export class AssistantBlock implements Component {
    */
   setReasoning(text: string): void {
     this.reasoning = text
-    this.reasoningText.setText(this.context.palette.dim(this.context.palette.italic(displayText(text))))
   }
 
   /**
-   * Show or hide reasoning for this block.
-   * @param visible - whether reasoning renders.
+   * Set how many reasoning lines this block previews.
+   * @param lines - line budget; `Infinity` shows the complete block.
    */
-  setReasoningVisible(visible: boolean): void {
-    this.visible = visible
+  setReasoningPreview(lines: number): void {
+    this.reasoningPreview = lines
   }
 
   /**
@@ -161,8 +158,17 @@ export class AssistantBlock implements Component {
    */
   render(width: number): string[] {
     const lines: string[] = []
-    if (this.visible && this.reasoning !== '') {
-      lines.push(...this.reasoningText.render(width))
+    if (this.reasoningPreview > 0 && this.reasoning !== '') {
+      const palette = this.context.palette
+      const wrapped = wrapTextWithAnsi(
+        palette.dim(palette.italic(displayText(this.reasoning))),
+        Math.max(1, width - 2),
+      )
+      const shown = Number.isFinite(this.reasoningPreview) ? wrapped.slice(0, this.reasoningPreview) : wrapped
+      lines.push(...shown.map(line => `  ${line}`))
+      if (shown.length < wrapped.length) {
+        lines.push(palette.dim(`  ${copy.notice.hiddenLines(wrapped.length - shown.length)}`))
+      }
       lines.push('')
     }
     lines.push(...this.markdown.render(width))
@@ -172,7 +178,6 @@ export class AssistantBlock implements Component {
   /** Drop cached renderer state after a theme change. */
   invalidate(): void {
     this.markdown.invalidate()
-    this.reasoningText.invalidate()
   }
 }
 

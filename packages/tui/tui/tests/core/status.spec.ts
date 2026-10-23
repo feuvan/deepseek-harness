@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { StatusModel } from '../../src/status.ts'
+import { copy } from '../../src/copy.ts'
 import type { StatusDeps } from '../../src/status.ts'
 import { createSession, mountSessions } from '../support/fakes.ts'
 import {
@@ -48,6 +49,7 @@ function statusModel(overrides: Partial<StatusDeps> = {}): { model: StatusModel;
     selection: selectionRef(),
     config: terminalConfig(),
     effort: () => ({ level: undefined, implicit: false }),
+    reasoning: () => 'standard',
     turnStartedAt: () => undefined,
     requestRender,
     ...overrides,
@@ -66,6 +68,7 @@ describe('StatusModel', () => {
       model: 'starting',
       effort: undefined,
       effortImplicit: false,
+      reasoning: copy.reasoning.label('standard'),
       inputTokens: 0,
       outputTokens: 0,
       cacheRate: undefined,
@@ -142,6 +145,7 @@ describe('StatusModel', () => {
       model: 'test-model',
       effort: 'high',
       effortImplicit: false,
+      reasoning: copy.reasoning.label('standard'),
       inputTokens: 400,
       outputTokens: 20,
       cacheRate: 0.75,
@@ -228,6 +232,18 @@ describe('StatusModel', () => {
 
     harness.projections.values.contextPressure = { contextWindow: 2000 }
     expect(model.snapshot().contextPercent).toBeUndefined()
+  })
+
+  it('reports the active reasoning level from its reader', async () => {
+    const harness = await statusHarness()
+    const { model } = statusModel({
+      ctx: harness.ctx,
+      agent: () => harness.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+      reasoning: () => 'verbose',
+    })
+
+    expect(model.snapshot().reasoning).toBe(copy.reasoning.label('verbose'))
   })
 
   it('reports the effective effort from its reader', async () => {

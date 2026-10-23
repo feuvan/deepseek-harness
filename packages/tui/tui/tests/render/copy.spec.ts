@@ -64,6 +64,7 @@ function snapshot(overrides: Partial<FooterSnapshot> = {}): FooterSnapshot {
     model: 'alpha/m-1',
     effort: 'high',
     effortImplicit: false,
+    reasoning: copy.reasoning.label('standard'),
     inputTokens: 0,
     outputTokens: 0,
     cacheRate: undefined,
@@ -91,11 +92,14 @@ describe('copy dictionaries', () => {
   })
 
   it('keeps identical key paths and leaf types across locales', () => {
-    expect(leafTypes(chinese)).toEqual(leafTypes(english))
+    expect(leafTypes(chinese).sort(([left], [right]) => left.localeCompare(right)))
+      .toEqual(leafTypes(english).sort(([left], [right]) => left.localeCompare(right)))
   })
 
   it('defines formatters with the same paths in both locales', () => {
-    expect(leafFunctions(chinese).map(([path]) => path)).toEqual(leafFunctions(english).map(([path]) => path))
+    const paths = (dictionary: Record<string, unknown>): string[] =>
+      leafFunctions(dictionary).map(([path]) => path).sort((left, right) => left.localeCompare(right))
+    expect(paths(chinese)).toEqual(paths(english))
   })
 
   it.each([
@@ -105,6 +109,28 @@ describe('copy dictionaries', () => {
     const functions = leafFunctions(dictionary())
     expect(functions.length).toBeGreaterThan(0)
     for (const [path, format] of functions) expect(typeof format(), path).toBe('string')
+  })
+
+  it('formats the bottom-dock and reasoning labels', () => {
+    expect(copy.moreRows(1)).toBe('1 more row')
+    expect(copy.moreRows(3)).toBe('3 more rows')
+    expect(copy.reasoning.title).toBe('Reasoning visibility')
+    expect(copy.reasoning.label('detailed')).toBe('reasoning detailed')
+    expect(copy.reasoning.changed('compact')).toBe('Reasoning visibility: compact')
+    expect(copy.reasoning.available('compact, standard')).toBe('Available visibility levels: compact, standard')
+    expect(copy.completion.title).toBe('Completions')
+    expect(copy.completion.hint).toContain('Tab insert')
+    expect(copy.config.tabHint).toContain('Tab')
+    expect(copy.commands.reasoning).toBe('Cycle or set the reasoning visibility')
+  })
+
+  it('localizes the new labels in Chinese', () => {
+    setCopyLocale('zh')
+
+    expect(copy.moreRows(2)).toBe('另外 2 行')
+    expect(copy.reasoning.levels.detailed).toBe('详细')
+    expect(copy.completion.title).toBe('补全')
+    expect(copy.config.tabHint).toContain('Tab')
   })
 
   it('uses formatters that react to their arguments', () => {

@@ -14,6 +14,7 @@ function completeSnapshot(overrides: Partial<FooterSnapshot> = {}): FooterSnapsh
     model: 'deepseek/deepseek-chat',
     effort: 'high',
     effortImplicit: false,
+    reasoning: copy.reasoning.label('standard'),
     inputTokens: 1200,
     outputTokens: 345,
     cacheRate: 0.5,
@@ -43,11 +44,11 @@ describe('Footer', () => {
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe('session Session title · /work/repo')
     expect(lines[1]).toBe(
-      ' deepseek/deepseek-chat · high · ↑1200 ↓345 · cache 50% · ctx 25% · workspace-write · idle · 42s',
+      ' deepseek/deepseek-chat · high · reasoning standard · ↑1200 ↓345 · cache 50% · ctx 25% · workspace-write · idle · 42s',
     )
   })
 
-  it('places the effective effort directly after the model', () => {
+  it('places the effort and reasoning labels directly after the model', () => {
     const explicit = footer(completeSnapshot({
       model: 'alpha/m-1',
       effort: 'high',
@@ -56,7 +57,7 @@ describe('Footer', () => {
       permission: undefined,
       elapsedSeconds: undefined,
     })).render(120)
-    expect(explicit[1]).toBe(' alpha/m-1 · high · ↑1200 ↓345 · idle')
+    expect(explicit[1]).toBe(' alpha/m-1 · high · reasoning standard · ↑1200 ↓345 · idle')
 
     const effectiveDefault = footer(completeSnapshot({
       model: 'alpha/m-1',
@@ -67,7 +68,14 @@ describe('Footer', () => {
       permission: undefined,
       elapsedSeconds: undefined,
     })).render(120)
-    expect(effectiveDefault[1]).toBe(' alpha/m-1 · low · ↑1200 ↓345 · idle')
+    expect(effectiveDefault[1]).toBe(' alpha/m-1 · low · reasoning standard · ↑1200 ↓345 · idle')
+  })
+
+  it('renders the localized reasoning level', () => {
+    const line = secondLine(completeSnapshot({ reasoning: copy.reasoning.label('verbose') }), 200)
+
+    expect(line).toContain(copy.reasoning.label('verbose'))
+    expect(line.indexOf(copy.reasoning.label('verbose'))).toBeGreaterThan(line.indexOf('high'))
   })
 
   it('omits the title separator when the Session has no title', () => {
@@ -83,7 +91,7 @@ describe('Footer', () => {
       permission: undefined,
       elapsedSeconds: undefined,
     })).render(120)
-    expect(lines[1]).toBe(' deepseek/deepseek-chat · ↑1200 ↓345 · idle')
+    expect(lines[1]).toBe(' deepseek/deepseek-chat · reasoning standard · ↑1200 ↓345 · idle')
   })
 
   it('highlights the running status and dims the idle status', () => {
@@ -99,13 +107,14 @@ describe('Footer', () => {
     expect(lines[1]).toContain('ctx 95%')
   })
 
-  it('drops ambient segments from the front until the line fits', () => {
+  it('drops ambient segments in elapsed, cache, tokens, then context order', () => {
     const snapshot = completeSnapshot({ status: copy.status.running, elapsedSeconds: 42 })
 
     const all = secondLine(snapshot, 300)
     const droppedElapsed = secondLine(snapshot, visibleWidth(all) - 1)
     expect(droppedElapsed).not.toContain('42s')
     expect(droppedElapsed).toContain('cache 50%')
+    expect(droppedElapsed).toContain('reasoning standard')
     expect(droppedElapsed).toContain('running')
 
     const droppedCache = secondLine(snapshot, visibleWidth(droppedElapsed) - 1)
@@ -121,20 +130,28 @@ describe('Footer', () => {
     const droppedContext = secondLine(snapshot, visibleWidth(droppedTokens) - 1)
     expect(droppedContext).not.toContain('ctx')
     expect(droppedContext).toContain('running')
+    expect(droppedContext).toContain('reasoning standard')
     expect(visibleWidth(droppedContext)).toBeLessThanOrEqual(visibleWidth(droppedTokens) - 1)
   })
 
   it('keeps the required segments when evicting a running turn', () => {
-    const snapshot = completeSnapshot({ status: copy.status.running, elapsedSeconds: 7 })
+    const snapshot = completeSnapshot({
+      status: copy.status.running,
+      cacheRate: undefined,
+      contextPercent: undefined,
+      elapsedSeconds: undefined,
+    })
+    const withTokens = secondLine(snapshot, 300)
 
-    const dropped = secondLine(snapshot, 60)
+    const dropped = secondLine(snapshot, visibleWidth(withTokens) - 1)
 
     expect(dropped).toContain('deepseek/deepseek-chat')
     expect(dropped).toContain('high')
+    expect(dropped).toContain('reasoning standard')
     expect(dropped).toContain('workspace-write')
     expect(dropped).toContain('running')
-    expect(dropped).not.toContain('7s')
-    expect(visibleWidth(dropped)).toBeLessThanOrEqual(60)
+    expect(dropped).not.toContain('↑')
+    expect(visibleWidth(dropped)).toBeLessThanOrEqual(visibleWidth(withTokens) - 1)
   })
 
   it('truncates both lines to the available width', () => {

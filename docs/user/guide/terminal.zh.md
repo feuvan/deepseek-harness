@@ -67,7 +67,7 @@ dsh --profile headless "run the tests"
 
 `/model` 打开模型列表。输入以过滤；`Shift+Tab` 循环高亮模型的推理强度；Enter 仅为当前会话选择它。该切换会记入会话日志，供后续读者查看。在编辑器中直接按 `Shift+Tab` 可不开列表切换强度。
 
-`/effort` 打开当前模型强度选择器，`/effort high`（或任意已声明强度）直接应用。不带参数的 `/permission` 会打开可用权限预设的选择器并标记当前值；`/permission <preset>` 直接切换。两者都经过已注册命令，因此会话日志会记录切换。页脚始终在模型名之后显示实际生效的强度，包括你未显式选择的适配器默认值。
+`/effort` 在编辑器下方打开当前模型强度选择列表，`/effort high`（或任意已声明强度）直接应用。不带参数的 `/permission` 打开同类列表，逐项显示可用权限预设及说明并标记当前值；`/permission <preset>` 直接切换。两者都经过已注册命令，因此会话日志会记录切换。页脚始终在模型名之后显示实际生效的强度，包括你未显式选择的适配器默认值。
 
 ### 命令参数
 
@@ -81,9 +81,13 @@ dsh --profile headless "run the tests"
 
 Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选模型接受图片输入；否则终端会说明未附加图片的原因。剪贴板图片与 `@` 图片提及可以出现在同一条提示里，提示发送后暂存的附件会被清空。内联图片渲染仍未实现，因此附加的图片在 transcript 中显示为带标签的占位符。
 
+### 推理显示
+
+推理块按四级可见性渲染，与 Desktop 的工作细节模式对应：`compact`（单行预览）、`standard`（短预览）、`detailed`（较长预览）、`verbose`（完整块）。Ctrl+R 循环切换，`/reasoning <level>` 直接设置（也接受中文级别名），页脚在模型与推理强度之后显示当前级别。
+
 ### 配置
 
-`/config` 按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
+`/config` 在编辑器下方打开配置面板，每个分类一个 tab；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 滚动，Enter 打开或切换，Esc 关闭。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
 
 ### 界面语言
 

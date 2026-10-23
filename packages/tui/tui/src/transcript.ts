@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { copy } from './copy.ts'
+import { reasoningPreviewLines, type ReasoningVisibility } from './reasoning.ts'
 import { AssistantBlock, CommandBlock, NoticeBlock, ToolCardBlock, UserMessageBlock, type BlockContext, type CardMode } from './components/blocks.ts'
 import type { Palette } from './palette.ts'
 
@@ -84,7 +85,7 @@ export class TerminalTranscript {
   private readonly pendingTools = new Map<string, PendingTool>()
   private agent: Agent | undefined
   private mode: CardMode = 'collapsed'
-  private reasoningVisible = true
+  private level: ReasoningVisibility = 'standard'
   private turnStart: number | undefined
 
   /**
@@ -143,11 +144,22 @@ export class TerminalTranscript {
     this.appendBlock(new NoticeBlock(text, this.context, tone))
   }
 
-  /** Toggle reasoning visibility for every assistant block. */
-  toggleReasoning(): void {
-    this.reasoningVisible = !this.reasoningVisible
+  /**
+   * The current reasoning-visibility level.
+   * @returns the active level.
+   */
+  reasoningLevel(): ReasoningVisibility {
+    return this.level
+  }
+
+  /**
+   * Set the reasoning-visibility level for every assistant block.
+   * @param level - the new level.
+   */
+  setReasoningLevel(level: ReasoningVisibility): void {
+    this.level = level
     for (const block of this.blocks) {
-      if (block instanceof AssistantBlock) block.setReasoningVisible(this.reasoningVisible)
+      if (block instanceof AssistantBlock) block.setReasoningPreview(reasoningPreviewLines(this.level))
     }
     this.deps.requestRender()
   }
@@ -215,7 +227,7 @@ export class TerminalTranscript {
       const stepKey = `${String(frame.turn)}:${String(frame.step)}`
       this.dropPendingStep(stepKey)
       const block = new AssistantBlock(this.context)
-      block.setReasoningVisible(this.reasoningVisible)
+      block.setReasoningPreview(reasoningPreviewLines(this.level))
       const pending: PendingAssistant = { block, turn: frame.turn, step: frame.step, text: '', reasoning: '' }
       const attemptId = String(frame.attemptId)
       this.pendingAssistants.set(attemptId, pending)
@@ -280,7 +292,7 @@ export class TerminalTranscript {
     const reasoning = textOf(data.message.content, 'reasoning')
     if (text === '' && reasoning === '') return
     const block = new AssistantBlock(this.context)
-    block.setReasoningVisible(this.reasoningVisible)
+    block.setReasoningPreview(reasoningPreviewLines(this.level))
     if (reasoning !== '') block.setReasoning(reasoning)
     block.setText(text)
     this.appendBlock(block)

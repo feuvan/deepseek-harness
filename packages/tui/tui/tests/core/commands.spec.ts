@@ -21,6 +21,7 @@ interface ComposerHarness {
   readonly composer: Composer
   readonly commands: CommandsDouble
   readonly local: string[]
+  readonly reasoningArgs: (string | undefined)[]
   readonly effortArgs: (string | undefined)[]
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
@@ -52,6 +53,7 @@ async function composerHarness(options: {
   })
   ctx.provide('commands', commands.service)
   const local: string[] = []
+  const reasoningArgs: (string | undefined)[] = []
   const effortArgs: (string | undefined)[] = []
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
@@ -64,7 +66,7 @@ async function composerHarness(options: {
     status: record('status'),
     model: record('model'),
     clear: record('clear'),
-    reasoning: record('reasoning'),
+    reasoning: (argument) => { local.push('reasoning'); reasoningArgs.push(argument) },
     cards: record('cards'),
     redraw: record('redraw'),
     effort: (argument) => { local.push('effort'); effortArgs.push(argument) },
@@ -85,6 +87,7 @@ async function composerHarness(options: {
     composer,
     commands,
     local,
+    reasoningArgs,
     effortArgs,
     permissionArgs,
     queueArgs,
@@ -574,6 +577,41 @@ describe('Composer copy and /queue', () => {
     expect(queue?.description).toBe(chinese.commands.queue)
     expect(lines[0]).toBe(chinese.commands.helpTitle)
     expect(lines).toContain(chinese.commands.helpCommandsTitle)
+  })
+
+  it('passes a parsed reasoning argument', async () => {
+    const harness = await composerHarness()
+
+    harness.composer.submit('/reasoning detailed')
+    harness.composer.submit('/reasoning')
+
+    expect(harness.reasoningArgs).toEqual(['detailed', undefined])
+    expect(harness.local).toEqual(['reasoning', 'reasoning'])
+  })
+
+  it('offers the reasoning levels as argument completions', async () => {
+    const harness = await composerHarness()
+    const reasoning = harness.composer.slashCommands().find(command => command.name === 'reasoning')
+
+    expect(reasoning?.argumentHint).toBe('<level>')
+    expect(await reasoning?.getArgumentCompletions?.('det')).toEqual([{ value: 'detailed', label: 'detailed' }])
+    expect(await reasoning?.getArgumentCompletions?.('VERB')).toEqual([{ value: 'verbose', label: 'verbose' }])
+    expect(await reasoning?.getArgumentCompletions?.('')).toEqual([
+      { value: 'compact', label: 'compact' },
+      { value: 'standard', label: 'standard' },
+      { value: 'detailed', label: 'detailed' },
+      { value: 'verbose', label: 'verbose' },
+    ])
+    expect(await reasoning?.getArgumentCompletions?.('zzz')).toEqual([])
+  })
+
+  it('localizes the reasoning level completions', async () => {
+    setCopyLocale('zh')
+    const harness = await composerHarness()
+    const reasoning = harness.composer.slashCommands().find(command => command.name === 'reasoning')
+
+    expect(await reasoning?.getArgumentCompletions?.('详细')).toEqual([{ value: 'detailed', label: '详细' }])
+    expect(await reasoning?.getArgumentCompletions?.('')).toHaveLength(4)
   })
 
   it('passes a parsed queue argument', async () => {

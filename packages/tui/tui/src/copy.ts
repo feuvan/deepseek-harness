@@ -11,6 +11,8 @@ import type { Locale } from './locale.ts'
 
 /** Interface copy in the source language, with literal types widened by {@link Copy}. */
 const en = {
+  /** Shared scrolling indicator text. */
+  moreRows: (count: number): string => `${String(count)} more ${count === 1 ? 'row' : 'rows'}`,
   /** Startup banner and prompt labels. */
   banner: {
     /** Product name shown above the transcript. */
@@ -48,6 +50,8 @@ const en = {
     interrupted: 'Attempt interrupted',
     /** Notice shown when the user interrupts a running turn. */
     interrupting: 'Interrupting the running turn…',
+    /** Notice naming a missing event range in the durable log. */
+    gap: (from: number, to: number): string => `Transcript gap: events ${String(from)}..${String(to)} are missing.`,
     /** Label for a hidden card body. */
     hiddenLines: (count: number): string => `… ${count} more ${count === 1 ? 'line' : 'lines'}`,
   },
@@ -98,8 +102,41 @@ const en = {
     permissionTitle: 'Permission preset',
     /** Description marking the current permission preset. */
     permissionCurrent: 'current',
+    /** Built-in explanations for the shipped permission presets, used when the catalog omits one. */
+    permissionDescriptions: {
+      'read-only': 'Read files only; no writes or state-changing commands.',
+      'workspace-write': 'Write inside the workspace and run commands under the sandbox.',
+      'danger-full-access': 'No sandbox; commands run with full host access.',
+      'custom': 'The current knobs match no configured preset.',
+      'auto': 'Experimental auto-review: risky calls are reviewed before running.',
+    } as Readonly<Record<string, string>>,
     /** Batch progress formatter. */
     progress: (index: number, total: number): string => `${index}/${total}`,
+  },
+  /** Reasoning-visibility labels. */
+  reasoning: {
+    /** Heading for the reasoning chooser and status row. */
+    title: 'Reasoning visibility',
+    /** Localized level names, keyed by level id. */
+    levels: {
+      compact: 'compact',
+      standard: 'standard',
+      detailed: 'detailed',
+      verbose: 'verbose',
+    },
+    /** Footer segment naming the current level. */
+    label: (level: string): string => `reasoning ${level}`,
+    /** Notice after changing the level. */
+    changed: (level: string): string => `Reasoning visibility: ${level}`,
+    /** Usage hint for an unknown level argument. */
+    available: (values: string): string => `Available visibility levels: ${values}`,
+  },
+  /** Bottom-dock completion labels. */
+  completion: {
+    /** Heading of the suggestion window. */
+    title: 'Completions',
+    /** Hint line. */
+    hint: '↑/↓ move · Tab insert · Enter run a command or insert · Esc close',
   },
   /** Completion descriptions. */
   autocomplete: {
@@ -152,7 +189,7 @@ const en = {
     effort: 'Show or set the reasoning effort',
     permission: 'Show or switch the permission preset',
     clear: 'Clear the rendered transcript',
-    reasoning: 'Toggle reasoning visibility',
+    reasoning: 'Cycle or set the reasoning visibility',
     cards: 'Cycle collapsed, expanded, and hidden tool cards',
     redraw: 'Repaint the screen',
     exit: 'Close the terminal',
@@ -161,6 +198,8 @@ const en = {
     config: 'Show and change the configuration',
     /** The Agent is not live yet. */
     agentNotReady: 'The agent is not ready yet.',
+    /** The Agent was disposed while the terminal was open. */
+    disposed: 'The agent was disposed; closing the terminal.',
     /** Unknown registered command. */
     unknown: (name: string): string => `Unknown command: /${name}. Type /help for the available commands.`,
     /** A registered command failed. */
@@ -201,6 +240,8 @@ const en = {
     model: 'Model',
     /** Reasoning effort label. */
     effort: 'Effort',
+    /** Reasoning visibility label. */
+    reasoning: 'Reasoning',
     /** Permission preset label. */
     permissions: 'Permissions',
     /** Agent status label. */
@@ -270,6 +311,8 @@ const en = {
     writeFailed: (message: string): string => `Configuration was not saved: ${message}`,
     /** Hint line. */
     hint: '↑/↓ move · Enter open or toggle · Esc close',
+    /** Hint line naming the tab keys. */
+    tabHint: 'Tab/←/→ switch · ↑/↓ move · Enter open or toggle · Esc close',
   },
   /** Model selector copy. */
   model: {
@@ -334,6 +377,7 @@ export const english: Copy = en
 
 /** Chinese interface copy. */
 export const chinese: Copy = {
+  moreRows: count => `另外 ${String(count)} 行`,
   banner: {
     title: 'DEEPSEEK HARNESS',
   },
@@ -354,6 +398,7 @@ export const chinese: Copy = {
     compactionFailed: '上下文压缩失败',
     interrupted: '尝试被中断',
     interrupting: '正在中断运行中的轮次…',
+    gap: (from, to) => `Transcript 事件缺口：${String(from)}..${String(to)} 缺失。`,
     hiddenLines: count => `… 另外 ${String(count)} 行`,
   },
   card: {
@@ -380,7 +425,18 @@ export const chinese: Copy = {
     planReview: '计划评审',
     permissionTitle: '权限预设',
     permissionCurrent: '当前',
+    permissionDescriptions: {
+      'read-only': '只读取文件；不写入，也不执行改变状态的命令。',
+      'workspace-write': '可在 workspace 内写入，并在沙箱中运行命令。',
+      'danger-full-access': '不使用沙箱；命令拥有完整主机访问权限。',
+      'custom': '当前的策略组合不匹配任何已配置预设。',
+      'auto': '实验性自动审查：高风险调用先经审查再执行。',
+    },
     progress: (index, total) => `${String(index)}/${String(total)}`,
+  },
+  completion: {
+    title: '补全',
+    hint: '↑/↓ 移动 · Tab 插入 · Enter 运行命令或插入 · Esc 关闭',
   },
   autocomplete: {
     directory: '目录',
@@ -412,7 +468,7 @@ export const chinese: Copy = {
     effort: '显示或设置推理强度',
     permission: '显示或切换权限预设',
     clear: '清空已渲染的 transcript',
-    reasoning: '切换推理显示',
+    reasoning: '循环或设置推理显示级别',
     cards: '在收缩、展开与隐藏工具卡之间循环',
     redraw: '重绘屏幕',
     exit: '关闭终端',
@@ -420,6 +476,7 @@ export const chinese: Copy = {
     queue: '把一条消息排到下一轮',
     config: '显示并修改配置',
     agentNotReady: 'Agent 尚未就绪。',
+    disposed: 'Agent 已被释放；正在关闭终端。',
     unknown: name => `未知命令：/${name}。输入 /help 查看可用命令。`,
     failed: message => `命令失败：${message}`,
     promptFailed: message => `提示准备失败：${message}`,
@@ -446,6 +503,7 @@ export const chinese: Copy = {
     provider: 'Provider',
     model: '模型',
     effort: '推理强度',
+    reasoning: '推理显示',
     permissions: '权限',
     state: '状态',
     tokens: 'Token',
@@ -481,6 +539,19 @@ export const chinese: Copy = {
     failed: message => `无法读取配置：${message}`,
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
+    tabHint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
+  },
+  reasoning: {
+    title: '推理显示',
+    levels: {
+      compact: '简洁',
+      standard: '标准',
+      detailed: '详细',
+      verbose: '完全展开',
+    },
+    label: level => `推理 ${level}`,
+    changed: level => `推理显示：${level}`,
+    available: values => `可用推理显示级别：${values}`,
   },
   model: {
     title: '选择模型',

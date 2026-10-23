@@ -26,6 +26,7 @@ import { ModelSelectorPanel, loadTuiModelCatalog, nextEffort, type TuiModelCatal
 import { TerminalAutocompleteProvider } from './autocomplete.ts'
 import { expandPromptMentions } from './mentions.ts'
 import { readClipboardImage } from './clipboard.ts'
+import { nextReasoningLevel, parseReasoningLevel, REASONING_LEVELS } from './reasoning.ts'
 import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer } from './interactions.ts'
 import { StatusModel } from './status.ts'
 import { TerminalTranscript } from './transcript.ts'
@@ -33,7 +34,9 @@ import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
 import { createPalette, type Palette } from './palette.ts'
 import { createTerminalSession, type TerminalSession } from './terminal.ts'
 import { TextPanel } from './components/dialogs.ts'
-import { ChoicePanel } from './components/choice.ts'
+import { BottomPanel } from './components/bottom.ts'
+import { BottomList } from './bottom-list.ts'
+import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
 import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
 import { PromptEditor } from './components/editor.ts'
@@ -54,6 +57,11 @@ export class TerminalApp {
   private status: StatusModel | undefined
   private composer: Composer | undefined
   private catalog: TuiModelCatalog | undefined
+  private autocomplete: TerminalAutocompleteProvider | undefined
+  private bottom: BottomPanel | undefined
+  private bottomList: BottomList | undefined
+  private completion: CompletionController | undefined
+  private configPanel: ConfigPanel | undefined
   private pendingImages: import('@deepseek-ai/dsh-llm').ContentBlock[] = []
   private markdownTheme: MarkdownTheme | undefined
   private started = false
@@ -226,6 +234,7 @@ export class TerminalApp {
       selection,
       config: this.config,
       effort: () => this.effectiveEffort(),
+      reasoning: () => this.transcript?.reasoningLevel() ?? 'standard',
       turnStartedAt: () => transcript.turnStartedAt(),
       requestRender: () => { tui.requestRender() },
     })
@@ -259,10 +268,10 @@ export class TerminalApp {
         status: () => { this.showStatus() },
         model: () => { void this.openModelSelector() },
         clear: () => { this.transcript?.clear() },
-        reasoning: () => { this.transcript?.toggleReasoning() },
+        reasoning: (argument) => { this.setReasoningVisibility(argument) },
         cards: () => { this.transcript?.toggleCards() },
         effort: argument => this.setEffort(argument),
-        permission: argument => this.choosePermission(argument),
+        permission: (argument) => { this.choosePermission(argument) },
         queue: argument => this.queuePrompt(argument),
         config: () => { void this.openConfigPanel() },
         redraw: () => { tui.renderNow(true) },
@@ -281,7 +290,18 @@ export class TerminalApp {
       overscroll: 'chain',
     })
     const pending = new PendingStrip(this.palette, () => status.snapshot())
-    const lower = new VStack([pending, editor, footer])
+    const bottom = new BottomPanel()
+    this.bottom = bottom
+    this.bottomList = new BottomList(this.palette, () => { this.syncDock(); tui.requestRender() })
+    this.completion = new CompletionController({
+      provider: () => this.autocomplete,
+      editor: () => this.editor,
+      palette: this.palette,
+      requestRender: () => { this.syncDock(); tui.requestRender() },
+      submit: (line) => { editor.onSubmit?.(line) },
+    })
+    editor.onChange = () => { this.completion?.schedule() }
+    const lower = new VStack([pending, editor, bottom, footer])
     if (isViewportTUI(tui)) {
       tui.setLayoutRoot(new VStack([
         { component: banner, basis: 'auto' },
@@ -298,6 +318,13 @@ export class TerminalApp {
         this.handleInterrupt()
         return { consume: true }
       }
+      if (this.configPanel !== undefined) {
+        this.configPanel.handleInput(data)
+        this.tui?.requestRender()
+        return { consume: true }
+      }
+      if (this.bottomList?.handleInput(data) === true) return { consume: true }
+      if (this.completion?.handleInput(data) === true) return { consume: true }
       if (matchesKey(data, 'escape') && this.editor?.getText() === '' && this.agent?.status === 'running' && !this.modal.hasActive()) {
         this.interruptTurn()
         return { consume: true }
@@ -307,7 +334,7 @@ export class TerminalApp {
         return { consume: true }
       }
       if (matchesKey(data, 'ctrl+r')) {
-        this.transcript?.toggleReasoning()
+        this.setReasoningVisibility(undefined)
         return { consume: true }
       }
       if (matchesKey(data, 'ctrl+l')) {
@@ -322,6 +349,7 @@ export class TerminalApp {
         void this.cycleEffort()
         return { consume: true }
       }
+      this.completion?.schedule()
       return undefined
     }))
     this.refreshAutocomplete()
@@ -357,7 +385,7 @@ export class TerminalApp {
     }))
     this.disposers.push(this.ctx.on('agent/disposed', ({ agent: subject }) => {
       if (subject !== this.agent) return
-      this.transcript?.notice('The agent was disposed; closing the terminal.', 'warning')
+      this.transcript?.notice(copy.commands.disposed, 'warning')
       this.requestExit(0)
     }))
     this.disposers.push(this.ctx.on('commands/change', () => { this.refreshAutocomplete() }))
@@ -406,7 +434,7 @@ export class TerminalApp {
   private appendEvent(event: SessionEvent): void {
     if (event.seq <= this.lastSeq) return
     if (this.lastSeq >= 0 && event.seq > this.lastSeq + 1) {
-      this.transcript?.notice(`Transcript gap: events ${String(this.lastSeq + 1)}..${String(event.seq - 1)} are missing.`, 'warning')
+      this.transcript?.notice(copy.notice.gap(this.lastSeq + 1, event.seq - 1), 'warning')
     }
     this.lastSeq = event.seq
     this.transcript?.append(event)
@@ -455,12 +483,12 @@ export class TerminalApp {
   private refreshAutocomplete(): void {
     /* v8 ignore next -- startTerminal() installs both before it first refreshes autocomplete */
     if (this.editor === undefined || this.composer === undefined) return
-    this.editor.setAutocompleteProvider(new TerminalAutocompleteProvider({
+    this.autocomplete = new TerminalAutocompleteProvider({
       ctx: this.ctx,
       agent: () => this.agent,
       cwd: () => this.status?.snapshot().cwd ?? process.cwd(),
       commands: () => this.composer?.slashCommands() ?? [],
-    }))
+    })
   }
 
   /** Cancel the running turn from the Esc binding, reporting the interrupt. */
@@ -501,9 +529,25 @@ export class TerminalApp {
     }
   }
 
+  /** Mirror the active bottom surface into the dock slot. */
+  private syncDock(): void {
+    if (this.configPanel !== undefined) {
+      this.bottom?.setContent(this.configPanel)
+      return
+    }
+    if (this.bottomList?.active === true) {
+      this.bottom?.setContent(this.bottomList)
+      return
+    }
+    if (this.completion?.active === true) {
+      this.bottom?.setContent(this.completion)
+      return
+    }
+    this.bottom?.setContent(undefined)
+  }
+
   /** Present the configuration panel over the composed services. */
   private async openConfigPanel(): Promise<void> {
-    const tui = this.requireTui()
     await this.ensureCatalog()
     const selection = this.selection?.current
     if (selection === undefined) {
@@ -512,11 +556,9 @@ export class TerminalApp {
     }
     const permissionPresets = this.ctx.get('permissionPresets')
     const pluginManager = this.ctx.get('pluginManager')
-    /* v8 ignore next -- reassigned by the modal continuation before any action can invoke it */
-    let finish = (): void => {}
     const actions: ConfigPanelActions = {
-      pickModel: () => { finish(); void this.openModelSelector(); return undefined },
-      pickEffort: () => { finish(); void this.setEffort(undefined); return undefined },
+      pickModel: () => { this.closeConfigPanel(); void this.openModelSelector(); return undefined },
+      pickEffort: () => { this.closeConfigPanel(); void this.setEffort(undefined); return undefined },
       setPermission: (value) => { this.dispatchCommand(`/permission ${value}`) },
       setBundle: async (name, enabled) => {
         /* v8 ignore next -- the bundle rows exist only when the manager was passed to the loader */
@@ -531,7 +573,7 @@ export class TerminalApp {
         }
       },
       toggleCards: () => { this.transcript?.toggleCards(); return undefined },
-      toggleReasoning: () => { this.transcript?.toggleReasoning(); return undefined },
+      toggleReasoning: () => { this.setReasoningVisibility(undefined); return undefined },
     }
     const display = {
       color: this.config.color,
@@ -550,27 +592,68 @@ export class TerminalApp {
       },
       permission: this.status?.snapshot().permission,
       display,
-      ...(permissionPresets === undefined ? {} : { permissionPresets }),
+      ...(permissionPresets === undefined
+        ? {}
+        : {
+          permissionPresets: {
+            catalog: () => ({
+              options: permissionPresets.catalog().options.map((option) => {
+                const description = option.description ?? copy.prompt.permissionDescriptions[option.value]
+                return description === undefined ? option : { ...option, description }
+              }),
+            }),
+          },
+        }),
       ...(pluginManager === undefined ? {} : { pluginManager }),
       actions,
     })
-    const container: { handle?: ReturnType<TUI['showOverlay']> } = {}
-    await this.modal.run(
-      () => { finish() },
-      () => new Promise<void>((resolve) => {
-        finish = () => { container.handle?.hide(); resolve() }
-        const panel = new ConfigPanel({
-          rows,
-          palette: this.palette,
-          handlers: {
-            onCancel: () => { this.tui?.requestRender(); finish() },
-            onNotice: (message) => { this.transcript?.notice(message) },
-            onRestartNotice: (message) => { this.transcript?.notice(message) },
-          },
-        })
-        container.handle = tui.showOverlay(panel, { width: '90%', maxHeight: '80%', anchor: 'center', margin: 1 })
-      }),
-    )
+
+    const panel = new ConfigPanel({
+      rows,
+      palette: this.palette,
+      handlers: {
+        onCancel: () => { this.closeConfigPanel() },
+        onNotice: (message) => { this.transcript?.notice(message) },
+        onRestartNotice: (message) => { this.transcript?.notice(message) },
+      },
+    })
+    this.completion?.close()
+    this.bottomList?.close()
+    this.configPanel = panel
+    this.syncDock()
+    this.tui?.requestRender()
+  }
+
+  /** Close the bottom-dock configuration panel. */
+  private closeConfigPanel(): void {
+    this.configPanel = undefined
+    this.syncDock()
+    this.tui?.requestRender()
+  }
+
+  /**
+   * Cycle or set the transcript's reasoning-visibility level.
+   * @param argument - an optional level id or localized name.
+   */
+  private setReasoningVisibility(argument: string | undefined): void {
+    const transcript = this.transcript
+    if (transcript === undefined) return
+    const query = argument?.trim()
+    let level
+    if (query === undefined || query === '') {
+      level = nextReasoningLevel(transcript.reasoningLevel())
+    } else {
+      const parsed = parseReasoningLevel(query)
+      if (parsed === undefined) {
+        this.transcript?.notice(copy.reasoning.available(REASONING_LEVELS.join(', ')))
+        return
+      }
+      level = parsed
+    }
+    transcript.setReasoningLevel(level)
+    this.footer?.invalidate()
+    this.tui?.requestRender()
+    this.transcript?.notice(copy.reasoning.changed(copy.reasoning.levels[level]))
   }
 
   /** Push the current turn and modal state to the terminal's own status reporting. */
@@ -590,6 +673,18 @@ export class TerminalApp {
   /** Handle Ctrl+C: close a modal, cancel a turn, or exit. */
   private handleInterrupt(): void {
     if (this.modal.cancelCurrent()) return
+    if (this.configPanel !== undefined) {
+      this.closeConfigPanel()
+      return
+    }
+    if (this.bottomList?.active === true) {
+      this.bottomList.close()
+      return
+    }
+    if (this.completion?.active === true) {
+      this.completion.close()
+      return
+    }
     const agent = this.agent
     if (agent !== undefined && agent.status === 'running') {
       agent.cancel({ kind: 'user' })
@@ -714,11 +809,14 @@ export class TerminalApp {
   private permissionChoices(): { value: string; label: string; description?: string }[] {
     const presets = this.ctx.get('permissionPresets')
     if (presets === undefined) return []
-    return presets.catalog().options.map(option => ({
-      value: option.value,
-      label: option.name,
-      ...(option.description === undefined ? {} : { description: option.description }),
-    }))
+    return presets.catalog().options.map((option) => {
+      const description = option.description ?? copy.prompt.permissionDescriptions[option.value]
+      return {
+        value: option.value,
+        label: option.name,
+        ...(description === undefined ? {} : { description }),
+      }
+    })
   }
 
   /**
@@ -746,25 +844,25 @@ export class TerminalApp {
   private dispatchCommand(text: string): void {
     const agent = this.agent
     if (agent === undefined) {
-      this.transcript?.notice('The agent is not ready yet.')
+      this.transcript?.notice(copy.commands.agentNotReady)
       return
     }
     const controller = new AbortController()
     void this.ctx.commands.execute(agent, text, [], controller.signal).then(
       (result) => {
-        if (result === undefined) this.transcript?.notice(`Unknown command: ${text}`)
+        if (result === undefined) this.transcript?.notice(copy.commands.unknown(text.replace(/^\//u, '')))
       },
       (error: unknown) => {
-        this.transcript?.notice(`Command failed: ${error instanceof Error ? error.message : String(error)}`)
+        this.transcript?.notice(copy.commands.failed(error instanceof Error ? error.message : String(error)))
       },
     )
   }
 
   /**
-   * Show the permission-preset chooser, or dispatch a preset name directly.
+   * Show the permission-preset chooser in the bottom dock, or dispatch a preset name directly.
    * @param argument - the optional `/permission` argument.
    */
-  private async choosePermission(argument: string | undefined): Promise<void> {
+  private choosePermission(argument: string | undefined): void {
     const query = argument?.trim()
     if (query !== undefined && query !== '') {
       this.dispatchCommand(`/permission ${query}`)
@@ -776,39 +874,23 @@ export class TerminalApp {
       return
     }
     const current = this.status?.snapshot().permission
-    const tui = this.requireTui()
-    let handle: ReturnType<TUI['showOverlay']> | undefined
-    await this.modal.run(
-      () => { handle?.hide() },
-      () => new Promise<void>((resolve) => {
-        const panel = new ChoicePanel(
-          copy.prompt.permissionTitle,
-          text => this.palette.heading(text),
-          choices.map(item => ({
-            value: item.value,
-            label: item.label,
-            ...(item.value === current
-              ? { description: copy.prompt.permissionCurrent }
-              : item.description === undefined ? {} : { description: item.description }),
-          })),
-          createSelectListTheme(this.palette),
-          (item) => {
-            handle?.hide()
-            this.dispatchCommand(`/permission ${item.value}`)
-            resolve()
-          },
-          () => {
-            handle?.hide()
-            resolve()
-          },
-        )
-        handle = tui.showOverlay(panel, { width: '60%', maxHeight: '60%', anchor: 'center', margin: 1 })
-      }),
+    this.completion?.close()
+    this.bottomList?.open(
+      copy.prompt.permissionTitle,
+      choices.map(item => ({
+        value: item.value,
+        label: item.label,
+        ...(item.value === current
+          ? { description: copy.prompt.permissionCurrent }
+          : item.description === undefined ? {} : { description: item.description }),
+      })),
+      (item) => { this.dispatchCommand(`/permission ${item.value}`) },
+      () => {},
     )
   }
 
   /**
-   * Show the effort chooser, or apply the argument directly.
+   * Show the effort chooser in the bottom dock, or apply the argument directly.
    * @param argument - the optional `/effort` argument.
    */
   private async setEffort(argument: string | undefined): Promise<void> {
@@ -827,32 +909,16 @@ export class TerminalApp {
       this.applyEffort(match.value)
       return
     }
-    const tui = this.requireTui()
-    let handle: ReturnType<TUI['showOverlay']> | undefined
-    await this.modal.run(
-      () => { handle?.hide() },
-      () => new Promise<void>((resolve) => {
-        const panel = new ChoicePanel(
-          copy.model.effortTitle,
-          text => this.palette.heading(text),
-          choices.map(item => ({
-            value: item.value,
-            label: item.label,
-            ...(item.description === undefined ? {} : { description: item.description }),
-          })),
-          createSelectListTheme(this.palette),
-          (item) => {
-            handle?.hide()
-            this.applyEffort(item.value)
-            resolve()
-          },
-          () => {
-            handle?.hide()
-            resolve()
-          },
-        )
-        handle = tui.showOverlay(panel, { width: '60%', maxHeight: '60%', anchor: 'center', margin: 1 })
-      }),
+    this.completion?.close()
+    this.bottomList?.open(
+      copy.model.effortTitle,
+      choices.map(item => ({
+        value: item.value,
+        label: item.label,
+        ...(item.description === undefined ? {} : { description: item.description }),
+      })),
+      (item) => { this.applyEffort(item.value) },
+      () => {},
     )
   }
 
@@ -952,7 +1018,7 @@ export class TerminalApp {
     const agent = this.agent
     /* v8 ignore next -- the status panel opens only after the interface exists */
     if (state === undefined || agent === undefined) {
-      this.showText(copy.panel.status, ['The agent is not ready yet.'])
+      this.showText(copy.panel.status, [copy.commands.agentNotReady])
       return
     }
     const labels = copy.statusPanel
@@ -968,6 +1034,7 @@ export class TerminalApp {
       /* v8 ignore stop */
       `${labels.model.padEnd(12, ' ')} ${state.model}`,
       `${labels.effort.padEnd(12, ' ')} ${effort}`,
+      `${labels.reasoning.padEnd(12, ' ')} ${copy.reasoning.levels[this.transcript?.reasoningLevel() ?? 'standard']}`,
       `${labels.permissions.padEnd(12, ' ')} ${state.permission ?? 'unknown'}`,
       `${labels.state.padEnd(12, ' ')} ${state.status}`,
       `${labels.tokens.padEnd(12, ' ')} ↑${String(state.inputTokens)} ↓${String(state.outputTokens)}`,

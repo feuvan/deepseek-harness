@@ -14,6 +14,7 @@ function snapshot(overrides: Partial<FooterSnapshot> = {}): FooterSnapshot {
     model: 'alpha/m-1',
     effort: 'high',
     effortImplicit: false,
+    reasoning: copy.reasoning.label('standard'),
     inputTokens: 0,
     outputTokens: 0,
     cacheRate: undefined,

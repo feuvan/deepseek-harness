@@ -14,9 +14,15 @@ import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
 import type { Composer } from '../../src/commands.ts'
 import type { Footer } from '../../src/components/footer.ts'
-import { copy } from '../../src/copy.ts'
+import { copy, setCopyLocale } from '../../src/copy.ts'
 import type { ComposerDeps } from '../../src/commands.ts'
 import type { PromptEditor } from '../../src/components/editor.ts'
+import type { BottomPanel } from '../../src/components/bottom.ts'
+import type { BottomList } from '../../src/bottom-list.ts'
+import type { CompletionController } from '../../src/completion.ts'
+import type { ConfigPanel } from '../../src/config-panel.ts'
+import type { ConfigRow } from '../../src/config-panel.ts'
+import type { AutocompleteItem } from '@earendil-works/pi-tui'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AdmittedPromptContentPart, ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
@@ -222,6 +228,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  setCopyLocale('en')
 })
 
 describe('TerminalApp startup', () => {
@@ -625,7 +632,7 @@ describe('TerminalApp input handling', () => {
     expect(harness.agent.received).toEqual(['hello there', 'steer this'])
   })
 
-  it('cycles cards, reasoning, and repaints from control keys', async () => {
+  it('cycles cards, reasoning visibility, and repaints from control keys', async () => {
     const harness = await lifecycleHarness()
     harness.start()
     await harness.awaitStarted()
@@ -642,15 +649,30 @@ describe('TerminalApp input handling', () => {
         revision: 1,
         index: 0,
         time: 0,
-        chunk: { type: 'reasoning-delta', index: 0, text: 'hidden reasoning' },
+        chunk: { type: 'reasoning-delta', index: 0, text: 'thought one\nthought two\nthought three\nthought four\nthought five\nthought six' },
       },
     })
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
 
-    expect(harness.transcriptText()).toContain('hidden reasoning')
+    expect(transcript.reasoningLevel()).toBe('standard')
+    expect(harness.transcriptText()).toContain('thought four')
+    expect(harness.transcriptText()).not.toContain('thought five')
+    expect(harness.transcriptText()).toContain(copy.notice.hiddenLines(2))
+
     harness.terminal.headless.press('\x12')
-    expect(harness.transcriptText()).not.toContain('hidden reasoning')
+    expect(transcript.reasoningLevel()).toBe('detailed')
+    expect(harness.transcriptText()).toContain('thought six')
+    expect(footerText(harness.app)).toContain(copy.reasoning.label(copy.reasoning.levels.detailed))
+    expect(harness.transcriptText()).toContain(copy.reasoning.changed(copy.reasoning.levels.detailed))
+
     harness.terminal.headless.press('\x12')
-    expect(harness.transcriptText()).toContain('hidden reasoning')
+    expect(transcript.reasoningLevel()).toBe('verbose')
+    harness.terminal.headless.press('\x12')
+    expect(transcript.reasoningLevel()).toBe('compact')
+    expect(harness.transcriptText()).not.toContain('thought two')
+    expect(harness.transcriptText()).toContain(copy.notice.hiddenLines(5))
+    harness.terminal.headless.press('\x12')
+    expect(transcript.reasoningLevel()).toBe('standard')
 
     harness.ctx.emit('session/event', harness.session, toolCall(1, 1, 1, 'call-1', 'echo', '{}'))
     harness.terminal.headless.press('\x0f')
@@ -1254,8 +1276,7 @@ describe('TerminalApp autocomplete wiring', () => {
     const harness = await lifecycleHarness({ values: { workingDirectory: '/project' } })
     harness.start()
     await harness.awaitStarted()
-    const editor = privateMember(harness.app, 'editor') as PromptEditor
-    const provider = Reflect.get(editor, 'autocompleteProvider') as TerminalAutocompleteProvider
+    const provider = privateValue(harness.app, 'autocomplete') as TerminalAutocompleteProvider
     const deps = Reflect.get(provider, 'deps') as TerminalAutocompleteDeps
 
     expect(provider).toBeInstanceOf(TerminalAutocompleteProvider)
@@ -1273,8 +1294,7 @@ describe('TerminalApp autocomplete wiring', () => {
     const harness = await lifecycleHarness()
     harness.start()
     await harness.awaitStarted()
-    const editor = privateMember(harness.app, 'editor') as PromptEditor
-    const provider = Reflect.get(editor, 'autocompleteProvider') as TerminalAutocompleteProvider
+    const provider = privateValue(harness.app, 'autocomplete') as TerminalAutocompleteProvider
 
     const suggestions = await provider.getSuggestions(['@src'], 0, 4, { signal: new AbortController().signal })
 
@@ -1394,6 +1414,79 @@ function composerOf(app: TerminalApp): Composer {
   return privateMember(app, 'composer') as Composer
 }
 
+/** @returns the application's bottom dock. */
+function bottomOf(app: TerminalApp): BottomPanel {
+  return privateMember(app, 'bottom') as BottomPanel
+}
+
+/** @returns the application's bottom-dock chooser. */
+function bottomListOf(app: TerminalApp): BottomList {
+  return privateMember(app, 'bottomList') as BottomList
+}
+
+/** @returns the application's completion controller. */
+function completionOf(app: TerminalApp): CompletionController {
+  return privateMember(app, 'completion') as CompletionController
+}
+
+/** @returns the application's dock configuration panel. */
+function configPanelOf(app: TerminalApp): ConfigPanel | undefined {
+  return privateMember(app, 'configPanel') as ConfigPanel | undefined
+}
+
+/** @returns the application's composer editor. */
+function editorOf(app: TerminalApp): PromptEditor {
+  return privateMember(app, 'editor') as PromptEditor
+}
+
+/** @returns the dock content rendered as plain text. */
+function dockText(app: TerminalApp): string {
+  return bottomOf(app).render(200).join('\n')
+}
+
+/**
+ * Wait until the rendered screen shows one dock needle.
+ * @param harness - the application harness.
+ * @param needle - required visible text.
+ * @returns the screen lines.
+ */
+async function waitForDock(harness: LifecycleHarness, needle: string): Promise<readonly string[]> {
+  return waitForScreen(harness.terminal.headless, needle)
+}
+
+/**
+ * Focus and activate one configuration row, waiting for the panel to settle.
+ * @param harness - the application harness.
+ * @param panel - the presented configuration panel.
+ * @param section - tab section the row lives in.
+ * @param id - row identity.
+ */
+async function pressConfigRow(
+  harness: LifecycleHarness,
+  panel: ConfigPanel,
+  section: ConfigRow['section'],
+  id: string,
+): Promise<void> {
+  focusConfigRow(panel, section, id)
+  await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+  harness.terminal.headless.press('\r')
+}
+
+/**
+ * Point the configuration panel at one row without walking the tab bar.
+ * @param panel - the presented configuration panel.
+ * @param section - tab section the row lives in.
+ * @param id - row identity.
+ */
+function focusConfigRow(panel: ConfigPanel, section: ConfigRow['section'], id: string): void {
+  const rows = Reflect.get(panel, 'rows') as readonly ConfigRow[]
+  const index = rows.filter(row => row.section === section).findIndex(row => row.id === id)
+  if (index < 0) throw new Error(`configuration row ${id} is missing`)
+  Reflect.set(panel, 'section', section)
+  Reflect.set(panel, 'cursor', index)
+  Reflect.set(panel, 'scroll', 0)
+}
+
 describe('TerminalApp effort command', () => {
   it('prefetches the catalog and shows the advertised default effort in the footer', async () => {
     const harness = await lifecycleHarness({
@@ -1454,7 +1547,7 @@ describe('TerminalApp effort command', () => {
     expect(footerText(harness.app)).not.toContain('m-1 · high')
   })
 
-  it('opens the effort chooser and applies the highlighted level', async () => {
+  it('opens the effort chooser in the bottom dock and applies the highlighted level', async () => {
     const harness = await lifecycleHarness({
       agentOptions: { provider: 'alpha', model: 'm-1' },
       llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
@@ -1463,15 +1556,22 @@ describe('TerminalApp effort command', () => {
     await harness.awaitStarted()
 
     await submitLine(harness, '/effort')
-    const panel = await overlayNumber(harness, 1)
-    expect(panel.render(100).join('\n')).toContain(copy.model.effortTitle)
-    expect(panel.render(100).join('\n')).toContain('Low')
+    await waitForDock(harness, copy.model.effortTitle)
 
-    press(panel, '\u001b[B')
-    press(panel, '\r')
+    expect(harness.overlays.components).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.model.effortTitle)
+    expect(dock).toContain('Low')
+    expect(dock).toContain('High')
+    expect(dock).toContain(copy.prompt.selectHint)
+
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\r')
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('high')) })
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
+    expect(footerText(harness.app)).toContain('m-1 · high')
   })
 
   it('cancels the effort chooser on Escape', async () => {
@@ -1483,29 +1583,31 @@ describe('TerminalApp effort command', () => {
     await harness.awaitStarted()
 
     await submitLine(harness, '/effort')
-    const panel = await overlayNumber(harness, 1)
-    expect(panel.render(100).join('\n')).toContain('Low')
+    await waitForDock(harness, copy.model.effortTitle)
 
-    press(panel, '\u001b')
+    harness.terminal.headless.press('\u001b')
 
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
     expect(harness.transcriptText()).not.toContain('Reasoning effort:')
+    expect(harness.overlays.components).toEqual([])
   })
 
-  it('closes the effort chooser through the modal cancel path', async () => {
+  it('closes the effort chooser before cancelling a turn on Ctrl+C', async () => {
     const harness = await lifecycleHarness({
       agentOptions: { provider: 'alpha', model: 'm-1' },
       llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
     })
     harness.start()
     await harness.awaitStarted()
+    harness.agent.setStatus('running')
 
     await submitLine(harness, '/effort')
-    await overlayNumber(harness, 1)
+    await waitForDock(harness, copy.model.effortTitle)
 
     harness.terminal.headless.press('\x03')
 
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    expect(bottomOf(harness.app).active).toBe(false)
+    expect(harness.agent.cancels).toEqual([])
     expect(harness.exit.codes).toEqual([])
   })
 
@@ -1766,7 +1868,7 @@ describe('TerminalApp permission command', () => {
     expect(harness.overlays.components).toEqual([])
   })
 
-  it('presents the chooser and dispatches the selected preset once', async () => {
+  it('presents the permission chooser in the bottom dock and dispatches the selected preset once', async () => {
     const harness = await lifecycleHarness({
       ...permissionOptions(),
       values: { permissions: { currentValue: 'workspace-write' } },
@@ -1775,29 +1877,50 @@ describe('TerminalApp permission command', () => {
     await harness.awaitStarted()
 
     await submitLine(harness, '/permission')
-    const panel = await overlayNumber(harness, 1)
-    const text = panel.render(100).join('\n')
-    expect(text).toContain(copy.prompt.permissionTitle)
-    expect(text).toContain(copy.prompt.permissionCurrent)
-    expect(text).toContain('Read Only')
+    await waitForDock(harness, copy.prompt.permissionTitle)
 
-    press(panel, '\r')
+    expect(harness.overlays.components).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.prompt.permissionTitle)
+    expect(dock).toContain(copy.prompt.permissionCurrent)
+    expect(dock).toContain('Read Only')
+    expect(dock).toContain('Full Access')
+
+    harness.terminal.headless.press('\r')
 
     await vi.waitFor(() => { expect(harness.commands.executed).toEqual(['/permission read-only']) })
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
   })
 
-  it('cancels the chooser without dispatching', async () => {
+  it('cancels the permission chooser without dispatching', async () => {
     const harness = await lifecycleHarness(permissionOptions())
     harness.start()
     await harness.awaitStarted()
 
     await submitLine(harness, '/permission')
-    const panel = await overlayNumber(harness, 1)
-    press(panel, '\u001b')
+    await waitForDock(harness, copy.prompt.permissionTitle)
 
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    harness.terminal.headless.press('\u001b')
+
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
     expect(harness.commands.executed).toEqual([])
+  })
+
+  it('closes the permission chooser before cancelling a turn on Ctrl+C', async () => {
+    const harness = await lifecycleHarness(permissionOptions())
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    await submitLine(harness, '/permission')
+    await waitForDock(harness, copy.prompt.permissionTitle)
+
+    harness.terminal.headless.press('\x03')
+
+    expect(bottomOf(harness.app).active).toBe(false)
+    expect(harness.agent.cancels).toEqual([])
+    expect(harness.exit.codes).toEqual([])
   })
 
   it('stays silent when the dispatched permission command succeeds', async () => {
@@ -1813,21 +1936,6 @@ describe('TerminalApp permission command', () => {
 
     expect(harness.transcriptText()).not.toContain('Command failed')
     expect(harness.transcriptText()).not.toContain('Unknown command')
-  })
-
-  it('closes the permission chooser through the modal cancel path', async () => {
-    const harness = await lifecycleHarness(permissionOptions())
-    harness.start()
-    await harness.awaitStarted()
-
-    await submitLine(harness, '/permission')
-    await overlayNumber(harness, 1)
-
-    harness.terminal.headless.press('\x03')
-
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
-    expect(harness.commands.executed).toEqual([])
-    expect(harness.exit.codes).toEqual([])
   })
 
   it('reports an unknown dispatched permission command', async () => {
@@ -1869,10 +1977,36 @@ describe('TerminalApp permission command', () => {
     const deps = Reflect.get(composerOf(harness.app), 'deps') as ComposerDeps
 
     expect(deps.choices?.permissions?.()).toEqual([
-      { value: 'read-only', label: 'Read Only' },
+      {
+        value: 'read-only',
+        label: 'Read Only',
+        description: copy.prompt.permissionDescriptions['read-only'],
+      },
       { value: 'workspace-write', label: 'Workspace Write', description: 'writes inside the workspace' },
       { value: 'full', label: 'Full Access', description: 'writes anywhere' },
     ])
+  })
+
+  it('lists a catalog preset without a description', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        permissionPresets: {
+          catalog: () => ({
+            options: [{ value: 'weird', name: 'Weird' }],
+            defaultOptions: [],
+            defaultPreset: 'weird',
+          }),
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const deps = Reflect.get(composerOf(harness.app), 'deps') as ComposerDeps
+
+    expect(deps.choices?.permissions?.()).toEqual([{ value: 'weird', label: 'Weird' }])
+
+    await submitLine(harness, '/permission')
+    await waitForDock(harness, 'Weird')
   })
 
   it('offers no permission choices without the service', async () => {
@@ -2350,30 +2484,6 @@ function pluginManagerDouble(
   return { service, switched }
 }
 
-/**
- * Read the rows the presented configuration panel holds.
- * @param panel - the presented component.
- * @returns the configured rows.
- */
-function configRows(panel: Component): readonly { id: string; readOnly: boolean }[] {
-  return Reflect.get(panel, 'rows') as readonly { id: string; readOnly: boolean }[]
-}
-
-/**
- * Highlight one configuration row and activate it, settling the action.
- * @param panel - the presented configuration panel.
- * @param id - stable row identity.
- */
-async function activateConfigRow(panel: Component, id: string): Promise<void> {
-  const index = configRows(panel).findIndex(row => row.id === id)
-  if (index < 0) throw new Error(`configuration row ${id} is missing`)
-  Reflect.set(panel, 'index', 0)
-  for (let step = 0; step < index; step += 1) press(panel, '\u001b[B')
-  press(panel, '\r')
-  await Promise.resolve()
-  await Promise.resolve()
-}
-
 /** The permission catalog the configuration panel lists. */
 const CONFIG_PRESETS = {
   catalog: () => ({
@@ -2384,29 +2494,60 @@ const CONFIG_PRESETS = {
   }),
 }
 
-describe('TerminalApp /config', () => {
-  it('presents the configuration rows and closes on Escape', async () => {
+describe('TerminalApp /config dock', () => {
+  it('presents the tabbed configuration panel in the dock and closes on Escape', async () => {
     const harness = await lifecycleHarness()
     harness.start()
     await harness.awaitStarted()
 
     await submitLine(harness, '/config')
-    const panel = await overlayNumber(harness, 1)
+    await waitForDock(harness, copy.config.modelSection)
 
-    expect(panel.render(100).join('\n')).toContain(copy.config.title)
-    expect(configRows(panel).map(row => row.id)).toContain('permissions.unavailable')
-    expect(configRows(panel).map(row => row.id)).toContain('experimental.unavailable')
+    expect(harness.overlays.components).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+    const panel = configPanelOf(harness.app)
+    expect(panel).toBeDefined()
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.config.modelSection)
+    expect(dock).toContain(copy.config.permissionSection)
+    expect(dock).toContain(copy.config.tabHint)
+    expect(panel?.render(100)).toHaveLength(10)
 
-    await activateConfigRow(panel, 'model.current')
-    await activateConfigRow(panel, 'display.cards')
-    await activateConfigRow(panel, 'display.reasoning')
-    press(panel, '\u001b')
+    harness.terminal.headless.press('\u001b')
 
-    await vi.waitFor(() => { expect(harness.overlays.handles[0]?.hidden()).toBe(true) })
-    expect(harness.exit.codes).toEqual([])
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
+    expect(configPanelOf(harness.app)).toBeUndefined()
   })
 
-  it('dispatches permission, bundle, model, and effort changes from the rows', async () => {
+  it('switches tabs and scrolls rows from the dock keys', async () => {
+    const options = Array.from({ length: 12 }, (_, index) => ({ value: `preset-${String(index)}`, name: `Preset ${String(index)}` }))
+    const harness = await lifecycleHarness({
+      services: { permissionPresets: { catalog: () => ({ options }) } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+
+    harness.terminal.headless.press('\t')
+    expect(dockText(harness.app)).toContain(copy.config.permissionSection)
+    expect(dockText(harness.app)).toContain('Preset 0')
+
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    panel.handleInput('\u001b[6~')
+    expect(dockText(harness.app)).toContain(copy.moreRows(3))
+    expect(dockText(harness.app)).not.toContain('Preset 0')
+
+    panel.handleInput('\u001b[5~')
+    expect(dockText(harness.app)).toContain('Preset 0')
+
+    harness.terminal.headless.press('\u001b[Z')
+    expect(dockText(harness.app)).toContain(copy.config.modelSection)
+  })
+
+  it('activates rows and closes the dock before nested selectors', async () => {
     const manager = pluginManagerDouble(
       [
         { name: 'bundle-a', optional: true, enabled: false },
@@ -2426,67 +2567,77 @@ describe('TerminalApp /config', () => {
       },
     )
     const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
       services: { permissionPresets: CONFIG_PRESETS, pluginManager: manager.service },
       execute: async () => ({ commandId: CommandId('command-1'), result: { kind: 'success' } }),
       values: { permissions: { currentValue: 'workspace-write' } },
     })
     harness.start()
     await harness.awaitStarted()
-
     await submitLine(harness, '/config')
-    const panel = await overlayNumber(harness, 1)
-    const ids = configRows(panel).map(row => row.id)
-    expect(ids).toContain('permission.workspace-write')
-    expect(ids).toContain('bundle.bundle-a')
-    expect(ids).not.toContain('bundle.bundle-core')
-    expect(panel.render(100).join('\n')).toContain('owned by policy')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
 
-    await activateConfigRow(panel, 'permission.workspace-write')
+    await pressConfigRow(harness, panel, 'permissions', 'permission.workspace-write')
     await vi.waitFor(() => { expect(harness.commands.executed).toEqual(['/permission workspace-write']) })
 
-    await activateConfigRow(panel, 'bundle.bundle-a')
+    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-a')
     await vi.waitFor(() => { expect(manager.switched).toEqual([{ name: 'bundle-a', enabled: true }]) })
 
-    await activateConfigRow(panel, 'bundle.bundle-b')
+    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-b')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.restartRequired) })
+    await vi.waitFor(() => { expect(dockText(harness.app)).toContain(copy.config.restartMarker) })
 
-    await activateConfigRow(panel, 'bundle.bundle-c')
-    await vi.waitFor(() => {
-      expect(harness.transcriptText()).toContain(copy.config.writeFailed('refused'))
-    })
+    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-c')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('refused')) })
 
-    await activateConfigRow(panel, 'bundle.bundle-err')
-    await activateConfigRow(panel, 'bundle.bundle-string')
-    await vi.waitFor(() => {
-      expect(harness.transcriptText().match(/Command failed|Configuration was not saved/gu)?.length).toBeGreaterThan(0)
-    })
-    expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed'))
+    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-err')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed')) })
 
-    await activateConfigRow(panel, 'bundle.bundle-ro')
+    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-string')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed')) })
+
+    focusConfigRow(panel, 'experimental', 'bundle.bundle-ro')
+    expect(dockText(harness.app)).toContain('owned by policy')
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+    harness.terminal.headless.press('\r')
     expect(manager.switched.map(entry => entry.name)).not.toContain('bundle-ro')
 
-    await activateConfigRow(panel, 'model.change')
-    const selector = await overlayNumber(harness, 2)
+    await pressConfigRow(harness, panel, 'display', 'display.cards')
+    await pressConfigRow(harness, panel, 'display', 'display.reasoning')
+    expect(privateValue(harness.app, 'transcript')).toBeDefined()
+
+    await pressConfigRow(harness, panel, 'model', 'model.change')
+    const selector = await overlayNumber(harness, 1)
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
     press(selector, '\u001b')
-    await vi.waitFor(() => { expect(harness.overlays.handles[1]?.hidden()).toBe(true) })
 
     await submitLine(harness, '/config')
-    const second = await overlayNumber(harness, 3)
-    await activateConfigRow(second, 'effort.change')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.noEffort) })
+    await waitForDock(harness, copy.config.modelSection)
+    const reopened = configPanelOf(harness.app)
+    if (reopened === undefined) throw new Error('configuration panel was not presented again')
+    await pressConfigRow(harness, reopened, 'model', 'effort.change')
+
+    await waitForDock(harness, copy.model.effortTitle)
+    expect(bottomOf(harness.app).active).toBe(true)
+    harness.terminal.headless.press('\u001b')
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
   })
 
-  it('closes the configuration panel through the modal cancel path', async () => {
+  it('closes the configuration panel through Ctrl+C', async () => {
     const harness = await lifecycleHarness()
     harness.start()
     await harness.awaitStarted()
 
     await submitLine(harness, '/config')
-    await overlayNumber(harness, 1)
+    await waitForDock(harness, copy.config.modelSection)
 
     harness.terminal.headless.press('\x03')
 
-    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    expect(bottomOf(harness.app).active).toBe(false)
+    expect(configPanelOf(harness.app)).toBeUndefined()
     expect(harness.exit.codes).toEqual([])
   })
 
@@ -2516,5 +2667,260 @@ describe('TerminalApp /config', () => {
     const open = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
 
     await expect(open.call(harness.app)).rejects.toThrow('bundle load failed')
+  })
+})
+
+describe('TerminalApp bottom-dock completion', () => {
+  it('shows slash-command completions under the composer', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    harness.terminal.headless.press('/')
+    const lines = await waitForDock(harness, copy.completion.title)
+
+    expect(harness.overlays.components).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+    expect(dockText(harness.app)).toContain('help')
+    const promptLine = lines.findIndex(line => line.includes('dsh>'))
+    const dockLine = lines.findIndex(line => line.includes(copy.completion.title))
+    const footerLine = lines.findIndex(line => line.startsWith('session '))
+    expect(promptLine).toBeLessThan(dockLine)
+    expect(dockLine).toBeLessThan(footerLine)
+  })
+
+  it('filters the suggestions as the composer text grows', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    harness.terminal.headless.press('/')
+    await waitForDock(harness, copy.completion.title)
+    harness.terminal.headless.press('h')
+    harness.terminal.headless.press('e')
+
+    await vi.waitFor(() => {
+      expect(dockText(harness.app)).toContain('help')
+      expect(dockText(harness.app)).not.toContain('status')
+    })
+  })
+
+  it('inserts the highlighted command on Tab and closes', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('/')
+    harness.terminal.headless.press('s')
+    harness.terminal.headless.press('t')
+    await waitForDock(harness, copy.completion.title)
+
+    harness.terminal.headless.press('\t')
+
+    await vi.waitFor(() => { expect(editorOf(harness.app).getText()).toBe('/status ') })
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+
+  it('runs the highlighted command immediately on Enter', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('/')
+    harness.terminal.headless.press('s')
+    harness.terminal.headless.press('t')
+    await waitForDock(harness, copy.completion.title)
+
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(editorOf(harness.app).getText()).toBe('') })
+    expect(bottomOf(harness.app).active).toBe(false)
+    await vi.waitFor(() => { expect(harness.overlays.components.length).toBeGreaterThan(0) })
+  })
+
+  it('closes on Escape and on Ctrl+C without interrupting the turn', async () => {
+    const escapeHarness = await lifecycleHarness()
+    escapeHarness.start()
+    await escapeHarness.awaitStarted()
+    escapeHarness.agent.setStatus('running')
+    escapeHarness.terminal.headless.press('/')
+    await waitForDock(escapeHarness, copy.completion.title)
+
+    escapeHarness.terminal.headless.press('\u001b')
+
+    expect(bottomOf(escapeHarness.app).active).toBe(false)
+    expect(escapeHarness.agent.cancels).toEqual([])
+
+    const interruptHarness = await lifecycleHarness()
+    interruptHarness.start()
+    await interruptHarness.awaitStarted()
+    interruptHarness.terminal.headless.press('/')
+    await waitForDock(interruptHarness, copy.completion.title)
+
+    interruptHarness.terminal.headless.press('\x03')
+
+    expect(bottomOf(interruptHarness.app).active).toBe(false)
+    expect(interruptHarness.exit.codes).toEqual([])
+  })
+
+  it('moves the highlight with arrows and pages', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('/')
+    await waitForDock(harness, copy.completion.title)
+    const completion = completionOf(harness.app)
+
+    harness.terminal.headless.press('\u001b[A')
+    expect(Reflect.get(completion, 'index')).toBeGreaterThan(0)
+    const afterUp = Reflect.get(completion, 'index') as number
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(completion, 'index')).toBe((afterUp + 1) % (Reflect.get(completion, 'items') as AutocompleteItem[]).length)
+  })
+
+  it('completes a workspace mention once the file index answers', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        fileReferences: {
+          list: async () => [
+            { path: 'src/a.ts', kind: 'file' },
+            { path: 'src/b.ts', kind: 'file' },
+          ],
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    for (const key of '@sr') harness.terminal.headless.press(key)
+    await waitForDock(harness, 'src/a.ts')
+
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(editorOf(harness.app).getText()).toBe('@src/a.ts') })
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+
+  it('closes the suggestions when the provider has none', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('/')
+    await waitForDock(harness, copy.completion.title)
+
+    for (const key of 'zzz') harness.terminal.headless.press(key)
+
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
+  })
+})
+
+describe('TerminalApp dock synchronization', () => {
+  it('prefers the configuration panel, then the list, then completion, then clears', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        fileReferences: { list: async () => [{ path: 'src/a.ts', kind: 'file' }] },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const sync = privateValue(harness.app, 'syncDock') as () => void
+    const syncDock = (): void => { sync.call(harness.app) }
+    const completion = completionOf(harness.app)
+    const list = bottomListOf(harness.app)
+
+    editorOf(harness.app).setText('@sr')
+    await completion.refresh(true)
+    syncDock()
+    expect(dockText(harness.app)).toContain(copy.completion.title)
+
+    list.open('List title', [{ value: 'one', label: 'One' }], () => {}, () => {})
+    syncDock()
+    expect(dockText(harness.app)).toContain('List title')
+    expect(dockText(harness.app)).not.toContain(copy.completion.title)
+
+    const openConfig = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
+    await openConfig.call(harness.app)
+    expect(dockText(harness.app)).toContain(copy.config.modelSection)
+    expect(completion.active).toBe(false)
+    expect(list.active).toBe(false)
+
+    const closeConfig = privateValue(harness.app, 'closeConfigPanel') as () => void
+    closeConfig.call(harness.app)
+    syncDock()
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+})
+
+describe('TerminalApp reasoning visibility', () => {
+  it('sets and cycles the reasoning level through the command', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    await submitLine(harness, '/reasoning detailed')
+    await vi.waitFor(() => { expect(transcript.reasoningLevel()).toBe('detailed') })
+    expect(harness.transcriptText()).toContain(copy.reasoning.changed(copy.reasoning.levels.detailed))
+    expect(footerText(harness.app)).toContain(copy.reasoning.label(copy.reasoning.levels.detailed))
+
+    await submitLine(harness, '/reasoning')
+    await vi.waitFor(() => { expect(transcript.reasoningLevel()).toBe('verbose') })
+  })
+
+  it('parses the localized level names', async () => {
+    setCopyLocale('zh')
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    await submitLine(harness, '/reasoning 详细')
+
+    await vi.waitFor(() => { expect(transcript.reasoningLevel()).toBe('detailed') })
+    expect(harness.transcriptText()).toContain(copy.reasoning.changed(copy.reasoning.levels.detailed))
+    expect(footerText(harness.app)).toContain(copy.reasoning.label(copy.reasoning.levels.detailed))
+  })
+
+  it('reports the available levels for an unknown argument', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/reasoning turbo')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.reasoning.available('compact, standard, detailed, verbose'))
+    })
+  })
+
+  it('ignores a level change before the transcript exists', async () => {
+    const harness = await lifecycleHarness()
+    const setLevel = privateValue(harness.app, 'setReasoningVisibility') as (argument: string | undefined) => void
+
+    expect(() => { setLevel.call(harness.app, 'detailed') }).not.toThrow()
+  })
+
+  it('falls back to the standard level when the transcript is gone', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'transcript', undefined)
+
+    await submitLine(harness, '/status')
+    const panel = await overlayNumber(harness, 1)
+
+    expect(panel.render(100).join('\n')).toContain(copy.reasoning.levels.standard)
+  })
+
+  it('shows the reasoning level in the status panel', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/reasoning compact')
+
+    await submitLine(harness, '/status')
+    const panel = await overlayNumber(harness, 1)
+
+    expect(panel.render(100).join('\n')).toContain(copy.statusPanel.reasoning)
+    expect(panel.render(100).join('\n')).toContain(copy.reasoning.levels.compact)
+    expect(panel.render(100).join('\n')).toContain(copy.statusPanel.effort)
   })
 })

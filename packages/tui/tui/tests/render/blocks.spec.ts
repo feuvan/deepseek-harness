@@ -134,19 +134,49 @@ describe('AssistantBlock', () => {
     expect(block.isEmpty()).toBe(false)
   })
 
-  it('hides reasoning when visibility is turned off', () => {
+  it('hides reasoning when the preview budget is zero', () => {
     const block = new AssistantBlock(context())
     block.setReasoning('private thoughts')
-    block.setReasoningVisible(false)
-    expect(visibleLines(block.render(60)).join('\n')).not.toContain('private thoughts')
+    block.setReasoningPreview(0)
+
+    const lines = visibleLines(block.render(60)).join('\n')
+    expect(lines).not.toContain('private thoughts')
+    expect(block.isEmpty()).toBe(false)
   })
 
-  it('can turn reasoning back on', () => {
+  it('truncates reasoning to a finite preview budget with a hidden-lines row', () => {
     const block = new AssistantBlock(context())
-    block.setReasoning('private thoughts')
-    block.setReasoningVisible(false)
-    block.setReasoningVisible(true)
-    expect(visibleLines(block.render(60)).join('\n')).toContain('private thoughts')
+    block.setReasoning(['one', 'two', 'three', 'four', 'five', 'six'].join('\n'))
+    block.setReasoningPreview(2)
+
+    const lines = visibleLines(block.render(60))
+
+    expect(lines.join('\n')).toContain('one')
+    expect(lines.join('\n')).toContain('two')
+    expect(lines.join('\n')).not.toContain('three')
+    expect(lines).toContain(`  ${copy.notice.hiddenLines(4)}`)
+  })
+
+  it('shows the complete reasoning block for an infinite preview budget', () => {
+    const reasoning = Array.from({ length: 12 }, (_, index) => `thought ${String(index)}`).join('\n')
+    const block = new AssistantBlock(context())
+    block.setReasoning(reasoning)
+    block.setReasoningPreview(Number.POSITIVE_INFINITY)
+
+    const lines = visibleLines(block.render(60)).join('\n')
+
+    expect(lines).toContain('thought 0')
+    expect(lines).toContain('thought 11')
+    expect(lines).not.toContain(copy.notice.hiddenLines(1))
+  })
+
+  it('keeps the reasoning renderer across invalidation', () => {
+    const block = new AssistantBlock(context())
+    block.setReasoning('survives invalidation')
+
+    block.invalidate()
+
+    expect(visibleLines(block.render(60)).join('\n')).toContain('survives invalidation')
   })
 
   it('omits the reasoning row when only response content exists', () => {

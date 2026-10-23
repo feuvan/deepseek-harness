@@ -21,6 +21,8 @@ export interface FooterSnapshot {
   readonly effort: string | undefined
   /** Whether {@link effort} is the adapter default rather than an explicit choice. */
   readonly effortImplicit: boolean
+  /** Localized label of the active reasoning-visibility level. */
+  readonly reasoning: string
   /** Uncached plus cached input tokens billed so far. */
   readonly inputTokens: number
   /** Output tokens produced so far. */
@@ -72,6 +74,7 @@ export class Footer implements Component {
     const segment = (key: string, text: string): { key: string; text: string } => ({ key, text })
     const segments = [segment('model', palette.accent(displayText(state.model)))]
     if (state.effort !== undefined) segments.push(segment('effort', palette.dim(displayText(state.effort))))
+    segments.push(segment('reasoning', palette.dim(displayText(state.reasoning))))
     segments.push(segment('tokens', palette.dim(`↑${String(state.inputTokens)} ↓${String(state.outputTokens)}`)))
     if (state.cacheRate !== undefined) segments.push(segment('cache', palette.dim(`cache ${String(Math.round(state.cacheRate * 100))}%`)))
     if (state.contextPercent !== undefined) segments.push(segment('ctx', palette.dim(`ctx ${String(Math.round(state.contextPercent * 100))}%`)))

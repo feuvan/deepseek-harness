@@ -36,7 +36,7 @@ The banner names the model and the Session. The transcript above the composer sh
 | Alt+Enter or Ctrl+J | Insert a newline |
 | Ctrl+C | Close the open panel, cancel a running turn, or exit when idle |
 | Ctrl+O | Cycle collapsed, expanded, and hidden tool cards |
-| Ctrl+R | Show or hide reasoning |
+| Ctrl+R | Cycle reasoning visibility (compact → standard → detailed → verbose) |
 | Ctrl+L | Repaint the screen |
 | Esc | Interrupt a running turn when the composer is empty |
 | Ctrl+V | Attach an image from the clipboard |
@@ -67,7 +67,7 @@ Registered agent commands also work from the composer, including `/compact`, `/g
 
 `/model` opens the model list. Type to filter; `Shift+Tab` cycles the highlighted model's reasoning effort; Enter selects it for this session only. The switch is recorded in the Session log for later readers. Use `Shift+Tab` in the composer to change effort without opening the list.
 
-`/effort` opens a chooser over the current model's levels, and `/effort high` (or any advertised level) applies one directly. `/permission` without an argument opens a chooser over the available permission presets with the current one marked; `/permission <preset>` switches directly. Both go through the registered command, so the Session log records the switch. The footer always shows the effective level right after the model name, including the adapter default you never chose explicitly.
+`/effort` opens a bottom-dock chooser over the current model's levels, and `/effort high` (or any advertised level) applies one directly. `/permission` without an argument opens the same kind of list, showing every available permission preset with its description and marking the current one; `/permission <preset>` switches directly. Both go through the registered command, so the Session log records the switch. The footer always shows the effective level right after the model name, including the adapter default you never chose explicitly.
 
 ### Command arguments
 
@@ -81,9 +81,13 @@ While a turn runs, Enter steers it at the next step boundary. A dim strip above 
 
 Ctrl+V attaches an image from your system clipboard to the next prompt, provided the selected model accepts image input; otherwise the terminal explains why the image was not attached. Clipboard images and `@` image mentions can be combined in one prompt, and the attachment is cleared after the prompt is sent. Inline image rendering is still not implemented, so attached images appear as labeled placeholders in the transcript.
 
+### Reasoning visibility
+
+Reasoning blocks render at one of four visibility levels, matching the Desktop work-details modes: `compact` (a one-line preview), `standard` (a short preview), `detailed` (a longer preview), and `verbose` (the complete block). Ctrl+R cycles the levels, `/reasoning <level>` sets one directly (the localized names work too), and the footer shows the active level after the model and effort.
+
 ### Configuration
 
-`/config` shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; toggling one saves it through the plugin manager and tells you a restart is required (the terminal profile has no configuration reload), and rows the profile patch cannot change show their read-only reason. Terminal display values (styling, animation, card lines, transcript window, title, language) are shown read-only because the profile patch owns them; edit the `terminal-ui` row in your profile to change them.
+`/config` opens a configuration panel below the composer with one tab per category; Tab or Left/Right switches tabs, Up/Down and PgUp/PgDn scroll, Enter opens or toggles, Esc closes. It shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; toggling one saves it through the plugin manager and tells you a restart is required (the terminal profile has no configuration reload), and rows the profile patch cannot change show their read-only reason. Terminal display values (styling, animation, card lines, transcript window, title, language) are shown read-only because the profile patch owns them; edit the `terminal-ui` row in your profile to change them.
 
 ### Interface language
 
