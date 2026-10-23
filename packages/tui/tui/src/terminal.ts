@@ -6,7 +6,9 @@
  * @module @deepseek-ai/dsh-tui/terminal
  */
 
-import { ProcessTerminal, TuiAltScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'
+import {
+  ProcessTerminal, TuiAltScreen, type ProgramStatus, type Terminal, type TUI,
+} from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 
 /** The terminal surface this plugin owns for one application lifetime. */
@@ -15,8 +17,55 @@ export interface TerminalSession {
   readonly tui: TUI
   /** The underlying terminal the renderer writes to. */
   readonly terminal: Terminal
+  /**
+   * Install a pre-dispatch input hook for dock surfaces. The hook runs before
+   * the renderer's viewport handling, so page keys reach the active dock panel
+   * instead of scrolling the transcript behind it.
+   * @param interceptor - returns true when the sequence was consumed.
+   */
+  setInputInterceptor?(interceptor: ((data: string) => boolean) | undefined): void
   /** Restore the terminal and retain the final document; safe to call more than once. */
   stop(): void
+}
+
+/** Delegating terminal that lets the application intercept input before the renderer sees it. */
+class InterceptingTerminal implements Terminal {
+  private readonly inner: Terminal
+  private readonly interceptor: () => ((data: string) => boolean) | undefined
+
+  /**
+   * @param inner - the terminal the renderer writes to.
+   * @param interceptor - reads the current pre-dispatch hook.
+   */
+  constructor(inner: Terminal, interceptor: () => ((data: string) => boolean) | undefined) {
+    this.inner = inner
+    this.interceptor = interceptor
+  }
+
+  start(onInput: (data: string) => void, onResize: () => void): void {
+    this.inner.start((data) => {
+      const intercept = this.interceptor()
+      if (intercept?.(data) === true) return
+      onInput(data)
+    }, onResize)
+  }
+
+  stop(): void { this.inner.stop() }
+  restoreOnExit(before: string, after: string): void { this.inner.restoreOnExit?.(before, after) }
+  drainInput(maxMs?: number, idleMs?: number): Promise<void> { return this.inner.drainInput(maxMs, idleMs) }
+  write(data: string): void { this.inner.write(data) }
+  get columns(): number { return this.inner.columns }
+  get rows(): number { return this.inner.rows }
+  get kittyProtocolActive(): boolean { return this.inner.kittyProtocolActive }
+  moveBy(lines: number): void { this.inner.moveBy(lines) }
+  hideCursor(): void { this.inner.hideCursor() }
+  showCursor(): void { this.inner.showCursor() }
+  clearLine(): void { this.inner.clearLine() }
+  clearFromCursor(): void { this.inner.clearFromCursor() }
+  clearScreen(): void { this.inner.clearScreen() }
+  setTitle(title: string): void { this.inner.setTitle(title) }
+  setProgress(active: boolean): void { this.inner.setProgress(active) }
+  setProgramStatus(status: ProgramStatus): void { this.inner.setProgramStatus(status) }
 }
 
 /**
@@ -39,7 +88,9 @@ export function assertInteractiveTerminal(stdinIsTty: boolean | undefined, stdou
  * @returns the renderer/terminal pair with an idempotent stop.
  */
 export function createTerminalSession(terminal: Terminal = new ProcessTerminal()): TerminalSession {
-  const tui = new TuiAltScreen(terminal, false, undefined, {
+  let interceptor: ((data: string) => boolean) | undefined
+  const wrapped = new InterceptingTerminal(terminal, () => interceptor)
+  const tui = new TuiAltScreen(wrapped, false, undefined, {
     mouse: true,
     copyOnSelect: true,
     scrollToEndIndicator: () => copy.composer.scrollToEnd,
@@ -47,11 +98,12 @@ export function createTerminalSession(terminal: Terminal = new ProcessTerminal()
   let stopped = false
   return {
     tui,
-    terminal,
+    terminal: wrapped,
     stop: () => {
       if (stopped) return
       stopped = true
       tui.stop()
     },
+    setInputInterceptor: (next) => { interceptor = next },
   }
 }

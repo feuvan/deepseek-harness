@@ -215,7 +215,7 @@ const en = {
       '  Alt+Enter/Ctrl+J   insert a newline',
       '  Ctrl+C             cancel a running turn, then exit when idle',
       '  Ctrl+O             cycle collapsed, expanded, and hidden tool cards',
-      '  Ctrl+R             toggle reasoning visibility',
+      '  Ctrl+R             cycle reasoning visibility',
       '  Ctrl+L             repaint',
       '  Ctrl+V             attach an image from the clipboard',
       '  Shift+Tab          cycle reasoning effort',
@@ -345,6 +345,8 @@ const en = {
     status: 'Status',
     /** Close hint. */
     closeHint: 'Esc or Enter closes',
+    /** Scrolling hint for long dock panels. */
+    scrollHint: '↑/↓ scroll · Esc or Enter closes',
   },
   /** Terminal-level program status messages. */
   activity: {
@@ -487,7 +489,7 @@ export const chinese: Copy = {
       '  Alt+Enter/Ctrl+J   插入换行',
       '  Ctrl+C             取消运行中的轮次，空闲时退出',
       '  Ctrl+O             在收缩、展开与隐藏工具卡之间循环',
-      '  Ctrl+R             切换推理显示',
+      '  Ctrl+R             循环推理显示级别',
       '  Ctrl+L             重绘',
       '  Ctrl+V             从剪贴板附加图片',
       '  Shift+Tab          循环推理强度',
@@ -569,6 +571,7 @@ export const chinese: Copy = {
     help: '帮助',
     status: '状态',
     closeHint: 'Esc 或 Enter 关闭',
+    scrollHint: '↑/↓ 滚动 · Esc 或 Enter 关闭',
   },
   activity: {
     working: '运行中…',

@@ -27,14 +27,14 @@ import { TerminalAutocompleteProvider } from './autocomplete.ts'
 import { expandPromptMentions } from './mentions.ts'
 import { readClipboardImage } from './clipboard.ts'
 import { nextReasoningLevel, parseReasoningLevel, REASONING_LEVELS } from './reasoning.ts'
-import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer } from './interactions.ts'
+import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer, type InteractionDock } from './interactions.ts'
 import { StatusModel } from './status.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
 import { createPalette, type Palette } from './palette.ts'
 import { createTerminalSession, type TerminalSession } from './terminal.ts'
 import { TextPanel } from './components/dialogs.ts'
-import { BottomPanel } from './components/bottom.ts'
+import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
@@ -62,6 +62,7 @@ export class TerminalApp {
   private bottomList: BottomList | undefined
   private completion: CompletionController | undefined
   private configPanel: ConfigPanel | undefined
+  private dockOverlay: DockSurface | undefined
   private pendingImages: import('@deepseek-ai/dsh-llm').ContentBlock[] = []
   private markdownTheme: MarkdownTheme | undefined
   private started = false
@@ -212,6 +213,7 @@ export class TerminalApp {
     this.terminal = terminal
     const tui = terminal.tui
     this.tui = tui
+    terminal.setInputInterceptor?.(data => this.interceptDockInput(data))
     tui.terminal.setTitle(this.config.title)
     const markdown = createMarkdownTheme(this.palette)
     this.markdownTheme = markdown
@@ -318,6 +320,11 @@ export class TerminalApp {
         this.handleInterrupt()
         return { consume: true }
       }
+      if (this.dockOverlay !== undefined) {
+        this.dockOverlay.handleInput(data)
+        this.tui?.requestRender()
+        return { consume: true }
+      }
       if (this.configPanel !== undefined) {
         this.configPanel.handleInput(data)
         this.tui?.requestRender()
@@ -395,7 +402,7 @@ export class TerminalApp {
     if (markdown === undefined) throw new Error('terminal-ui: interaction providers require the markdown theme')
     this.disposers.push(registerQuestionAnswerer({
       ctx: this.ctx,
-      tui: this.requireTui(),
+      dock: this.interactionDock(),
       palette: this.palette,
       markdown,
       /* v8 ignore next -- the question answerer presents request.agent, not this dependency */
@@ -404,7 +411,7 @@ export class TerminalApp {
     }, this.config.sessionId, this.modal))
     this.disposers.push(registerApprovalAnswerer({
       ctx: this.ctx,
-      tui: this.requireTui(),
+      dock: this.interactionDock(),
       palette: this.palette,
       markdown,
       /* v8 ignore next -- the approval answerer presents request.agent, not this dependency */
@@ -418,13 +425,6 @@ export class TerminalApp {
   private titleLine(): string {
     const title = this.status?.snapshot().title
     return title === undefined ? this.config.title : `${title} — ${this.config.title}`
-  }
-
-  /** @returns the renderer, proving it was built before interaction providers registered. */
-  private requireTui(): TUI {
-    /* v8 ignore next -- every caller runs after startTerminal() recorded the renderer */
-    if (this.tui === undefined) throw new Error('terminal-ui: interaction providers require the renderer')
-    return this.tui
   }
 
   /**
@@ -529,8 +529,86 @@ export class TerminalApp {
     }
   }
 
+  /** @returns the surface that currently owns dock input, if any. */
+  private activeDockSurface(): DockSurface | undefined {
+    if (this.dockOverlay !== undefined) return this.dockOverlay
+    const configPanel = this.configPanel
+    if (configPanel !== undefined) {
+      return {
+        component: configPanel,
+        handleInput: (data) => { configPanel.handleInput(data) },
+        consumeAll: true,
+        close: () => { this.closeConfigPanel() },
+      }
+    }
+    const list = this.bottomList
+    if (list?.active === true) {
+      return {
+        component: list,
+        handleInput: data => list.handleInput(data),
+        consumeAll: true,
+        close: () => { list.close() },
+      }
+    }
+    const completion = this.completion
+    if (completion?.active === true) {
+      return {
+        component: completion,
+        handleInput: data => completion.handleInput(data),
+        consumeAll: false,
+        close: () => { completion.close() },
+      }
+    }
+    return undefined
+  }
+
+  /**
+   * Pre-dispatch input hook: while a dock surface owns input, every sequence
+   * except Ctrl+C goes to it, so the renderer's viewport cannot also scroll or
+   * edit the composer underneath.
+   * @param data - raw terminal input.
+   * @returns whether the sequence was consumed.
+   */
+  private interceptDockInput(data: string): boolean {
+    if (matchesKey(data, 'ctrl+c')) return false
+    const surface = this.activeDockSurface()
+    if (surface === undefined) return false
+    const handled = surface.handleInput(data)
+    if (surface.consumeAll === false && handled !== true) return false
+    this.tui?.requestRender()
+    return true
+  }
+
+  /**
+   * Install or clear the exclusive dock surface (text panels, model selector, or an interaction panel).
+   * @param surface - the surface to own the dock, or undefined to release it.
+   */
+  private setDockOverlay(surface: DockSurface | undefined): void {
+    this.dockOverlay = surface
+    this.syncDock()
+    this.tui?.requestRender()
+  }
+
+  /** @returns the dock presenter the interaction answerers use. */
+  private interactionDock(): InteractionDock {
+    return {
+      present: (panel) => {
+        this.setDockOverlay({
+          component: panel,
+          handleInput: (data) => { panel.handleInput(data) },
+          close: () => { this.setDockOverlay(undefined) },
+        })
+      },
+      dismiss: () => { this.setDockOverlay(undefined) },
+    }
+  }
+
   /** Mirror the active bottom surface into the dock slot. */
   private syncDock(): void {
+    if (this.dockOverlay !== undefined) {
+      this.bottom?.setContent(this.dockOverlay.component)
+      return
+    }
     if (this.configPanel !== undefined) {
       this.bottom?.setContent(this.configPanel)
       return
@@ -673,6 +751,10 @@ export class TerminalApp {
   /** Handle Ctrl+C: close a modal, cancel a turn, or exit. */
   private handleInterrupt(): void {
     if (this.modal.cancelCurrent()) return
+    if (this.dockOverlay !== undefined) {
+      this.dockOverlay.close()
+      return
+    }
     if (this.configPanel !== undefined) {
       this.closeConfigPanel()
       return
@@ -729,18 +811,12 @@ export class TerminalApp {
    * @param lines - plain body lines.
    */
   private showText(title: string, lines: readonly string[]): void {
-    const tui = this.requireTui()
-    let handle: ReturnType<TUI['showOverlay']> | undefined
-    void this.modal.run(
-      () => { handle?.hide() },
-      () => new Promise<void>((resolve) => {
-        const panel = new TextPanel(title, lines, this.palette, () => {
-          handle?.hide()
-          resolve()
-        })
-        handle = tui.showOverlay(panel, { width: '90%', maxHeight: '80%', anchor: 'center', margin: 1 })
-      }),
-    )
+    const panel = new TextPanel(title, lines, this.palette, () => { this.setDockOverlay(undefined) })
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data) },
+      close: () => { this.setDockOverlay(undefined) },
+    })
   }
 
   /**
@@ -1046,32 +1122,26 @@ export class TerminalApp {
 
   /** Present the model selector over the live advisory catalog. */
   private async openModelSelector(): Promise<void> {
-    const tui = this.requireTui()
     const catalog = await loadTuiModelCatalog(this.ctx)
     this.catalog = catalog
-    let handle: ReturnType<TUI['showOverlay']> | undefined
-    await this.modal.run(
-      () => { handle?.hide() },
-      () => new Promise<void>((resolve) => {
-        const panel = new ModelSelectorPanel(
-          catalog,
-          this.palette,
-          (selection) => {
-            /* v8 ignore next -- the selector opens only after run() installed the selection */
-            if (this.selection !== undefined) this.selection.current = selection
-            this.footer?.invalidate()
-            this.tui?.requestRender()
-            handle?.hide()
-            resolve()
-          },
-          () => {
-            handle?.hide()
-            resolve()
-          },
-        )
-        handle = tui.showOverlay(panel, { width: '90%', maxHeight: '80%', anchor: 'center', margin: 1 })
-      }),
+    const close = (): void => { this.setDockOverlay(undefined) }
+    const panel = new ModelSelectorPanel(
+      catalog,
+      this.palette,
+      (selection) => {
+        /* v8 ignore next -- the selector opens only after run() installed the selection */
+        if (this.selection !== undefined) this.selection.current = selection
+        this.footer?.invalidate()
+        this.tui?.requestRender()
+        close()
+      },
+      close,
     )
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data) },
+      close,
+    })
   }
 }
 

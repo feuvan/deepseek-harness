@@ -53,7 +53,9 @@ kind: "subsystem"
 
 Enter 会 steer 运行中的轮次；`/queue <text>` 改为把消息排到下一轮，并像普通提示一样展开 `@` 提及。编辑器上方的待处理提示行读取 `inbox` 投影，在 Agent 消费之前显示 steering 与排队计数，运行中时还会显示 Esc 提示。编辑器为空时 Esc 取消运行中的轮次；有文本或面板打开时，Esc 仍交给编辑器或面板处理。Ctrl+V 从宿主剪贴板读取一张图片，校验当前模型的输入模态，经附件存储准入后与 `@` 图片提及一起暂存，随下一条提交的提示发送。
 
-编辑器与页脚之间有一个底部 dock。同一时刻只有一个 surface 占用它：`/` 与 `@` 补全窗口（带描述、↑/↓、Tab 插入、Enter 运行或插入、Esc、最多 8 行并显示滚动指示），`/permission` 与不带参数的 `/effort` 使用的带说明选择列表，或按 tab 组织的配置面板。编辑器内置下拉已停用，因此所有补全与选择都在编辑器下方渲染，而不是遮住 transcript。
+编辑器与页脚之间有一个底部 dock。同一时刻只有一个 surface 占用它：`/` 与 `@` 补全窗口（带描述、↑/↓、Tab 插入、Enter 运行或插入、Esc、最多 8 行并显示滚动指示），`/permission` 与不带参数的 `/effort` 使用的带说明选择列表，按 tab 组织的配置面板，以及帮助/状态、模型选择器、问题与审批面板。不存在浮动 overlay；长页面在 dock 内滚动（↑/↓ 或 PgUp/PgDn，并显示剩余行数）。编辑器内置下拉已停用，因此所有补全、选择与面板都在编辑器下方渲染，而不是遮住 transcript。
+
+终端层输入钩子在渲染器之前把每个按键交给当前 dock surface：面板占用 dock 时，翻页键滚动面板而不是 transcript，下方编辑器也不会被编辑。只有补全窗口打开时未处理的字符才会落回编辑器，用于继续输入过滤。
 
 `/config` 在这个 dock 中打开按 tab 组织的配置面板，数据来自实时服务而不是静态配置文件：每个分类一个 tab，Tab/←/→ 切换，↑/↓ 与 PageUp/PageDown 滚动当前 tab，Enter 激活，Esc 关闭。模型与强度行激活已有的选择器与选择面板；权限行通过已注册的 `/permission` 命令写入本会话预设；实验性行读取 `ctx.pluginManager.listBundles()`，只切换随附的可选组合包，并报告 manager 结果（由于终端组合包禁用 HMR，通常为 `restart-required`，或显示只读原因）；显示行展示已解析的 profile 值，保持只读并标注归属层。写入从不绕过归属服务，失败会直接显示而不是盲目重试。
 
@@ -61,7 +63,7 @@ Enter 会 steer 运行中的轮次；`/queue <text>` 改为把消息排到下一
 
 ## 人工交互
 
-问题与审批是 Agent 作用域 `user-questions/request` 与 `approval/request` waterfall 上的应答者。一个串行化模态队列拥有焦点，因此问题、审批、模型选择器与内置面板不能重叠。被取消的面板会结算其 waterfall；它绝不会让工具继续等待。定时问题通过 `ctx.userQuestions.attachWait` 声明占用，并显示 Host 计算的剩余时间。
+问题与审批是 Agent 作用域 `user-questions/request` 与 `approval/request` waterfall 上的应答者。它们与帮助/状态、模型选择器、选择列表和 `/config` 一样呈现在同一个底部 dock 中；串行队列保证同一时刻只有一个 surface 拥有输入，且不存在浮动 overlay。键盘输入只进入当前 dock surface，不会再传给下方的编辑器。被取消的面板会结算其 waterfall；它绝不会让工具继续等待。定时问题通过 `ctx.userQuestions.attachWait` 声明占用，并显示 Host 计算的剩余时间。
 
 问题面板渲染选项列表、多选状态、自由文本答案与批量进度。带 `plan-review` 意图的问题会获得专用评审：计划文档以带边框、带行数预算的形式渲染在面板内；标签与意图 `approve` 相同的选项带成功标记，其他选项带拒绝标记；由于协议答案必须是已提供的标签之一，自由文本行被省略；提示行显示评审按键。审批面板返回 `allowed-once`、`rejected` 或 `cancelled`，并遵循请求 signal。
 

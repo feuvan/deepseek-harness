@@ -8,6 +8,26 @@
 
 import type { Component } from '@earendil-works/pi-tui'
 
+/** One keyboard-owning surface presented in the bottom dock. */
+export interface DockSurface {
+  /** Component rendered in the dock. */
+  readonly component: Component
+  /**
+   * Handle one input sequence while the surface owns the dock.
+   * @param data - raw terminal input.
+   * @returns whether the sequence was consumed.
+   */
+  handleInput(data: string): boolean | void
+  /**
+   * Whether every sequence belongs to this surface. Panels and lists consume
+   * all input; the completion window leaves unhandled characters to the editor
+   * so typing keeps filtering.
+   */
+  readonly consumeAll?: boolean
+  /** Close the surface, releasing the dock. */
+  close(): void
+}
+
 /** The line budget the dock keeps for the transcript above it. */
 const DEFAULT_MAX_LINES = 16
 

@@ -11,6 +11,8 @@ import { visibleLines } from '../support/terminal.ts'
 const KEY = {
   up: '\u001b[A',
   down: '\u001b[B',
+  pageUp: '\u001b[5~',
+  pageDown: '\u001b[6~',
   enter: '\r',
   escape: '\u001b',
   space: ' ',
@@ -573,28 +575,31 @@ describe('ApprovalPanel', () => {
 
 describe('TextPanel', () => {
   /** @returns a panel over fixed lines and a close recorder. */
-  function textPanel(title = 'Help', lines: readonly string[] = ['first line', 'second line']): { panel: TextPanel; state: { closes: number } } {
+  function textPanel(
+    title = 'Help',
+    lines: readonly string[] = ['first line', 'second line'],
+    maxVisible = 12,
+  ): { panel: TextPanel; state: { closes: number } } {
     const state = { closes: 0 }
     return {
-      panel: new TextPanel(title, lines, createPalette(false), () => { state.closes += 1 }),
+      panel: new TextPanel(title, lines, createPalette(false), () => { state.closes += 1 }, maxVisible),
       state,
     }
   }
 
-  it('renders the title, body, and close hint', () => {
+  it('renders the title, body, and scroll hint', () => {
     expect(rendered(textPanel().panel)).toEqual([
       'Help',
-      '',
       'first line',
       'second line',
       '',
-      copy.panel.closeHint,
+      copy.panel.scrollHint,
     ])
   })
 
   it('splits embedded newlines into rows', () => {
     const { panel } = textPanel('Help', ['first\nsecond'])
-    expect(rendered(panel)).toEqual(['Help', '', 'first', 'second', '', copy.panel.closeHint])
+    expect(rendered(panel)).toEqual(['Help', 'first', 'second', '', copy.panel.scrollHint])
   })
 
   it.each([KEY.escape, KEY.enter, 'q'])('closes on %j', (input) => {
@@ -609,11 +614,43 @@ describe('TextPanel', () => {
     expect(state.closes).toBe(0)
   })
 
+  it('scrolls one row per arrow key and one page per page key', () => {
+    const lines = Array.from({ length: 20 }, (_, index) => `row ${String(index)}`)
+    const { panel } = textPanel('Help', lines, 5)
+
+    expect(rendered(panel)).toEqual([
+      'Help', 'row 0', 'row 1', 'row 2', 'row 3', 'row 4',
+      `  ↓ ${copy.moreRows(15)}`, '', copy.panel.scrollHint,
+    ])
+
+    const firstRow = (): string => rendered(panel).find(line => line.startsWith('row ')) ?? ''
+
+    panel.handleInput(KEY.down)
+    expect(firstRow()).toBe('row 1')
+    expect(rendered(panel)).toContain(`  ↑ ${copy.moreRows(1)}`)
+    expect(rendered(panel)).toContain(`  ↓ ${copy.moreRows(14)}`)
+
+    panel.handleInput(KEY.pageDown)
+    expect(firstRow()).toBe('row 6')
+    expect(rendered(panel)).toContain(`  ↑ ${copy.moreRows(6)}`)
+
+    panel.handleInput(KEY.pageUp)
+    expect(firstRow()).toBe('row 1')
+
+    panel.handleInput(KEY.up)
+    expect(firstRow()).toBe('row 0')
+    panel.handleInput(KEY.up)
+    expect(firstRow()).toBe('row 0')
+
+    for (let step = 0; step < 10; step += 1) panel.handleInput(KEY.pageDown)
+    expect(rendered(panel)).toContain(`  ↑ ${copy.moreRows(15)}`)
+    expect(rendered(panel)).not.toContain(copy.moreRows(16))
+  })
+
   it('truncates the title, body, and hint to the panel width', () => {
     const { panel } = textPanel('A very long panel title', ['a very long body line that will not fit'])
     for (const line of rendered(panel, 10)) expect(visibleWidth(line)).toBeLessThanOrEqual(10)
   })
-
   it('has no cached state to invalidate', () => {
     const { panel } = textPanel()
     expect(() => { panel.invalidate() }).not.toThrow()

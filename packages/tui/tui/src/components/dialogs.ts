@@ -407,24 +407,28 @@ export class ApprovalPanel implements Component {
   invalidate(): void {}
 }
 
-/** A read-only panel that closes on Esc or Enter. */
+/** A read-only dock panel that closes on Esc or Enter and scrolls long bodies. */
 export class TextPanel implements Component {
   private readonly title: string
-  private readonly lines: readonly string[]
+  private readonly body: readonly string[]
   private readonly palette: Palette
   private readonly onClose: () => void
+  private readonly maxVisible: number
+  private offset = 0
 
   /**
    * @param title - panel heading.
    * @param lines - already-styled body lines; newlines split into rows.
    * @param palette - terminal style table.
    * @param onClose - closes the panel.
+   * @param maxVisible - body rows shown at once before scrolling.
    */
-  constructor(title: string, lines: readonly string[], palette: Palette, onClose: () => void) {
+  constructor(title: string, lines: readonly string[], palette: Palette, onClose: () => void, maxVisible = 12) {
     this.title = title
-    this.lines = lines
     this.palette = palette
     this.onClose = onClose
+    this.maxVisible = Math.max(1, maxVisible)
+    this.body = lines.flatMap(line => line.split('\n'))
   }
 
   /**
@@ -432,23 +436,49 @@ export class TextPanel implements Component {
    * @param data - raw terminal input.
    */
   handleInput(data: string): void {
-    if (matchesKey(data, 'escape') || matchesKey(data, 'enter') || data === 'q') this.onClose()
+    if (matchesKey(data, 'escape') || matchesKey(data, 'enter') || data === 'q') {
+      this.onClose()
+      return
+    }
+    if (matchesKey(data, 'up')) {
+      this.offset = Math.max(0, this.offset - 1)
+      return
+    }
+    if (matchesKey(data, 'down')) {
+      this.offset = Math.min(Math.max(0, this.body.length - this.maxVisible), this.offset + 1)
+      return
+    }
+    if (matchesKey(data, 'pageUp')) {
+      this.offset = Math.max(0, this.offset - this.maxVisible)
+      return
+    }
+    if (matchesKey(data, 'pageDown')) {
+      this.offset = Math.min(Math.max(0, this.body.length - this.maxVisible), this.offset + this.maxVisible)
+    }
   }
 
   /**
-   * Render the panel.
+   * Render the titled, scrollable panel.
    * @param width - available terminal columns.
    * @returns the panel lines, truncated to the panel width.
    */
   render(width: number): string[] {
-    const lines = [this.palette.heading(truncateToWidth(this.title, width)), '']
-    for (const source of this.lines) {
-      for (const line of source.split('\n')) lines.push(truncateToWidth(line, width))
+    const palette = this.palette
+    const lines = [palette.heading(truncateToWidth(this.title, width))]
+    const visible = Math.min(this.maxVisible, this.body.length)
+    if (this.offset > 0) lines.push(palette.dim(`  ↑ ${copy.moreRows(this.offset)}`))
+    for (let index = 0; index < visible; index += 1) {
+      const line = this.body[this.offset + index]
+      /* v8 ignore next -- the window is clamped to the body length */
+      if (line === undefined) continue
+      lines.push(truncateToWidth(line, width))
     }
-    lines.push('', this.palette.dim(truncateToWidth(copy.panel.closeHint, width)))
+    const remaining = this.body.length - (this.offset + visible)
+    if (remaining > 0) lines.push(palette.dim(`  ↓ ${copy.moreRows(remaining)}`))
+    lines.push('', palette.dim(truncateToWidth(copy.panel.scrollHint, width)))
     return lines
   }
 
-  /** No cached state exists, so nothing must be invalidated. */
+  /** No cached renderer state exists beyond the scroll offset. */
   invalidate(): void {}
 }

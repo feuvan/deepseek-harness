@@ -71,6 +71,8 @@ Registered agent commands also work from the composer, including `/compact`, `/g
 
 ### Command arguments
 
+Every panel opens in the dock below the composer: `/help`, `/status`, `/model`, `/config`, questions, approvals, and the choosers. Long pages such as `/help` scroll with ↑/↓ or PgUp/PgDn, and Esc closes the panel. While a panel owns the dock, keys go to it: they neither scroll the transcript nor edit the composer behind it.
+
 Command arguments complete: type `/effort ` and press Tab to pick from the model's levels, or type `/permission ` and press Tab to pick from the composed permission presets, each with its description. The footer reflects a permission switch after the command completes.
 
 ### Pending input and interruption

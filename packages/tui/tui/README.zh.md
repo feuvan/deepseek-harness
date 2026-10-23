@@ -55,7 +55,7 @@ Enter 发送空闲提示并 steer 运行中的轮次；`/queue <text>` 改为把
 
 输入 `/` 或 `@` 会在编辑器下方打开补全 dock，显示每条命令的描述或文件类型；↑/↓ 移动，Tab 插入，Enter 运行已接受的命令（或在提及/参数补全时插入），Esc 关闭。编辑器原有的内联下拉已移除。命令参数同样可补全：`/effort ` 提供当前模型声明的强度，`/permission ` 提供组合的权限预设及其描述。不带参数的 `/effort` 会打开同组强度的带标题选择器；`/effort <level>` 直接应用，所选（或适配器默认）强度会立即显示在页脚中模型名之后。不带参数的 `/permission` 在编辑器下方打开选择 dock，逐项列出组合的权限预设及说明并标记当前值；选中后交给已注册命令执行，`/permission <preset>` 直接派发。不带参数的 `/effort` 使用同一 dock。接受的 `@` 提及通常保留为字面提示文本；当它指向受支持的图片文件时，终端会从工作区读取该图片、经附件存储准入后附到发出的用户消息。任何准入失败都会变成 transcript 通知，同时文本仍照常发送。Shift+Tab 在当前模型适配器声明的强度之间循环，并通过与选择器相同的模型选择把选择记入会话日志；页脚始终显示实际生效的强度，包括用户未显式选择的默认值。带 `plan-review` 标记的问题会以专用评审呈现：带边框的计划文档、批准/拒绝标记，且不提供自由文本答案行。
 
-`/config` 在编辑器下方打开配置面板，每个分类一个 tab（模型与推理强度、权限、实验性能力、终端显示）；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 滚动当前 tab，Enter 激活，Esc 关闭。面板读取实时服务：模型与推理强度、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
+所有面板都在编辑器下方的 dock 中渲染——帮助/状态、模型选择器、问题、审批、各选择列表与 `/config`；不存在浮动 overlay，长页面可滚动，Esc 关闭面板。`/config` 在编辑器下方打开配置面板，每个分类一个 tab（模型与推理强度、权限、实验性能力、终端显示）；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 滚动当前 tab，Enter 激活，Esc 关闭。面板读取实时服务：模型与推理强度、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -67,7 +67,7 @@ Enter 发送空闲提示并 steer 运行中的轮次；`/queue <text>` 改为把
 
 持久事件折叠为有序块：用户消息、已定稿助手内容、工具卡、命令结果、压缩标记与轮次结束通知。实时 `agent/assistant-stream` 帧为每次尝试更新一个待定块；同一步骤的持久定稿替换它，因此已提交消息只渲染一次。工具卡用解析后的调用参数、记录的结果内容与 `meta` 调用 `ctx.tools.get(name, agent)?.presentCall/presentResult`；呈现方法缺失或抛错时回退到通用卡片与原始内容。
 
-问题与审批是其 Agent 作用域 waterfall 上的应答者。所有面板通过一个串行化的模态队列呈现，因此同一时刻只有一个面板拥有焦点；带定时等待的问题通过 `ctx.userQuestions.attachWait` 声明占用并显示剩余时间。取消会结算对应的 waterfall，而不是让工具继续等待。
+问题与审批是其 Agent 作用域 waterfall 上的应答者。所有面板通过串行队列呈现在唯一的底部 dock 中，因此没有浮动 overlay，同一时刻只有一个 surface 拥有输入；带定时等待的问题通过 `ctx.userQuestions.attachWait` 声明占用并显示剩余时间。取消会结算对应的 waterfall，而不是让工具继续等待。
 
 调色板是一张标准 16 色 SGR 对的表；`color: false` 使每个字符串原样返回。`displayText()` 在模型输出、工具内容、问题文本、诊断或终端标题到达渲染器之前，转义除换行以外的所有 C0 与 C1 控制字符。
 
@@ -79,7 +79,7 @@ Enter 发送空闲提示并 steer 运行中的轮次；`/queue <text>` 改为把
 | [`src/lifecycle.ts`](src/lifecycle.ts) | Agent 等待、模型选择、历史回放、布局、输入、退出 |
 | [`src/transcript.ts`](src/transcript.ts) | 将持久事件与实时助手帧折叠为有序块 |
 | [`src/components/`](src/components) | 横幅、页脚、编辑器、transcript 块、对话框 |
-| [`src/interactions.ts`](src/interactions.ts) | 共享一个模态队列的问题与审批应答者 |
+| [`src/interactions.ts`](src/interactions.ts) | 在底部 dock 中呈现的问题与审批应答者 |
 | [`src/commands.ts`](src/commands.ts) | 编辑器提交、终端本地命令、命令目录 |
 | [`src/model-selector.ts`](src/model-selector.ts) | 建议性模型目录与选择器 |
 | [`src/status.ts`](src/status.ts) | 来自会话投影的页脚数值 |
@@ -119,7 +119,7 @@ Enter 发送空闲提示并 steer 运行中的轮次；`/queue <text>` 改为把
 - **不组装 preset。** 终端直接运行 base 的 agent 平面行，并拒绝恢复记录了 agent preset 的会话；需要 preset 的部署必须组装一个挂载同一注册表的终端组合包。
 - **没有剪贴板图片粘贴，也没有内联图片渲染。** 图片通过 `@` 提及命名后附加；已附加或收到的图片块渲染为带标签的占位符，而不是像素。随附组合包不选择 PTC 模式。
 - **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。
-- **没有扩展 overlay 服务。** 插件无法呈现自己的终端组件；问题、审批与内置面板共享唯一的模态队列。
+- **没有扩展面板服务。** 插件无法添加自己的终端面板；问题、审批、模型选择器、帮助/状态与 `/config` 共享唯一的底部 dock。
 - **transcript 窗口会丢弃较旧的块。** `windowBlocks` 限制渲染树；向上滚动超出窗口不会重新加载较旧块。
 - **推理显示有四个级别。** `compact`、`standard`、`detailed`、`verbose` 对齐 Desktop 的工作细节模式，决定每个推理块渲染多少行；Ctrl+R 或 `/reasoning [level]` 切换，页脚显示当前级别。Desktop 模式里的其他 transcript 差异（过程分组、折叠时机）在终端没有对应行为。
 - **提供两种界面语言。** 终端随附英文与中文；其他语言回退到英文，直到补充相应字典。

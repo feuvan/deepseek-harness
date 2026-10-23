@@ -6,7 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { TUI, MarkdownTheme } from '@earendil-works/pi-tui'
+import type { Component, MarkdownTheme } from '@earendil-works/pi-tui'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -15,12 +15,23 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import { ApprovalPanel, QuestionPanel } from './components/dialogs.ts'
 import type { Palette } from './palette.ts'
 
+/** The bottom dock the interaction panels render into. */
+export interface InteractionDock {
+  /**
+   * Present one panel and let it own keyboard input.
+   * @param panel - the panel component to show.
+   */
+  present(panel: Component & { handleInput(data: string): void }): void
+  /** Remove the presented panel and release the dock. */
+  dismiss(): void
+}
+
 /** Values the interaction providers need from the terminal application. */
 export interface InteractionDeps {
   /** Host context carrying the two interaction seams. */
   readonly ctx: Context
-  /** The renderer that owns focus and overlays. */
-  readonly tui: TUI
+  /** The bottom dock that presents the panels. */
+  readonly dock: InteractionDock
   /** Terminal style table. */
   readonly palette: Palette
   /** Markdown theme for question detail. */
@@ -91,18 +102,18 @@ export function registerQuestionAnswerer(deps: InteractionDeps, sessionId: strin
   return deps.ctx.on('user-questions/request', (request: AskUserQuestionRequest, next: () => Promise<AskUserQuestionAnswer>) => {
     const agent = request.agent
     if (agent === undefined || agent.session.id !== sessionId) return next()
+    /* v8 ignore next -- the queue stores this closure before the panel assigns the real cancel */
     let cancel = (): void => {}
     return modal.run(() => { cancel() }, () => new Promise<AskUserQuestionAnswer>((resolve, reject) => {
       const state = { settled: false }
       const signal = request.signal
       const claim = new AbortController()
-      const overlay: { handle?: ReturnType<TUI['showOverlay']> } = {}
       const finish = (settle: () => void): void => {
         if (state.settled) return
         state.settled = true
         claim.abort()
         signal?.removeEventListener('abort', onAbort)
-        overlay.handle?.hide()
+        deps.dock.dismiss()
         settle()
       }
       const onAbort = (): void => {
@@ -115,16 +126,7 @@ export function registerQuestionAnswerer(deps: InteractionDeps, sessionId: strin
         (answer) => { finish(() => { resolve(answer) }) },
         () => { finish(() => { reject(new Error('The user cancelled the question.')) }) },
       )
-      const handle = deps.tui.showOverlay(panel, {
-        width: '90%',
-        maxHeight: '80%',
-        anchor: 'center',
-        margin: 1,
-      })
-      overlay.handle = handle
-      // A host may settle the panel from inside showOverlay; hide the overlay
-      // once its handle exists so it cannot linger over the restored screen.
-      if (state.settled) handle.hide()
+      deps.dock.present(panel)
       cancel = () => {
         finish(() => { reject(new Error('The user cancelled the question.')) })
       }
@@ -158,28 +160,21 @@ export function registerQuestionAnswerer(deps: InteractionDeps, sessionId: strin
 export function registerApprovalAnswerer(deps: InteractionDeps, sessionId: string, modal: ModalHost): () => void {
   return deps.ctx.on('approval/request', (request, next) => {
     if (request.agent.session.id !== sessionId) return next()
+    /* v8 ignore next -- the queue stores this closure before the panel assigns the real cancel */
     let cancel = (): void => {}
     return modal.run(() => { cancel() }, () => new Promise<ApprovalOutcome>((resolve) => {
       const state = { settled: false }
       const reason = request.displayReason?.en ?? request.reason
-      const overlay: { handle?: ReturnType<TUI['showOverlay']> } = {}
       const finish = (outcome: ApprovalOutcome): void => {
         if (state.settled) return
         state.settled = true
         request.signal?.removeEventListener('abort', onAbort)
-        overlay.handle?.hide()
+        deps.dock.dismiss()
         resolve(outcome)
       }
       const onAbort = (): void => { finish('cancelled') }
       const panel = new ApprovalPanel(request.toolName, reason, deps.palette, finish)
-      const handle = deps.tui.showOverlay(panel, {
-        width: '80%',
-        maxHeight: '60%',
-        anchor: 'center',
-        margin: 1,
-      })
-      overlay.handle = handle
-      if (state.settled) handle.hide()
+      deps.dock.present(panel)
       cancel = () => { finish('cancelled') }
       request.signal?.addEventListener('abort', onAbort, { once: true })
     }))

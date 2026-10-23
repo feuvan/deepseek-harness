@@ -71,6 +71,8 @@ dsh --profile headless "run the tests"
 
 ### 命令参数
 
+所有面板都在编辑器下方的 dock 中打开：`/help`、`/status`、`/model`、`/config`、问题、审批与各选择列表。`/help` 等长页面可用 ↑/↓ 或 PgUp/PgDn 滚动，Esc 关闭面板。面板占用 dock 时按键只作用于面板：既不会滚动 transcript，也不会编辑下方编辑器。
+
 命令参数可补全：输入 `/effort ` 后按 Tab 从模型强度中选择，或输入 `/permission ` 后按 Tab 从组合的权限预设中选择，每项都带描述。权限切换在命令完成后反映到页脚。
 
 ### 待处理输入与中断
