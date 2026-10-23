@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/test-support/terminal-snapshot/README.md
+/:
+  en: b2c6dedfe565593e
+  zh: ef09fe7d3340e1f9
+/deepseek-ai-dsh-terminal-snapshot:
+  en: d3fbfc9b68c1391b
+  zh: 6514a281657554d0
+/deepseek-ai-dsh-terminal-snapshot/summary:
+  en: 93d4d48265aaa316
+  zh: 3b25b59dd9d46855
+/deepseek-ai-dsh-terminal-snapshot/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-terminal-snapshot/use-this-package:
+  en: 438cb30292bf2e79
+  zh: 6585e97570cb7403
+/deepseek-ai-dsh-terminal-snapshot/use-this-package/projected-state:
+  en: 812ec22878136e45
+  zh: 917b977b94b8e86a
+/deepseek-ai-dsh-terminal-snapshot/understand-the-implementation:
+  en: c94b9d84413e1469
+  zh: e6c7c34c6fd792ae
+/deepseek-ai-dsh-terminal-snapshot/understand-the-implementation/source-map:
+  en: f67f7e2e253efd10
+  zh: d60a70c1e25c030d
+/deepseek-ai-dsh-terminal-snapshot/further-exploration:
+  en: 939b0bffb755a41c
+  zh: 55856ecb1ce1bedb
+/deepseek-ai-dsh-terminal-snapshot/model-experience:
+  en: e01ac5e331fbedc9
+  zh: d72624c3d1b8be7b
+/deepseek-ai-dsh-terminal-snapshot/model-experience/kv-cache-effect:
+  en: b891c59cbc1a9fa2
+  zh: def4b43ced5dc13e
+/deepseek-ai-dsh-terminal-snapshot/known-limitations-and-deferred-work:
+  en: 19aa66357c64e3db
+  zh: 3423c82ad8946a10
+/deepseek-ai-dsh-terminal-snapshot/known-limitations-and-deferred-work/dev-note:
+  en: 1d2226dfb7bbaf18
+  zh: 9cb0834e1f49d6e1

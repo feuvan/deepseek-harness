@@ -12,11 +12,11 @@
 
 `dsh <name>` 是 `dsh --profile <name>` 的简写，启动位于 `$DSH_HOME/profiles/<name>` 的 profile。简写中的名称必须紧跟 `dsh`；`plugin` 仍为插件管理命令，因此启动同名 profile 时须使用 `dsh --profile plugin`。生效配置树以空根节点为起点，依次叠加 profile manifest（元数据清单）的 `dsh.profile.bundles` 列表中指定的各组合包 patch、profile 自身的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml`（这是各 profile 共享的机器本地偏好，因此优先于逐 profile 配置层），以及按 argv 顺序指定的各个 `--patch <path>` 覆盖层。对同一配置行，后应用的层优先。patch 会替换目标行的整个 `config` 值，而不是深度合并其中的键；patch 也可以插入新行。最终 YAML 组合决定是否由 `dsh-hmr` 监视配置；未启用 HMR 时，更改需要重启。配置解析、schema 校验、模块解析或插件启动失败时，系统会报告错误并以非零状态退出。收到 SIGINT 或 SIGTERM 时，挂载的根节点会先 dispose（资源释放）再退出。
 
-组合包名称先从 dsh 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-sdk-app`、`@deepseek-ai/dsh-sdk-minimal`、`@deepseek-ai/dsh-acp-app`）始终来自当前运行的 `dsh` 所属的安装；树外组合包来自 profile 中由 pnpm 管理的 `node_modules`。挂载配置行前，launcher 会按此顺序遍历安装与所选 bundle，并将生成的不可变 runtime resolution 安装到 Node 的解析器中。启动不会创建共享或 profile 自有的 fallback 链接。profile 已安装包保留原生优先级；profile 初始化和包管理器写入与运行时解析相互独立。
+组合包名称先从 dsh 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-tui-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-sdk-app`、`@deepseek-ai/dsh-sdk-minimal`、`@deepseek-ai/dsh-acp-app`）始终来自当前运行的 `dsh` 所属的安装；树外组合包来自 profile 中由 pnpm 管理的 `node_modules`。挂载配置行前，launcher 会按此顺序遍历安装与所选 bundle，并将生成的不可变 runtime resolution 安装到 Node 的解析器中。启动不会创建共享或 profile 自有的 fallback 链接。profile 已安装包保留原生优先级；profile 初始化和包管理器写入与运行时解析相互独立。
 
-`web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 首次使用时会从随附模板自动初始化（`web`：base + web-app，实时应用 patch；`headless`：base + headless，只在启动时应用 patch；`sdk`：base + sdk-app，只在启动时应用 patch；`sdk-minimal`：独立组合包，只在启动时应用 patch；`acp`：base + acp-app，只在启动时应用 patch）。其他缺失的 profile 会显式报错，并提示运行 `dsh plugin --profile <name> add <package>`。
+`web`、`tui`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 首次使用时会从随附模板自动初始化（`web`：base + web-app，实时应用 patch；`tui`：base + tui-app，只在启动时应用 patch；`headless`：base + headless，只在启动时应用 patch；`sdk`：base + sdk-app，只在启动时应用 patch；`sdk-minimal`：独立组合包，只在启动时应用 patch；`acp`：base + acp-app，只在启动时应用 patch）。其他缺失的 profile 会显式报错，并提示运行 `dsh plugin --profile <name> add <package>`。
 
-`dsh --profile <name> --from-default-profile <template>` 会在启动前，用上述五个随附模板之一的全新副本替换自定义目标。目标名称不能是任何大小写形式的随附 profile 名称。launcher 先在目标旁边的暂存目录中组装新 profile 并移动到目标位置，再删除原有的目标目录，包括其中已安装的依赖和用户 patch。移动失败时会恢复原有目录。如果恢复也失败，或进程在两次重命名之间停止，原有目录会保留在 `$DSH_HOME/profiles/.<name>.staging-*/previous`，供手动恢复。多个进程并发替换同一目标时，至少有一个会成功，且目标中只保留一份完整副本。该副本把模板当前的组合包列表写进一份依赖为空、用户 patch 为空的新 manifest。它不会读取 `<template>` 指定的本地同名 profile，不会复制其依赖或 patch，也不会持久化继承字段；模板列表之后的变化不会改写新 profile。复制列表中指名的内置组合包仍从当前 dsh 安装目录解析。替换成功不会增加 launcher 输出。
+`dsh --profile <name> --from-default-profile <template>` 会在启动前，用上述六个随附模板之一的全新副本替换自定义目标。目标名称不能是任何大小写形式的随附 profile 名称。launcher 先在目标旁边的暂存目录中组装新 profile 并移动到目标位置，再删除原有的目标目录，包括其中已安装的依赖和用户 patch。移动失败时会恢复原有目录。如果恢复也失败，或进程在两次重命名之间停止，原有目录会保留在 `$DSH_HOME/profiles/.<name>.staging-*/previous`，供手动恢复。多个进程并发替换同一目标时，至少有一个会成功，且目标中只保留一份完整副本。该副本把模板当前的组合包列表写进一份依赖为空、用户 patch 为空的新 manifest。它不会读取 `<template>` 指定的本地同名 profile，不会复制其依赖或 patch，也不会持久化继承字段；模板列表之后的变化不会改写新 profile。复制列表中指名的内置组合包仍从当前 dsh 安装目录解析。替换成功不会增加 launcher 输出。
 
 去掉该选项即可在不重置的情况下启动该 profile。未知模板或随附目标名称会在目标被改动之前失败；未知模板的诊断会列出有效模板。替换在组合包解析和应用启动之前提交，因此后续失败仍会把新 profile 留在磁盘上。三种配置 dump 模式都接受该选项，并在不启动应用的情况下替换目标。
 
@@ -38,6 +38,7 @@ dsh rescue
 | Profile | 参数 |
 |---|---|
 | `web` | `--host`、`--port`、`--tls-cert`、`--tls-key`、`--public-url`、可重复的 `--trusted-host`、`--no-open` |
+| `tui` | `--resume <id>` |
 | `headless` | 任务文本，作为位置参数 |
 | `sdk` | 无选项；stdio 携带 JSON-RPC 协议 |
 | `sdk-minimal` | 无选项；stdio 携带相同的 JSON-RPC 协议 |

@@ -1,0 +1,7 @@
+# Test-only overlay for the PTY acceptance scenario: the driver row waits for the
+# interactive terminal, appends one synthetic durable turn, asks the terminal a
+# question and an approval while that turn is open, then closes the turn and
+# writes the human decisions to the marker file named by the test environment.
+- insert:
+    - id: tui-acceptance-driver
+      name: './tui-acceptance-driver.ts'

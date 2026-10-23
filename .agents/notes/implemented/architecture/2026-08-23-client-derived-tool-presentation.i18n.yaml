@@ -6,11 +6,11 @@
   en: de8d02e979715600
   zh: 1db4d0364c30a7e3
 /agent-note-client-derived-presentation-from-raw-session-tool-events/problem:
-  en: 9f34c53e647c69ca
-  zh: 551776c7cc9618b5
+  en: b62fba18733f843f
+  zh: 90dcd98ed8635cf3
 /agent-note-client-derived-presentation-from-raw-session-tool-events/decision:
-  en: 5fcc5a3de9f757cd
-  zh: a693cefdb82784ee
+  en: d746f3402996574e
+  zh: 7d5a02558189f94c
 /agent-note-client-derived-presentation-from-raw-session-tool-events/decision/goals-and-non-goals:
   en: 40aceb58d71303b5
   zh: 6954e41ae2fd1efd
@@ -31,7 +31,7 @@
   zh: a451a63c3ab9e5d8
 /agent-note-client-derived-presentation-from-raw-session-tool-events/architecture-and-ownership/production-consumer-audit:
   en: 5351e75c1e417359
-  zh: b14b28c44f723de5
+  zh: a603d1c13d93f224
 /agent-note-client-derived-presentation-from-raw-session-tool-events/data-flow:
   en: 357a34a2f7796545
   zh: 671b1ef7b2c64cec

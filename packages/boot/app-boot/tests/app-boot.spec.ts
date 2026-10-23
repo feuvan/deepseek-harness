@@ -562,6 +562,7 @@ describe('auditStartupEntries', () => {
     'modules',
     'connection',
     'headless-runner',
+    'terminal-ui',
     'acp',
     'sdk-jsonrpc-server',
   ]

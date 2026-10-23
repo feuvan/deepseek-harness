@@ -4253,6 +4253,60 @@ export type ToolPresentationMode = 'native' | 'ptc'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tools -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tui -->
+<a id="deepseek-aidsh-tui"></a>
+
+## `@deepseek-ai/dsh-tui`
+
+- `inject`: `agents` · `approval` · `commands` · `llm` · `sessionProjections` · `sessionQuery` · `sessions` · `tools` · `userQuestions`
+- `source`: [`packages/tui/tui/src/config.ts:17`](../packages/tui/tui/src/config.ts)
+
+```ts config-catalog
+/**
+ * Cordis row configuration for the terminal front door. Every deployment-varying
+ * presentation choice is a field here; interaction keys and layout constants
+ * are part of the terminal contract rather than configuration.
+ */
+export interface Config {
+  /**
+   * Exact Session identity of the live root Agent this terminal presents. The
+   * application composition creates that Agent before the terminal takes the
+   * screen over.
+   */
+  sessionId: string
+  /** Whether rendered text carries ANSI styling. */
+  color: boolean
+  /** Whether the running footer advances its elapsed clock once per second. */
+  animation: boolean
+  /** Maximum body lines shown for a collapsed tool card. */
+  previewLines: number
+  /** Maximum transcript blocks kept rendered at once. */
+  windowBlocks: number
+  /** Prefix for the terminal title; the Session title is shown before it. */
+  title: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tui -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tui-app -->
+<a id="deepseek-aidsh-tui-app"></a>
+
+## `@deepseek-ai/dsh-tui-app`
+
+- `inject`: `agentDefaultModel` · `agents`
+- `source`: [`packages/bundle/tui-app/src/index.ts:30`](../packages/bundle/tui-app/src/index.ts)
+
+```ts config-catalog
+/** Row configuration supplied from the app's startup service. */
+export interface Config {
+  /** Exact Session identity this launch presents. */
+  sessionId: string
+  /** Persisted Session to resume instead of creating a fresh one. */
+  resumeSessionId?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tui-app -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-typert-loader -->
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -4790,6 +4844,7 @@ export interface Config {
 | `@deepseek-ai/dsh-session-telemetry` | — | [`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts) |
 | `@deepseek-ai/dsh-session-title-llm` | — | [`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts) |
 | `@deepseek-ai/dsh-ssh-helper-runtime` | — | [`packages/ssh/ssh-helper-runtime/src/index.ts`](../packages/ssh/ssh-helper-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-terminal-snapshot` | — | [`packages/test-support/terminal-snapshot/src/index.ts`](../packages/test-support/terminal-snapshot/src/index.ts) |
 | `@deepseek-ai/dsh-timeout` | — | [`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts) |
 | `@deepseek-ai/dsh-typert-generator` | — | [`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts) |
 | `@deepseek-ai/dsh-typert-protocol` | — | [`packages/typert/protocol/src/index.ts`](../packages/typert/protocol/src/index.ts) |

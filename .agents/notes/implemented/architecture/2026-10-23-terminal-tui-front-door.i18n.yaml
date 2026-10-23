@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-23-terminal-tui-front-door.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-23-terminal-tui-front-door.md
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane:
+  en: 1e9823c1da879e58
+  zh: d2de162c84394889
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane/problem:
+  en: ef652b08d7bf6dde
+  zh: 9b747931f3168228
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane/decision:
+  en: e79195439c2ca402
+  zh: f9e37243329ea6de
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane/verification:
+  en: 3337ee89d5967e91
+  zh: 61b3b018b5030049
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane/alternatives-considered:
+  en: 49d5ef52c8bbc373
+  zh: c517b306d10c83c6
+/agent-note-a-shipped-terminal-front-door-over-the-shared-agent-plane/consequences:
+  en: 13c90d799278154d
+  zh: 116e8abc18f7c661

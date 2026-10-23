@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for terminal.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/terminal.md
+/use-the-terminal-interface:
+  en: 20917e8ccc6460ed
+  zh: b544a2c6a992d944
+/use-the-terminal-interface/start-it:
+  en: 3688c760de5caa93
+  zh: 7a0d51f5963180fd
+/use-the-terminal-interface/start-it/model-credentials:
+  en: 9669a4ed4659cd1d
+  zh: 9db535f7386d106a
+/use-the-terminal-interface/what-you-see:
+  en: 8511fb10dc9feb08
+  zh: 0a6c046f58d0b500
+/use-the-terminal-interface/what-you-see/keys:
+  en: 1b5454f7c0d6a714
+  zh: b5299e93587679b6
+/use-the-terminal-interface/what-you-see/mentions-images-and-highlighting:
+  en: a059e9fc4df15f68
+  zh: 25d857433380dcbb
+/use-the-terminal-interface/what-you-see/reasoning-effort:
+  en: dbb2f07aec112626
+  zh: 6f0d69b68081cfa3
+/use-the-terminal-interface/what-you-see/commands:
+  en: 65acb98b9129193d
+  zh: faadd7ac0844f0ad
+/use-the-terminal-interface/what-you-see/command-arguments:
+  en: d8fba2c041ceabe2
+  zh: d47edb7c021406e1
+/use-the-terminal-interface/continue-a-session:
+  en: a8b2fc4a42915feb
+  zh: a35f90cfc0155a4a
+/use-the-terminal-interface/exit:
+  en: e07ab0d1552610a7
+  zh: 53a257b477ef874f
+/use-the-terminal-interface/related-documentation:
+  en: 169a0feeddadf43e
+  zh: 0947a0c333fbef7f

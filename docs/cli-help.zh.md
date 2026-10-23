@@ -17,6 +17,7 @@
 - [`dsh headless`](#dsh-headless)
 - [`dsh sdk`](#dsh-sdk)
 - [`dsh sdk-minimal`](#dsh-sdk-minimal)
+- [`dsh tui`](#dsh-tui)
 - [`dsh web`](#dsh-web)
 
 <a id="dsh"></a>
@@ -52,11 +53,12 @@ Examples:
   dsh web                                   boot the web profile (same as: dsh --profile web)
   dsh rescue --from-default-profile web
                                             recreate rescue from the shipped web template, then boot it
+  dsh tui                                   run the agent in the terminal (same as: dsh --profile tui)
+  dsh tui --resume <session>                continue a persisted Session in the terminal
   dsh headless "run the tests"              answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
-  dsh tui --resume <session>                arguments after the launcher flags reach the app
+  dsh web --patch ./extra.yml               boot the web profile with one extra overlay
   dsh web --help                            the web app's own flags and help
-  dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh plugin --profile web add <package>    install a plugin into the web profile
 
 ```
 
@@ -161,6 +163,26 @@ Options:
 
 Example:
   dsh --profile sdk-minimal     serve one SDK runtime until its client disconnects
+
+```
+
+<a id="dsh-tui"></a>
+## `dsh tui`
+
+调用方式: `dsh tui --help`, `dsh --profile tui --help`
+
+```text
+Usage: dsh --profile tui [options]
+
+Run the DeepSeek Harness agent in a full-screen terminal interface.
+
+Options:
+  --resume <id>  resume the persisted Session with this id
+  -h, --help     show this help
+
+Examples:
+  dsh tui                       start a fresh Session in the terminal
+  dsh tui --resume <session>    continue a persisted Session
 
 ```
 

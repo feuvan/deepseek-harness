@@ -31,6 +31,7 @@ The test-support group gives repository tests deterministic, keyless ways to exe
 | [`loader-smoke`](loader-smoke/README.md) | Boots Loader-composed applications and drives fixture turns for smoke tests |
 | [`llm-mock-server`](llm-mock-server/README.md) | Provides a scriptable OpenAI-compatible fault server for recovery tests |
 | [`llm-replay`](llm-replay/README.md) | Replays recorded model streams for keyless tests and demos |
+| [`terminal-snapshot`](terminal-snapshot/README.md) | Provides a pi-tui-compatible headless terminal, semantic screen snapshots, and a PTY driver |
 
 -----
 

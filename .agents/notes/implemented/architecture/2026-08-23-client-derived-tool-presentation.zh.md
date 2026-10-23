@@ -16,7 +16,7 @@ Client 已经拥有完整的工具展示入口。`ui-chat` 将 `tool/call`、`to
 
 Host presenter 与 Client keyed renderer 分担展示会形成对同一事件的两套解释。keyed renderer 是 Web 扩展点，因此中间 Host view 不提供独立 Web 能力。
 
-`ToolDefinition.presentCall`／`presentResult` 仍是保留的 Host API；ACP 采用 automation-only 协议，仓库也没有生产 TUI consumer。是否删除这些定义与 Session 读取是否独立于展示是两个决定。
+`ToolDefinition.presentCall`／`presentResult` 仍是保留的 Host API；ACP 采用 automation-only 协议。终端前门现在是生产环境的 Host 本地 consumer（[终端前门](2026-10-23-terminal-tui-front-door.zh.md)）；是否删除这些定义与 Session 读取是否独立于展示是两个决定。
 
 所需结果是一条原始 Session journal 和一个 Client 展示 owner，且不发生可见退化或顺带增强。专用卡片、交互和 PTC dispatch 拓扑保持稳定，transport 不再携带临时 view。
 
@@ -32,7 +32,7 @@ Client `ui-tool` 继续负责 card model 和具体 renderer。每个 card model 
 
 Client 不建立第二套 presenter registry。工具名称分发只使用现有 `tool.call.toolview` keyed slot；Client 中的纯 card-model helper 属于 renderer 实现，不成为 Cordis service、公开 registry 或 wire DTO。
 
-Host 的 `ToolDefinition.presentCall`、`ToolDefinition.presentResult`、`ToolCallView`、`ToolResultView` 及现有 presenter 实现全部保留。Session Controller 不调用它们，Client 不导入或消费它们；未来非 Client consumer 是否使用它们不属于本决定。
+Host 的 `ToolDefinition.presentCall`、`ToolDefinition.presentResult`、`ToolCallView`、`ToolResultView` 及现有 presenter 实现全部保留。Session Controller 不调用它们，Client 不导入或消费它们；终端前门是当前的非 Client consumer，其他未来非 Client consumer 是否使用它们不属于本决定。
 
 `ToolOutputDefinition.presentationMeta` 与持久 `tool/result.data.meta` 保留。它们携带模型可见结果文本无法无损表达、而现有专用卡片需要的执行结果事实。Client 直接校验并消费 `meta`，不要求 Host 在历史读取时再把它转换成 view。
 
@@ -105,13 +105,13 @@ Host 的 `ToolDefinition.presentCall`、`ToolDefinition.presentResult`、`ToolCa
 
 | 对象 | 生产者 | 生产消费者 | 决定 |
 |---|---|---|---|
-| `presentCall`／`presentResult` | 各 Host 工具 | 可能存在的非 Client caller | 保留在 Session Remote 之外 |
+| `presentCall`／`presentResult` | 各 Host 工具 | 终端前门（Host 本地） | 保留在 Session Remote 之外 |
 | `SessionEventEntry.view` | 无 | 无 | wire 不存在 |
 | `callView`／`resultView` | 无 | 无 | Client model 不存在 |
 | `presentationMeta` | Tools runtime | `tool/result`、Client card model 与 Host presenter | 保留的持久输入 |
 | fixture presenter mirror | 无 | 无 | fixture 下发 raw metadata |
 
-ACP 不消费 Session tool view，也不映射 Host render intent。仓库没有生产 TUI consumer；Host presenter 保留，但 Session Remote 不作为其 transport。
+ACP 不消费 Session tool view，也不映射 Host render intent。终端前门是当前的生产 Host-local presenter consumer；Host presenter 保留，但 Session Remote 不作为其 transport。
 
 ## 数据流
 

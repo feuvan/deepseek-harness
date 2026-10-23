@@ -1,0 +1,54 @@
+# The dsh-tui-app bundle patch: the terminal surface over the dsh-base layer.
+# It mounts no Host, HTTP server, Web runtime, or browser plugin. A startup row
+# parses this app's own flags, the session row creates or resumes the one
+# process-wide root Agent, and the terminal row presents it.
+#
+# A patch replaces the targeted row's whole `config`, so a row restated here
+# lists every key it owns.
+
+# ── surface-specific values the base deliberately omits ─────────────────────
+
+- id: system-prompt
+  config:
+    personaPrefix: >-
+      You are a coding agent powered by the {{model}} model.
+
+# Configuration HMR is a Web-surface concern; the terminal reads its
+# composition once per launch.
+- id: hmr
+  disabled: true
+
+# ── the terminal application ─────────────────────────────────────────────────
+
+- insert:
+    # Parses `--resume <id>` and this app's `--help`, then provides tuiStartup.
+    - id: tui-startup
+      name: '@deepseek-ai/dsh-tui-app/startup'
+
+    # Creates or resumes the single root Agent the terminal presents. It waits
+    # for the complete application before creating the Agent, so tools and
+    # adapters are not half-composed.
+    - id: tui-session
+      name: '@deepseek-ai/dsh-tui-app'
+      inject: [tuiStartup]
+      config:
+        sessionId: !!js ctx.tuiStartup.sessionId
+        resumeSessionId: !!js ctx.tuiStartup.resumeSessionId
+
+    # The presentation-only front door. It waits for the matching live root
+    # Agent, then takes the screen over and restores it on every exit path.
+    - id: terminal-ui
+      name: '@deepseek-ai/dsh-tui'
+      inject: [tuiStartup]
+      config:
+        sessionId: !!js ctx.tuiStartup.sessionId
+
+    # `@` mentions resolve through the shared file-reference provider, so the
+    # terminal offers the same workspace candidates as the Web composer.
+    - id: file-reference-local
+      name: '@deepseek-ai/dsh-file-reference-local'
+
+    # The model-facing question tool is opt-in per composition; the terminal
+    # registers the answerer for it.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'

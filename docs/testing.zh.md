@@ -22,7 +22,7 @@ fork 出的 worker 会同时运行多个 spec 文件，coverage gate 会拆成[�
 
 ## 带密钥策略：推理（inference）在这里很便宜
 
-我们是 DeepSeek，不要吝惜真实 API 测试。无密钥测试只能证明底层通路；只有带密钥运行才能证明 agent（智能体）能对接真实模型正常工作。覆盖文件写入提示词、包含多个轮次的对话、工具使用和流中取消。价值最高的是**冒烟测试**：启动已交付的 `dsh` profile、发送一条提示词，并检查外部世界；它们能捕获「单元测试全绿、产品却坏了」这一类 mock 无法发现的问题（[事故复盘 0001](postmortem/0001-acp-default-export-drops-inject.zh.md)）。自动跳过让无密钥 CI 和无密钥贡献者不受阻塞；它不是成本信号。Profile 级集成测试位于 `apps/cli/tests/profiles/`；包专属组合留在对应包的测试目录中。
+我们是 DeepSeek，不要吝惜真实 API 测试。无密钥测试只能证明底层通路；只有带密钥运行才能证明 agent（智能体）能对接真实模型正常工作。覆盖文件写入提示词、包含多个轮次的对话、工具使用和流中取消。价值最高的是**冒烟测试**：启动已交付的 `dsh` profile、发送一条提示词，并检查外部世界；它们能捕获「单元测试全绿、产品却坏了」这一类 mock 无法发现的问题（[事故复盘 0001](postmortem/0001-acp-default-export-drops-inject.zh.md)）。自动跳过让无密钥 CI 和无密钥贡献者不受阻塞；它不是成本信号。Profile 级集成测试位于 `apps/cli/tests/profiles/`，其中包含 PTY 终端验收；包专属组合留在对应包的测试目录中。
 
 ## 优先使用真实实现而非 mock
 

@@ -22,7 +22,7 @@ Forked workers run several spec files at once, the coverage gate splits into [co
 
 ## The with-key policy: inference is cheap here
 
-We are DeepSeek — do not ration real-API tests. A no-key test proves plumbing; only a with-key run proves the agent works against a real model. Cover file-writing prompts, multi-turn conversations, tool use, and mid-stream cancellation. Highest-value are **smoke tests** that boot a shipped `dsh` profile, send one prompt, and check the world — they catch the "green unit tests, broken product" class that mocks cannot ([postmortem 0001](postmortem/0001-acp-default-export-drops-inject.md)). Self-skip keeps secretless CI and keyless contributors unblocked; it is not a cost signal. Profile-level integration tests live under `apps/cli/tests/profiles/`; package-specific compositions stay with their package tests.
+We are DeepSeek — do not ration real-API tests. A no-key test proves plumbing; only a with-key run proves the agent works against a real model. Cover file-writing prompts, multi-turn conversations, tool use, and mid-stream cancellation. Highest-value are **smoke tests** that boot a shipped `dsh` profile, send one prompt, and check the world — they catch the "green unit tests, broken product" class that mocks cannot ([postmortem 0001](postmortem/0001-acp-default-export-drops-inject.md)). Self-skip keeps secretless CI and keyless contributors unblocked; it is not a cost signal. Profile integration tests live under `apps/cli/tests/profiles/`, including PTY acceptance; package-specific compositions stay with their package tests.
 
 ## Prefer the real implementation over a mock
 
