@@ -122,6 +122,7 @@ function terminalConfig(): Config {
     previewLines: 4,
     windowBlocks: 200,
     title: 'Test Terminal',
+    locale: 'auto',
   }
 }
 
@@ -176,6 +177,7 @@ describe('apply', () => {
         previewLines: 4,
         windowBlocks: 200,
         title: 'Test Terminal',
+        locale: 'auto',
       })
     }).toThrow('sessionId must not be blank')
   })

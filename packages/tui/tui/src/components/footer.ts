@@ -35,6 +35,10 @@ export interface FooterSnapshot {
   readonly status: string
   /** Elapsed seconds of the running turn, when the agent runs. */
   readonly elapsedSeconds: number | undefined
+  /** Steering messages waiting for the next step boundary. */
+  readonly pendingSteering: number
+  /** Follow-up messages queued for the next turn. */
+  readonly pendingQueued: number
 }
 
 /** The status footer below the composer. */

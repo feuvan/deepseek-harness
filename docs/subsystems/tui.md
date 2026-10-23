@@ -19,6 +19,7 @@ English | [中文](tui.zh.md)
 | `previewLines` | `10` | Body lines shown for a collapsed tool card |
 | `windowBlocks` | `200` | Maximum transcript blocks kept rendered |
 | `title` | `DeepSeek Harness` | Terminal title suffix |
+| `locale` | `auto` | Interface language: `en`, `zh`, or `auto` to follow `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG` |
 
 The terminal refuses to activate unless stdin and stdout are both TTYs. The failure is a startup diagnostic that names `dsh --profile headless "<task>"`; the process never enters the alternate screen.
 
@@ -47,6 +48,14 @@ A submitted prompt is text, except that an `@` mention naming a supported image 
 Fenced code in assistant markdown and plan reviews is highlighted by mapping `highlight.js` scopes onto the standard palette; unknown languages and absent fence languages render as plain code. Highlighting emits only standard foreground SGR, so it satisfies the same style policy as every other component.
 
 `Shift+Tab` advances the current model's reasoning effort through the adapter-advertised cycle and records the choice through the same model selection the selector writes, so the next request uses it. `/effort` opens a titled chooser over the same levels, and `/effort <level>` applies one directly; both accept the provider-default sentinel when the adapter advertises no default. Command arguments complete through the same autocomplete surface: `/effort ` lists the model's levels and `/permission ` lists the composed permission presets with descriptions. Bare `/permission` opens a titled chooser over the same presets, marks the effective one, and dispatches the selected preset through the registered `/permission` command, which keeps the durable event and projection update in the owning package. The footer always shows the effective level right after the model name, using the adapter default when the selection carries none, and the status panel mirrors it.
+
+## Composer input and interruption
+
+Enter steers a running turn; `/queue <text>` instead queues the message for the next turn, expanding `@` mentions the same way an ordinary prompt does. The composer's pending strip reads the `inbox` projection and shows steering and queued counts until the Agent consumes them, with the Esc hint while a turn runs. Esc with an empty composer cancels the running turn; with text present, or with a panel open, Esc stays with the editor or the panel. Ctrl+V reads one image from the host clipboard, verifies the current model's input modalities, admits it through the attachment store, and holds it for the next submitted prompt together with any `@` image mentions.
+
+`/config` opens one sectioned overlay over the live services rather than a static config file. The model and effort rows activate the existing selector and chooser; the permission rows write the Session preset through the registered `/permission` command; the experimental rows read `ctx.pluginManager.listBundles()`, toggle only the shipped optional bundles, and report the manager result (`restart-required` because the terminal bundle disables HMR, or the read-only reason); the display rows show the resolved profile values as read-only with the owning layer named. Writes never bypass the owning service, and a failed write is shown instead of retried.
+
+The terminal reports its own state outside the transcript: OSC 9;4 progress while a turn runs, and OSC 7501 program status (`working`, `blocked` while a question or approval panel waits, `idle` otherwise). Disposal clears the report. Interface copy ships in English and Chinese; `locale` selects a dictionary explicitly and `auto` follows the launch environment, so the footer, panels, notices, help, and diagnostics all switch together. Mouse reporting is enabled, so the wheel scrolls the transcript, drag-select copies through OSC 52, and the scroll view shows its jump-to-end indicator; `Ctrl+Shift+F` opens the transcript search.
 
 ## Human interaction
 

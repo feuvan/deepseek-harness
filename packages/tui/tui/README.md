@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tui` presents one live root Agent in the current terminal. It replays the append-origin transcript, follows live assistant frames, renders tools through `presentCall`/`presentResult`, highlights fenced code, completes `/` commands and `@` workspace mentions, attaches image mentions, gives plan reviews their own panel, and answers `ask_user_question` and one-shot approvals. It owns terminal input and presentation only: it creates no Agent, adds no model-facing capability, and writes no Session event.
+`dsh-tui` presents one live root Agent in the current terminal. It replays the transcript, follows live assistant frames, renders tools through `presentCall`/`presentResult`, highlights fenced code, completes `/` commands and `@` mentions, attaches image mentions or clipboard images, and answers `ask_user_question` and approvals. It interrupts with Esc, queues input for the next turn, shows pending input and terminal activity, and switches between English and Chinese copy. It owns terminal input and presentation only: no Agent, no model-facing capability, and no Session write.
 
 ## Table of Contents
 
@@ -41,6 +41,7 @@ Mount this plugin in a profile whose composition already creates the root Agent.
 | `previewLines` | `10` | Body lines shown for a collapsed tool card |
 | `windowBlocks` | `200` | Maximum transcript blocks kept rendered |
 | `title` | `DeepSeek Harness` | Terminal title suffix; the Session title is shown before it |
+| `locale` | `auto` | Interface language: `en`, `zh`, or `auto` to follow `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tui) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -48,9 +49,13 @@ The terminal is claimed only when stdin and stdout are both TTYs. A piped launch
 
 ### Interaction surface
 
-Enter sends an idle prompt and steers a running turn. Ctrl+C closes the active panel, cancels a running turn, or exits when idle. Ctrl+O cycles collapsed, expanded, and hidden tool cards; Ctrl+R toggles reasoning; Ctrl+L repaints; Shift+Tab advances the current model's reasoning effort. Registered commands (`/compact`, `/goal`, `/plan`, `/permission`, `/skill:...`) dispatch through `ctx.commands` and render their recorded outcome; terminal-only controls (`/help`, `/status`, `/model`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`) are handled by the terminal itself.
+Enter sends an idle prompt and steers a running turn; `/queue <text>` queues a message for the next turn instead. Esc interrupts a running turn when the composer is empty, Ctrl+C closes the active panel, cancels a running turn, or exits when idle. Ctrl+O cycles collapsed, expanded, and hidden tool cards; Ctrl+R toggles reasoning; Ctrl+L repaints; Ctrl+V attaches an image from the host clipboard; Shift+Tab advances the current model's reasoning effort. PgUp/PgDn scroll, the mouse wheel scrolls, drag-select copies through OSC 52, and Ctrl+Shift+F opens the transcript search. A dim strip above the composer shows steering and queued messages until the Agent consumes them, and the terminal reports working/blocked/idle through OSC 9;4 and OSC 7501.
+
+Registered commands (`/compact`, `/goal`, `/plan`, `/permission`, `/skill:...`) dispatch through `ctx.commands` and render their recorded outcome; terminal-only controls (`/help`, `/status`, `/model`, `/effort`, `/permission`, `/queue`, `/config`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`) are handled by the terminal itself.
 
 Typing `/` opens the command completion with each command's description, and typing `@` completes workspace paths from the composed file-reference index. Command arguments complete too: `/effort ` offers the current model's advertised levels, and `/permission ` offers the composed permission presets with their descriptions. `/effort` without an argument opens a titled chooser over the same levels; `/effort <level>` applies one directly, and the chosen (or adapter-default) level appears in the footer immediately after the model name. Bare `/permission` opens the same kind of chooser over the composed permission presets, marking the current value and dispatching the selected preset through the registered command; `/permission <preset>` dispatches directly. An accepted `@` mention stays literal prompt text except when it names a supported image file: the image is read from the workspace, admitted by the attachment store, and attached to the outgoing user message. Any admission failure becomes a transcript notice while the text is still sent. Shift+Tab cycles the effort levels the adapter advertises for the current model and records the choice in the Session log through the same model selection the selector uses; the footer always shows the effective level, including a default the user never chose explicitly. A question tagged `plan-review` renders as a dedicated review: framed plan document, approve/decline verdict marks, and no free-text answer row.
+
+`/config` presents a sectioned configuration panel over the live services: model and effort, the session permission preset, the shipped optional bundles (toggles write through the plugin manager and report that they take effect after a restart), and the profile-owned terminal display values, which stay read-only with their owning layer named. Interface copy ships in English and Chinese. `locale` selects one explicitly; `auto` follows the launch environment. The status footer, panels, notices, help, and diagnostics all read the active dictionary.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -81,6 +86,9 @@ The palette is one table of standard 16-color SGR pairs; `color: false` returns 
 | [`src/autocomplete.ts`](src/autocomplete.ts) | `/` command and `@` mention completion |
 | [`src/mentions.ts`](src/mentions.ts) | Image mention expansion and attachment admission |
 | [`src/highlight.ts`](src/highlight.ts) | Fenced-code highlighting over the standard palette |
+| [`src/clipboard.ts`](src/clipboard.ts) | Clipboard image reading and media-type detection |
+| [`src/locale.ts`](src/locale.ts) | Interface-locale resolution |
+| [`src/components/pending.ts`](src/components/pending.ts) | Pending steering and queued-input strip |
 
 </details>
 
@@ -113,7 +121,7 @@ No direct effect; the composed model route and prompt owner decide every request
 - **No session picker.** Resume takes an exact `--resume <id>`; there is no in-terminal browser of stored Sessions.
 - **No extension overlay service.** Plugins cannot present their own terminal components; questions, approvals, and the built-in panels share the only modal queue.
 - **Transcript windowing drops older blocks.** `windowBlocks` bounds the rendered tree; scrolling back past the window does not reload older blocks.
-- **English copy only.** Interface text lives in one dictionary module, but no locale service is composed yet.
+- **Two interface languages.** English and Chinese ship in the terminal; other languages fall back to English until a dictionary is added.
 - **Windows is unverified by the shipped acceptance lane.** The renderer uses pi-tui's process terminal, but the PTY acceptance runs on POSIX hosts.
 
 -----

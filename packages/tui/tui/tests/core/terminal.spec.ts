@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
-import { ProcessTerminal } from '@earendil-works/pi-tui'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ProcessTerminal, type TuiAltScreen } from '@earendil-works/pi-tui'
 import { assertInteractiveTerminal, createTerminalSession } from '../../src/terminal.ts'
+import { chinese, copy, setCopyLocale } from '../../src/copy.ts'
 import { headlessSession } from './harness.ts'
+
+afterEach(() => {
+  setCopyLocale('en')
+})
 
 describe('assertInteractiveTerminal', () => {
   it('accepts two interactive streams', () => {
@@ -38,6 +43,21 @@ describe('createTerminalSession', () => {
 
     expect(stop).toHaveBeenCalledOnce()
     await headless.settle()
+  })
+
+  it('enables mouse selection, copy-on-select, and the localized jump indicator', () => {
+    const { session } = headlessSession()
+    const tui = session.tui as TuiAltScreen
+    const indicator = Reflect.get(tui, 'scrollToEndIndicator') as () => string
+
+    expect(tui.getCopyOnSelect()).toBe(true)
+    expect(Reflect.get(tui, 'mouseEnabled')).toBe(true)
+    expect(indicator()).toBe(copy.composer.scrollToEnd)
+
+    setCopyLocale('zh')
+    expect(indicator()).toBe(chinese.composer.scrollToEnd)
+
+    session.stop()
   })
 
   it('defaults to the process terminal without starting it', () => {

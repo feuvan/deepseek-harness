@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tui` 在当前终端中呈现一个活动根 Agent。它回放 append-origin 会话 transcript、跟随实时助手帧、通过每个工具自己的 `presentCall`/`presentResult` 渲染该工具、高亮代码围栏、补全 `/` 命令与 `@` 工作区提及、把 `@` 图片提及附加到消息、为 plan review 提供专用面板，并应答 `ask_user_question` 与一次性审批。它只拥有终端输入与呈现：不创建 Agent、不增加模型可见能力，也不自行写入会话事件。
+`dsh-tui` 在当前终端中呈现一个活动根 Agent。它回放 transcript、跟随实时助手帧、通过每个工具自己的 `presentCall`/`presentResult` 渲染该工具、高亮代码围栏、补全 `/` 命令与 `@` 提及、附加 `@` 图片提及或剪贴板图片，并应答 `ask_user_question` 与审批。它支持 Esc 中断、把输入排队到下一轮、显示待处理输入与终端活动状态，并在中英文文案间切换。它只拥有终端输入与呈现：不创建 Agent、不增加模型可见能力，也不自行写入会话事件。
 
 ## 目录
 
@@ -41,6 +41,7 @@ kind: "package-reference"
 | `previewLines` | `10` | 折叠工具卡展示的正文行数 |
 | `windowBlocks` | `200` | 保留渲染的 transcript 块上限 |
 | `title` | `DeepSeek Harness` | 终端标题后缀；会话标题显示在其前面 |
+| `locale` | `auto` | 界面语言：`en`、`zh`，或 `auto` 依次跟随 `DSH_LOCALE`、`LC_ALL`、`LC_MESSAGES`、`LANG` |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tui)是全部可接受字段及其 JSDoc 的权威来源。
 
@@ -48,9 +49,13 @@ kind: "package-reference"
 
 ### 交互界面
 
-Enter 发送空闲提示并 steer 运行中的轮次。Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Shift+Tab 推进当前模型的推理强度。已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
+Enter 发送空闲提示并 steer 运行中的轮次；`/queue <text>` 改为把消息排到下一轮。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
+
+已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/effort`、`/permission`、`/queue`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
 
 输入 `/` 会打开命令补全并显示每条命令的描述，输入 `@` 会从组合的 file-reference 索引补全工作区路径。命令参数同样可补全：`/effort ` 提供当前模型声明的强度，`/permission ` 提供组合的权限预设及其描述。不带参数的 `/effort` 会打开同组强度的带标题选择器；`/effort <level>` 直接应用，所选（或适配器默认）强度会立即显示在页脚中模型名之后。不带参数的 `/permission` 会打开同类选择器列出组合的权限预设，标记当前值，并把所选预设交给已注册命令执行；`/permission <preset>` 直接派发。接受的 `@` 提及通常保留为字面提示文本；当它指向受支持的图片文件时，终端会从工作区读取该图片、经附件存储准入后附到发出的用户消息。任何准入失败都会变成 transcript 通知，同时文本仍照常发送。Shift+Tab 在当前模型适配器声明的强度之间循环，并通过与选择器相同的模型选择把选择记入会话日志；页脚始终显示实际生效的强度，包括用户未显式选择的默认值。带 `plan-review` 标记的问题会以专用评审呈现：带边框的计划文档、批准/拒绝标记，且不提供自由文本答案行。
+
+`/config` 打开按分类组织的配置面板，数据来自实际组合的服务：模型与推理强度、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -81,6 +86,9 @@ Enter 发送空闲提示并 steer 运行中的轮次。Ctrl+C 关闭活动面板
 | [`src/autocomplete.ts`](src/autocomplete.ts) | `/` 命令与 `@` 提及补全 |
 | [`src/mentions.ts`](src/mentions.ts) | 图片提及展开与附件准入 |
 | [`src/highlight.ts`](src/highlight.ts) | 基于标准调色板的代码围栏高亮 |
+| [`src/clipboard.ts`](src/clipboard.ts) | 剪贴板图片读取与媒体类型识别 |
+| [`src/locale.ts`](src/locale.ts) | 界面语言解析 |
+| [`src/components/pending.ts`](src/components/pending.ts) | 待处理 steering/排队输入提示行 |
 
 </details>
 
@@ -113,7 +121,7 @@ Enter 发送空闲提示并 steer 运行中的轮次。Ctrl+C 关闭活动面板
 - **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。
 - **没有扩展 overlay 服务。** 插件无法呈现自己的终端组件；问题、审批与内置面板共享唯一的模态队列。
 - **transcript 窗口会丢弃较旧的块。** `windowBlocks` 限制渲染树；向上滚动超出窗口不会重新加载较旧块。
-- **仅英文文案。** 界面文本集中在一个字典模块中，但尚未组装 locale 服务。
+- **提供两种界面语言。** 终端随附英文与中文；其他语言回退到英文，直到补充相应字典。
 - **Windows 未由随附验收通道验证。** 渲染器使用 pi-tui 的进程终端，但 PTY 验收运行在 POSIX 主机上。
 
 -----

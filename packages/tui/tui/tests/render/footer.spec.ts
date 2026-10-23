@@ -21,6 +21,8 @@ function completeSnapshot(overrides: Partial<FooterSnapshot> = {}): FooterSnapsh
     permission: 'workspace-write',
     status: copy.status.idle,
     elapsedSeconds: 42,
+    pendingSteering: 0,
+    pendingQueued: 0,
     ...overrides,
   }
 }

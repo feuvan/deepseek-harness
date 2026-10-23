@@ -15,8 +15,8 @@
   en: 8511fb10dc9feb08
   zh: 0a6c046f58d0b500
 /use-the-terminal-interface/what-you-see/keys:
-  en: 1b5454f7c0d6a714
-  zh: b5299e93587679b6
+  en: a1ae2a8f92db79a8
+  zh: a1d701328244cce3
 /use-the-terminal-interface/what-you-see/mentions-images-and-highlighting:
   en: a059e9fc4df15f68
   zh: 25d857433380dcbb
@@ -24,11 +24,23 @@
   en: dbb2f07aec112626
   zh: 6f0d69b68081cfa3
 /use-the-terminal-interface/what-you-see/commands:
-  en: 65acb98b9129193d
-  zh: faadd7ac0844f0ad
+  en: 76ffe7bdccdb1fe4
+  zh: 5348cda7ada613fa
 /use-the-terminal-interface/what-you-see/command-arguments:
   en: d8fba2c041ceabe2
   zh: d47edb7c021406e1
+/use-the-terminal-interface/what-you-see/pending-input-and-interruption:
+  en: 6fed062142af4df2
+  zh: fdb51fc9da215ee4
+/use-the-terminal-interface/what-you-see/clipboard-images:
+  en: 232a7e8500726587
+  zh: ad1af0c97441b35d
+/use-the-terminal-interface/what-you-see/configuration:
+  en: 790d0acc69f08c20
+  zh: 226a8afbdbc1c239
+/use-the-terminal-interface/what-you-see/interface-language:
+  en: 9efe323d4bf3fcb4
+  zh: c957339713a96618
 /use-the-terminal-interface/continue-a-session:
   en: a8b2fc4a42915feb
   zh: a35f90cfc0155a4a

@@ -9,8 +9,8 @@
   en: 0b7c26a1cc91ec3a
   zh: 759345a802d6444f
 /terminal-front-door/configuration:
-  en: b77db55e89d57122
-  zh: 1a2e36ba0d310210
+  en: 616882861a410e91
+  zh: 4b8f2cbe46b8f730
 /terminal-front-door/lifecycle:
   en: 0983c1675ef7173e
   zh: f898161825dc5f4f
@@ -20,6 +20,9 @@
 /terminal-front-door/composer:
   en: d7697597223af097
   zh: 9f494c7a7edf0dae
+/terminal-front-door/composer-input-and-interruption:
+  en: 42905850c653e218
+  zh: fe35deb0fc41dcd4
 /terminal-front-door/human-interaction:
   en: ab9e783b2805bf54
   zh: 17c16746f4078dce

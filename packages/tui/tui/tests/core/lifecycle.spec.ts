@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import type { Component } from '@earendil-works/pi-tui'
 import type { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
@@ -18,8 +18,13 @@ import { copy } from '../../src/copy.ts'
 import type { ComposerDeps } from '../../src/commands.ts'
 import type { PromptEditor } from '../../src/components/editor.ts'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AdmittedPromptContentPart, ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentAdmissionPart } from '@deepseek-ai/dsh-attachment/types'
+import { readClipboardImage } from '../../src/clipboard.ts'
 import { mountSessions } from '../support/fakes.ts'
+
+vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
 import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, captureOverlays, commandsDouble, freshContext,
@@ -53,7 +58,7 @@ interface LifecycleHarness {
   readonly commands: CommandsDouble
   readonly overlays: OverlayCapture
   readonly flush: MockInstance<(session: Session) => Promise<boolean>>
-  readonly stderr: ReturnType<typeof vi.spyOn>
+  readonly stderr: MockInstance<(chunk: string | Uint8Array) => boolean>
   readonly transcript: () => TerminalTranscript | undefined
   readonly transcriptText: () => string
   readonly start: () => void
@@ -209,6 +214,10 @@ function press(component: Component, data: string): void {
   if (component.handleInput === undefined) throw new Error('presented component has no input handler')
   component.handleInput(data)
 }
+
+beforeEach(() => {
+  vi.mocked(readClipboardImage).mockResolvedValue({ kind: 'none' })
+})
 
 afterEach(() => {
   vi.useRealTimers()
@@ -1873,5 +1882,639 @@ describe('TerminalApp permission command', () => {
     const deps = Reflect.get(composerOf(harness.app), 'deps') as ComposerDeps
 
     expect(deps.choices?.permissions?.()).toEqual([])
+  })
+})
+
+/** Attachment doubles and recordings for the clipboard attach path. */
+interface ClipboardServices {
+  /** Host services provided to the application. */
+  readonly services: Record<string, unknown>
+  /** LLM registry double provided to the application. */
+  readonly llm: Record<string, unknown>
+  /** Admitted prompt parts, in call order. */
+  readonly admitted: AttachmentAdmissionPart[][]
+}
+
+/**
+ * Build the attachment and LLM doubles the clipboard path reads.
+ * @param options - admission failure and declared model modalities.
+ * @returns the doubles and their recordings.
+ */
+function clipboardServices(options: {
+  readonly admitError?: unknown
+  readonly modalities?: readonly ('text' | 'image')[]
+} = {}): ClipboardServices {
+  const admitted: AttachmentAdmissionPart[][] = []
+  const attachments = {
+    imageLimits: MENTION_LIMITS,
+    admitPromptContent: async (content: readonly AttachmentAdmissionPart[]): Promise<readonly AdmittedPromptContentPart[]> => {
+      admitted.push([...content])
+      if (options.admitError !== undefined) throw options.admitError
+      return content.flatMap((part, index): AdmittedPromptContentPart[] => part.type === 'image'
+        ? [{
+          type: 'image',
+          attachment: {
+            attachmentId: AttachmentId(`clipboard-${String(index)}`),
+            mediaType: part.mediaType,
+            bytes: part.data.length,
+            width: 1,
+            height: 1,
+            ...(part.name === undefined ? {} : { name: part.name }),
+          },
+        }]
+        : [])
+    },
+  }
+  const llm = llmDouble({
+    providers: [{ id: 'alpha', name: 'Alpha' }],
+    listModels: async () => [],
+    resolveModelInfo: async (provider, model) => ({
+      provider,
+      id: model,
+      name: model,
+      ...(options.modalities === undefined ? {} : { inputModalities: options.modalities }),
+    }),
+  })
+  return { services: { attachments }, llm, admitted }
+}
+
+/** One clipboard image read the tests hand to the mocked reader. */
+function clipboardImage(): { kind: 'image'; bytes: Uint8Array; mediaType: 'image/png'; name: string } {
+  return {
+    kind: 'image',
+    bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    mediaType: 'image/png',
+    name: 'clipboard.png',
+  }
+}
+
+/**
+ * Read one private application member typed for the caller.
+ * @param app - the application.
+ * @param name - member name.
+ * @returns the member value.
+ */
+function privateValue(app: TerminalApp, name: string): unknown {
+  return Reflect.get(app, name)
+}
+
+describe('TerminalApp clipboard attach', () => {
+  it('attaches a clipboard image to the next prompt and clears it', async () => {
+    const clipboard = clipboardServices()
+    const harness = await lifecycleHarness({ services: clipboard.services, llm: clipboard.llm })
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue(clipboardImage())
+    const sent: ContentBlock[][] = []
+    vi.spyOn(harness.agent.agent, 'followup').mockImplementation((message) => { sent.push([...message.content]) })
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.clipboard.attached('clipboard.png')) })
+    expect(clipboard.admitted).toHaveLength(1)
+    expect(privateValue(harness.app, 'pendingImages') as ContentBlock[]).toHaveLength(1)
+
+    await submitLine(harness, 'first prompt')
+    await vi.waitFor(() => { expect(sent).toHaveLength(1) })
+    expect(sent[0]?.map(block => block.type)).toEqual(['text', 'image'])
+    expect(privateValue(harness.app, 'pendingImages') as ContentBlock[]).toEqual([])
+
+    await submitLine(harness, 'second prompt')
+    await vi.waitFor(() => { expect(sent).toHaveLength(2) })
+    expect(sent[1]?.map(block => block.type)).toEqual(['text'])
+  })
+
+  it.each([
+    ['none', { kind: 'none' as const }],
+    ['unavailable', { kind: 'unavailable' as const }],
+  ])('reports a clipboard read of %s as unsupported', async (_label, read) => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue(read)
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.clipboard.unsupported) })
+  })
+
+  it('reports a clipboard read failure', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue({ kind: 'failed', message: 'clipboard helper crashed' })
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.clipboard.failed('clipboard helper crashed'))
+    })
+  })
+
+  it('reports a model without image input support', async () => {
+    const clipboard = clipboardServices({ modalities: ['text'] })
+    const harness = await lifecycleHarness({ services: clipboard.services, llm: clipboard.llm })
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue(clipboardImage())
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.mention.unsupportedModel('test'))
+    })
+    expect(clipboard.admitted).toEqual([])
+  })
+
+  it('reports a composition without an attachment store', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue(clipboardImage())
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.mention.noAttachments) })
+  })
+
+  it.each([
+    ['an Error', new Error('admission failed'), 'admission failed'],
+    ['a non-Error', 'admission failed', 'admission failed'],
+  ])('reports an admission rejection thrown as %s', async (_label, admitError, message) => {
+    const clipboard = clipboardServices({ admitError })
+    const harness = await lifecycleHarness({ services: clipboard.services, llm: clipboard.llm })
+    harness.start()
+    await harness.awaitStarted()
+    vi.mocked(readClipboardImage).mockResolvedValue(clipboardImage())
+
+    harness.terminal.headless.press('\x16')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.clipboard.failed(message)) })
+    expect(privateValue(harness.app, 'pendingImages') as ContentBlock[]).toEqual([])
+  })
+
+  it('attaches before a selection exists', async () => {
+    const clipboard = clipboardServices()
+    const harness = await lifecycleHarness({ services: clipboard.services, llm: clipboard.llm })
+    vi.mocked(readClipboardImage).mockResolvedValue(clipboardImage())
+    const attach = privateValue(harness.app, 'attachClipboardImage') as () => Promise<void>
+
+    await attach.call(harness.app)
+
+    expect(clipboard.admitted).toHaveLength(1)
+    expect(privateValue(harness.app, 'pendingImages') as ContentBlock[]).toHaveLength(1)
+  })
+})
+
+describe('TerminalApp Esc interrupt', () => {
+  it('cancels the running turn when the composer is empty', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    harness.terminal.headless.press('\u001b')
+
+    expect(harness.agent.cancels).toEqual(['user'])
+    expect(harness.transcriptText()).toContain(copy.notice.interrupting)
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('leaves a composer with text and an idle agent alone', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const editor = privateValue(harness.app, 'editor') as PromptEditor
+
+    editor.setText('a draft')
+    harness.agent.setStatus('running')
+    harness.terminal.headless.press('\u001b')
+    expect(harness.agent.cancels).toEqual([])
+
+    editor.setText('')
+    harness.agent.setStatus('idle')
+    harness.terminal.headless.press('\u001b')
+    expect(harness.agent.cancels).toEqual([])
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('leaves the running turn alone while a modal owns input', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/help')
+    await overlayNumber(harness, 1)
+    harness.agent.setStatus('running')
+
+    harness.terminal.headless.press('\u001b')
+
+    expect(harness.agent.cancels).toEqual([])
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('ignores the interrupt path without a running agent', async () => {
+    const harness = await lifecycleHarness()
+    const interrupt = privateValue(harness.app, 'interruptTurn') as () => void
+
+    interrupt.call(harness.app)
+
+    harness.start()
+    await harness.awaitStarted()
+    interrupt.call(harness.app)
+
+    expect(harness.agent.cancels).toEqual([])
+  })
+
+  it('ignores Esc after the agent was unbound', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'agent', undefined)
+
+    harness.terminal.headless.press('\u001b')
+
+    expect(harness.agent.cancels).toEqual([])
+  })
+})
+
+describe('TerminalApp /queue', () => {
+  it('queues the expanded prompt for the next turn', async () => {
+    const mentions = mentionServices()
+    const harness = await lifecycleHarness({ services: mentions.services, llm: mentions.llm })
+    harness.start()
+    await harness.awaitStarted()
+    const followups: ContentBlock[][] = []
+    vi.spyOn(harness.agent.agent, 'followup').mockImplementation((message) => { followups.push([...message.content]) })
+
+    await submitLine(harness, '/queue keep this @missing.png')
+
+    await vi.waitFor(() => { expect(followups).toHaveLength(1) })
+    expect(followups[0]?.[0]).toEqual({ type: 'text', text: 'keep this @missing.png' })
+    expect(harness.transcriptText()).toContain(copy.mention.notFound('missing.png'))
+  })
+
+  it('queues even while the agent is running', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    const followups: ContentBlock[][] = []
+    const steers: ContentBlock[][] = []
+    vi.spyOn(harness.agent.agent, 'followup').mockImplementation((message) => { followups.push([...message.content]) })
+    vi.spyOn(harness.agent.agent, 'steer').mockImplementation((message) => { steers.push([...message.content]) })
+
+    await submitLine(harness, '/queue later')
+
+    await vi.waitFor(() => { expect(followups).toHaveLength(1) })
+    expect(steers).toEqual([])
+  })
+
+  it('reports the usage for an empty queue argument', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/queue')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.commands.usage('queue', '<message>'))
+    })
+  })
+
+  it('reports a queue without a live agent', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const queue = privateValue(harness.app, 'queuePrompt') as (argument: string | undefined) => Promise<void>
+    Reflect.set(harness.app, 'agent', undefined)
+
+    await queue.call(harness.app, 'hello')
+
+    expect(harness.transcriptText()).toContain(copy.commands.agentNotReady)
+  })
+
+  it.each([
+    ['an Error', new Error('expand failed'), 'expand failed'],
+    ['a non-Error', 'expand failed', 'expand failed'],
+  ])('reports an expansion failure thrown as %s', async (_label, error, message) => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const expand = vi.fn(async () => { throw error })
+    Reflect.set(harness.app, 'expandPrompt', expand)
+
+    await submitLine(harness, '/queue remember')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.commands.promptFailed(message))
+    })
+  })
+
+  it('reports the agent disappearing while the prompt expands', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    let resolveExpansion!: (value: { content: ContentBlock[]; notices: string[] }) => void
+    Reflect.set(harness.app, 'expandPrompt', () => new Promise((resolve) => { resolveExpansion = resolve }))
+
+    await submitLine(harness, '/queue remember')
+    Reflect.set(harness.app, 'agent', undefined)
+    resolveExpansion({ content: [{ type: 'text', text: 'remember' }], notices: [] })
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.commands.agentNotReady) })
+  })
+})
+
+describe('TerminalApp activity reporting', () => {
+  it('reports idle after start and working while a turn runs', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    expect(harness.terminal.headless.programStatus?.state).toBe('idle')
+    expect(harness.terminal.headless.progress).toBe(false)
+
+    harness.agent.setStatus('running')
+    harness.ctx.emit('agent/status', { agent: harness.agent.agent, status: 'running' })
+
+    expect(harness.terminal.headless.programStatus?.state).toBe('working')
+    expect(harness.terminal.headless.programStatus?.message).toBe(copy.activity.working)
+    expect(harness.terminal.headless.progress).toBe(true)
+  })
+
+  it('reports blocked while a modal waits and returns to idle after it closes', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/help')
+    const panel = await overlayNumber(harness, 1)
+    expect(harness.terminal.headless.programStatus?.state).toBe('blocked')
+    expect(harness.terminal.headless.programStatus?.kind).toBe('question')
+
+    press(panel, 'q')
+
+    await vi.waitFor(() => { expect(harness.terminal.headless.programStatus?.state).toBe('idle') })
+  })
+
+  it('clears the program status on dispose and tolerates a refusing terminal', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const setProgramStatus = vi.spyOn(harness.terminal.headless, 'setProgramStatus').mockImplementation((status) => {
+      if (status.state === 'clear') throw new Error('terminal gone')
+    })
+
+    expect(() => { harness.app.dispose() }).not.toThrow()
+
+    expect(setProgramStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'clear' }))
+  })
+
+  it('ignores activity updates before the terminal exists', async () => {
+    const harness = await lifecycleHarness()
+    const update = privateValue(harness.app, 'updateActivity') as () => void
+
+    expect(() => { update.call(harness.app) }).not.toThrow()
+  })
+})
+
+describe('TerminalApp shutdown ordering', () => {
+  it('restores the terminal before writing the failure to stderr', async () => {
+    let reads = 0
+    const harness = await lifecycleHarness({
+      read: async () => {
+        reads += 1
+        if (reads > 1) throw new Error('history unavailable')
+        return observation([])
+      },
+    })
+    const order: string[] = []
+    harness.terminal.stop.mockImplementation(() => { order.push('stop') })
+    harness.stderr.mockImplementation(() => { order.push('stderr'); return true })
+    harness.start()
+    await harness.awaitStarted()
+
+    harness.ctx.emit('agent/created', { agent: agentDouble({ session: harness.session }).agent, source: 'clear' })
+    await harness.awaitExit()
+
+    expect(order).toEqual(['stop', 'stderr'])
+  })
+
+  it('notices the exit and renders before waiting for the turn to settle', async () => {
+    const harness = await lifecycleHarness()
+    let noticedDuringIdle = false
+    let renderedDuringIdle = false
+    harness.agent.setWhenIdle(() => {
+      noticedDuringIdle = harness.transcriptText().includes(copy.exit.requested)
+      renderedDuringIdle = harness.terminal.renderNow.mock.calls.length > 0
+      return Promise.resolve()
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/exit')
+    await harness.awaitExit()
+
+    expect(noticedDuringIdle).toBe(true)
+    expect(renderedDuringIdle).toBe(true)
+  })
+})
+
+/** One plugin-manager double used by the configuration panel tests. */
+interface PluginManagerDouble {
+  listBundles(): Promise<readonly { name: string; optional: boolean; enabled: boolean; readOnlyReason?: string }[]>
+  setBundleEnabled(name: string, enabled: boolean): Promise<{ application: string }>
+}
+
+/**
+ * Build a plugin-manager double recording every bundle switch.
+ * @param bundles - bundles reported to the panel.
+ * @param outcomes - result per bundle name, or a thrown value.
+ * @returns the service and its recordings.
+ */
+function pluginManagerDouble(
+  bundles: readonly { name: string; optional: boolean; enabled: boolean; readOnlyReason?: string }[],
+  outcomes: Record<string, { application: string } | (() => never)> = {},
+): { service: PluginManagerDouble; switched: { name: string; enabled: boolean }[] } {
+  const switched: { name: string; enabled: boolean }[] = []
+  const service: PluginManagerDouble = {
+    listBundles: async () => bundles,
+    setBundleEnabled: async (name, enabled) => {
+      switched.push({ name, enabled })
+      const outcome = outcomes[name]
+      if (outcome === undefined) return { application: 'applied' }
+      if (typeof outcome === 'function') return outcome()
+      return outcome
+    },
+  }
+  return { service, switched }
+}
+
+/**
+ * Read the rows the presented configuration panel holds.
+ * @param panel - the presented component.
+ * @returns the configured rows.
+ */
+function configRows(panel: Component): readonly { id: string; readOnly: boolean }[] {
+  return Reflect.get(panel, 'rows') as readonly { id: string; readOnly: boolean }[]
+}
+
+/**
+ * Highlight one configuration row and activate it, settling the action.
+ * @param panel - the presented configuration panel.
+ * @param id - stable row identity.
+ */
+async function activateConfigRow(panel: Component, id: string): Promise<void> {
+  const index = configRows(panel).findIndex(row => row.id === id)
+  if (index < 0) throw new Error(`configuration row ${id} is missing`)
+  Reflect.set(panel, 'index', 0)
+  for (let step = 0; step < index; step += 1) press(panel, '\u001b[B')
+  press(panel, '\r')
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+/** The permission catalog the configuration panel lists. */
+const CONFIG_PRESETS = {
+  catalog: () => ({
+    options: [
+      { value: 'read-only', name: 'Read Only' },
+      { value: 'workspace-write', name: 'Workspace Write', description: 'writes inside the workspace' },
+    ],
+  }),
+}
+
+describe('TerminalApp /config', () => {
+  it('presents the configuration rows and closes on Escape', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/config')
+    const panel = await overlayNumber(harness, 1)
+
+    expect(panel.render(100).join('\n')).toContain(copy.config.title)
+    expect(configRows(panel).map(row => row.id)).toContain('permissions.unavailable')
+    expect(configRows(panel).map(row => row.id)).toContain('experimental.unavailable')
+
+    await activateConfigRow(panel, 'model.current')
+    await activateConfigRow(panel, 'display.cards')
+    await activateConfigRow(panel, 'display.reasoning')
+    press(panel, '\u001b')
+
+    await vi.waitFor(() => { expect(harness.overlays.handles[0]?.hidden()).toBe(true) })
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('dispatches permission, bundle, model, and effort changes from the rows', async () => {
+    const manager = pluginManagerDouble(
+      [
+        { name: 'bundle-a', optional: true, enabled: false },
+        { name: 'bundle-b', optional: true, enabled: true },
+        { name: 'bundle-c', optional: true, enabled: false },
+        { name: 'bundle-err', optional: true, enabled: false },
+        { name: 'bundle-string', optional: true, enabled: false },
+        { name: 'bundle-ro', optional: true, enabled: false, readOnlyReason: 'owned by policy' },
+        { name: 'bundle-core', optional: false, enabled: true },
+      ],
+      {
+        'bundle-a': { application: 'applied' },
+        'bundle-b': { application: 'restart-required' },
+        'bundle-c': { application: 'refused' },
+        'bundle-err': () => { throw new Error('write failed') },
+        'bundle-string': () => { throw 'write failed' },
+      },
+    )
+    const harness = await lifecycleHarness({
+      services: { permissionPresets: CONFIG_PRESETS, pluginManager: manager.service },
+      execute: async () => ({ commandId: CommandId('command-1'), result: { kind: 'success' } }),
+      values: { permissions: { currentValue: 'workspace-write' } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/config')
+    const panel = await overlayNumber(harness, 1)
+    const ids = configRows(panel).map(row => row.id)
+    expect(ids).toContain('permission.workspace-write')
+    expect(ids).toContain('bundle.bundle-a')
+    expect(ids).not.toContain('bundle.bundle-core')
+    expect(panel.render(100).join('\n')).toContain('owned by policy')
+
+    await activateConfigRow(panel, 'permission.workspace-write')
+    await vi.waitFor(() => { expect(harness.commands.executed).toEqual(['/permission workspace-write']) })
+
+    await activateConfigRow(panel, 'bundle.bundle-a')
+    await vi.waitFor(() => { expect(manager.switched).toEqual([{ name: 'bundle-a', enabled: true }]) })
+
+    await activateConfigRow(panel, 'bundle.bundle-b')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.restartRequired) })
+
+    await activateConfigRow(panel, 'bundle.bundle-c')
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.config.writeFailed('refused'))
+    })
+
+    await activateConfigRow(panel, 'bundle.bundle-err')
+    await activateConfigRow(panel, 'bundle.bundle-string')
+    await vi.waitFor(() => {
+      expect(harness.transcriptText().match(/Command failed|Configuration was not saved/gu)?.length).toBeGreaterThan(0)
+    })
+    expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed'))
+
+    await activateConfigRow(panel, 'bundle.bundle-ro')
+    expect(manager.switched.map(entry => entry.name)).not.toContain('bundle-ro')
+
+    await activateConfigRow(panel, 'model.change')
+    const selector = await overlayNumber(harness, 2)
+    press(selector, '\u001b')
+    await vi.waitFor(() => { expect(harness.overlays.handles[1]?.hidden()).toBe(true) })
+
+    await submitLine(harness, '/config')
+    const second = await overlayNumber(harness, 3)
+    await activateConfigRow(second, 'effort.change')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.noEffort) })
+  })
+
+  it('closes the configuration panel through the modal cancel path', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/config')
+    await overlayNumber(harness, 1)
+
+    harness.terminal.headless.press('\x03')
+
+    expect(harness.overlays.handles[0]?.hidden()).toBe(true)
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('reports the configuration panel without a live selection', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'selection', undefined)
+    const open = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
+
+    await open.call(harness.app)
+
+    expect(harness.transcriptText()).toContain(copy.commands.agentNotReady)
+  })
+
+  it('propagates a bundle enumeration failure', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        pluginManager: {
+          listBundles: async () => { throw new Error('bundle load failed') },
+          setBundleEnabled: async () => ({ application: 'applied' }),
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const open = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
+
+    await expect(open.call(harness.app)).rejects.toThrow('bundle load failed')
   })
 })

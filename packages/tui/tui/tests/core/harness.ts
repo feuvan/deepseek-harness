@@ -322,6 +322,7 @@ export function terminalConfig(overrides: Partial<Config> = {}): ResolvedConfig 
     previewLines: 4,
     windowBlocks: 200,
     title: 'Test Terminal',
+    locale: 'auto',
     ...overrides,
   })
 }

@@ -73,6 +73,8 @@ describe('StatusModel', () => {
       permission: undefined,
       status: 'idle',
       elapsedSeconds: undefined,
+      pendingSteering: 0,
+      pendingQueued: 0,
     })
   })
 
@@ -111,6 +113,8 @@ describe('StatusModel', () => {
       permission: undefined,
       status: 'idle',
       elapsedSeconds: undefined,
+      pendingSteering: 0,
+      pendingQueued: 0,
     })
   })
 
@@ -145,6 +149,8 @@ describe('StatusModel', () => {
       permission: 'workspace-write',
       status: 'idle',
       elapsedSeconds: undefined,
+      pendingSteering: 0,
+      pendingQueued: 0,
     })
   })
 
@@ -172,6 +178,43 @@ describe('StatusModel', () => {
       contextPercent: 0.2,
       permission: undefined,
     })
+  })
+
+  it('reads pending steering and queued counts from the inbox projection', async () => {
+    const message = (index: number) => ({ type: 'text' as const, text: `m${String(index)}` })
+    const harness = await statusHarness({
+      values: {
+        inbox: {
+          'next-step': [message(1)],
+          'next-turn': [message(2), message(3)],
+        },
+      },
+    })
+    const { model } = statusModel({
+      ctx: harness.ctx,
+      agent: () => harness.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+    })
+
+    expect(model.snapshot()).toMatchObject({ pendingSteering: 1, pendingQueued: 2 })
+  })
+
+  it('reports zero pending input for absent and empty inbox values', async () => {
+    const absent = await statusHarness()
+    const absentModel = statusModel({
+      ctx: absent.ctx,
+      agent: () => absent.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+    })
+    expect(absentModel.model.snapshot()).toMatchObject({ pendingSteering: 0, pendingQueued: 0 })
+
+    const empty = await statusHarness({ values: { inbox: { 'next-step': [], 'next-turn': [] } } })
+    const emptyModel = statusModel({
+      ctx: empty.ctx,
+      agent: () => empty.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+    })
+    expect(emptyModel.model.snapshot()).toMatchObject({ pendingSteering: 0, pendingQueued: 0 })
   })
 
   it('omits context pressure without a known window or occupancy', async () => {

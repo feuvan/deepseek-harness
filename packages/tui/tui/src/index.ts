@@ -11,6 +11,8 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { Config, resolveConfig } from './config.ts'
+import { resolveLocale } from './locale.ts'
+import { setCopyLocale } from './copy.ts'
 import { TerminalApp } from './lifecycle.ts'
 import { assertInteractiveTerminal } from './terminal.ts'
 
@@ -43,6 +45,7 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
+  setCopyLocale(resolveLocale(resolved.locale))
   assertInteractiveTerminal(process.stdin.isTTY, process.stdout.isTTY)
   const exit = ctx.get('appExit')
   if (exit === undefined) {

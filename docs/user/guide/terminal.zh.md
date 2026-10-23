@@ -38,8 +38,12 @@ dsh --profile headless "run the tests"
 | Ctrl+O | 在收缩、展开与隐藏工具卡之间循环 |
 | Ctrl+R | 显示或隐藏推理 |
 | Ctrl+L | 重绘屏幕 |
+| Esc | 编辑器为空时中断运行中的轮次 |
+| Ctrl+V | 从剪贴板附加图片 |
 | Shift+Tab | 推进当前模型的推理强度 |
 | PgUp / PgDn | 滚动 transcript |
+| 鼠标滚轮 / 拖拽 | 滚动，并通过终端复制选区 |
+| Ctrl+Shift+F | 在已渲染的 transcript 中搜索 |
 
 输入时会出现补全。输入 `/` 会列出命令及其描述；输入 `@` 会补全工作区中的文件与目录，含空格的路径通过带引号的 `@"..."` 形式补全。`Tab` 接受高亮条目。
 
@@ -57,7 +61,7 @@ dsh --profile headless "run the tests"
 
 ### 命令
 
-终端专属控制：`/help`、`/status`、`/model`、`/effort`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。
+终端专属控制：`/help`、`/status`、`/model`、`/effort`、`/permission`、`/queue`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。
 
 已注册的 agent 命令也可从编辑器使用，包括 `/compact`、`/goal`、`/plan`、`/permission` 以及 skill 调用。它们记录的结果会像其他命令一样出现在 transcript 中。
 
@@ -68,6 +72,22 @@ dsh --profile headless "run the tests"
 ### 命令参数
 
 命令参数可补全：输入 `/effort ` 后按 Tab 从模型强度中选择，或输入 `/permission ` 后按 Tab 从组合的权限预设中选择，每项都带描述。权限切换在命令完成后反映到页脚。
+
+### 待处理输入与中断
+
+轮次运行时，Enter 会在下一个步骤边界 steer 它。编辑器上方的暗色提示行显示 Agent 已接受但尚未消费的 steering 与排队消息数量。`/queue <text>` 把消息排到下一轮而不是 steer；它会像普通提示一样展开 `@` 提及。编辑器为空时 Esc 取消运行中的轮次；有文本时 Esc 留在编辑器内，面板打开时 Esc 关闭面板。
+
+### 剪贴板图片
+
+Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选模型接受图片输入；否则终端会说明未附加图片的原因。剪贴板图片与 `@` 图片提及可以出现在同一条提示里，提示发送后暂存的附件会被清空。内联图片渲染仍未实现，因此附加的图片在 transcript 中显示为带标签的占位符。
+
+### 配置
+
+`/config` 按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
+
+### 界面语言
+
+终端随附中英文文案。把 `terminal-ui` 行的 `locale` 设为 `en` 或 `zh`，或保持 `auto` 依次跟随 `DSH_LOCALE`、`LC_ALL`、`LC_MESSAGES`、`LANG`。面板、通知、帮助行与状态标签都会跟随所选语言；其他语言回退到英文。
 
 ## 继续会话
 

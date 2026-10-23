@@ -9,8 +9,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-plugin-manager'
 import { installModelSelection, type Agent, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -24,6 +25,7 @@ import { Footer } from './components/footer.ts'
 import { ModelSelectorPanel, loadTuiModelCatalog, nextEffort, type TuiModelCatalog, type TuiModelRow } from './model-selector.ts'
 import { TerminalAutocompleteProvider } from './autocomplete.ts'
 import { expandPromptMentions } from './mentions.ts'
+import { readClipboardImage } from './clipboard.ts'
 import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer } from './interactions.ts'
 import { StatusModel } from './status.ts'
 import { TerminalTranscript } from './transcript.ts'
@@ -32,6 +34,8 @@ import { createPalette, type Palette } from './palette.ts'
 import { createTerminalSession, type TerminalSession } from './terminal.ts'
 import { TextPanel } from './components/dialogs.ts'
 import { ChoicePanel } from './components/choice.ts'
+import { PendingStrip } from './components/pending.ts'
+import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
 import { PromptEditor } from './components/editor.ts'
 
 /** A startup or in-flight failure the terminal reports before exiting. */
@@ -50,6 +54,7 @@ export class TerminalApp {
   private status: StatusModel | undefined
   private composer: Composer | undefined
   private catalog: TuiModelCatalog | undefined
+  private pendingImages: import('@deepseek-ai/dsh-llm').ContentBlock[] = []
   private markdownTheme: MarkdownTheme | undefined
   private started = false
   private agent: Agent | undefined
@@ -111,6 +116,11 @@ export class TerminalApp {
       }
     }
     this.status?.dispose()
+    try {
+      this.terminal?.terminal.setProgramStatus({ state: 'clear', app: 'dsh' })
+    } catch (error: unknown) {
+      void error
+    }
     if (this.started) this.terminal?.stop()
   }
 
@@ -120,8 +130,8 @@ export class TerminalApp {
    */
   private fail(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`dsh: ${message}\n`)
     this.dispose()
+    process.stderr.write(`dsh: ${message}\n`)
     if (!this.exiting) {
       this.exiting = true
       this.appExit(1)
@@ -144,8 +154,9 @@ export class TerminalApp {
     void this.ensureCatalog()
     await this.observeHistory(agent)
     if (this.isDisposed()) return
-    this.tui?.start()
     this.started = true
+    this.tui?.start()
+    this.updateActivity()
     if (this.editor !== undefined) this.tui?.setFocus(this.editor)
   }
 
@@ -219,6 +230,7 @@ export class TerminalApp {
       requestRender: () => { tui.requestRender() },
     })
     this.status = status
+    this.modal.onChange = () => { this.updateActivity() }
     const footer = new Footer(this.palette, () => status.snapshot())
     this.footer = footer
     const banner = new Banner(this.palette, {
@@ -251,6 +263,8 @@ export class TerminalApp {
         cards: () => { this.transcript?.toggleCards() },
         effort: argument => this.setEffort(argument),
         permission: argument => this.choosePermission(argument),
+        queue: argument => this.queuePrompt(argument),
+        config: () => { void this.openConfigPanel() },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
       },
@@ -266,7 +280,8 @@ export class TerminalApp {
       primary: true,
       overscroll: 'chain',
     })
-    const lower = new VStack([editor, footer])
+    const pending = new PendingStrip(this.palette, () => status.snapshot())
+    const lower = new VStack([pending, editor, footer])
     if (isViewportTUI(tui)) {
       tui.setLayoutRoot(new VStack([
         { component: banner, basis: 'auto' },
@@ -283,6 +298,10 @@ export class TerminalApp {
         this.handleInterrupt()
         return { consume: true }
       }
+      if (matchesKey(data, 'escape') && this.editor?.getText() === '' && this.agent?.status === 'running' && !this.modal.hasActive()) {
+        this.interruptTurn()
+        return { consume: true }
+      }
       if (matchesKey(data, 'ctrl+o')) {
         this.transcript?.toggleCards()
         return { consume: true }
@@ -293,6 +312,10 @@ export class TerminalApp {
       }
       if (matchesKey(data, 'ctrl+l')) {
         tui.renderNow(true)
+        return { consume: true }
+      }
+      if (matchesKey(data, 'ctrl+v')) {
+        void this.attachClipboardImage()
         return { consume: true }
       }
       if (matchesKey(data, 'shift+tab')) {
@@ -322,6 +345,7 @@ export class TerminalApp {
     this.disposers.push(this.ctx.on('agent/status', ({ agent: subject }) => {
       if (subject !== this.agent) return
       this.editor?.setHint(subject.status === 'running' ? copy.composer.running : copy.composer.idle)
+      this.updateActivity()
       this.tui?.requestRender()
     }))
     this.disposers.push(this.ctx.on('agent/created', ({ agent: subject }) => {
@@ -439,6 +463,130 @@ export class TerminalApp {
     }))
   }
 
+  /** Cancel the running turn from the Esc binding, reporting the interrupt. */
+  private interruptTurn(): void {
+    const agent = this.agent
+    if (agent === undefined || agent.status !== 'running') return
+    this.transcript?.notice(copy.notice.interrupting)
+    agent.cancel({ kind: 'user' })
+    this.tui?.requestRender()
+  }
+
+  /**
+   * Queue one message for the next turn, expanding `@` mentions first.
+   * @param argument - the `/queue` text.
+   */
+  private async queuePrompt(argument: string | undefined): Promise<void> {
+    const text = argument?.trim() ?? ''
+    if (text === '') {
+      this.transcript?.notice(copy.commands.usage('queue', '<message>'))
+      return
+    }
+    const agent = this.agent
+    if (agent === undefined) {
+      this.transcript?.notice(copy.commands.agentNotReady)
+      return
+    }
+    try {
+      const expanded = await this.expandPrompt(text)
+      for (const notice of expanded.notices) this.transcript?.notice(notice)
+      const current = this.agent
+      if (current === undefined) {
+        this.transcript?.notice(copy.commands.agentNotReady)
+        return
+      }
+      current.followup(createUserMessage({ content: [...expanded.content], source: { kind: 'user' } }))
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.commands.promptFailed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /** Present the configuration panel over the composed services. */
+  private async openConfigPanel(): Promise<void> {
+    const tui = this.requireTui()
+    await this.ensureCatalog()
+    const selection = this.selection?.current
+    if (selection === undefined) {
+      this.transcript?.notice(copy.commands.agentNotReady)
+      return
+    }
+    const permissionPresets = this.ctx.get('permissionPresets')
+    const pluginManager = this.ctx.get('pluginManager')
+    /* v8 ignore next -- reassigned by the modal continuation before any action can invoke it */
+    let finish = (): void => {}
+    const actions: ConfigPanelActions = {
+      pickModel: () => { finish(); void this.openModelSelector(); return undefined },
+      pickEffort: () => { finish(); void this.setEffort(undefined); return undefined },
+      setPermission: (value) => { this.dispatchCommand(`/permission ${value}`) },
+      setBundle: async (name, enabled) => {
+        /* v8 ignore next -- the bundle rows exist only when the manager was passed to the loader */
+        if (pluginManager === undefined) return { notice: copy.config.failed(copy.config.unavailable('pluginManager')) }
+        try {
+          const result = await pluginManager.setBundleEnabled(name, enabled)
+          if (result.application === 'restart-required') return { restartRequired: true, notice: copy.config.restartRequired }
+          if (result.application === 'applied') return undefined
+          return { notice: copy.config.writeFailed(result.application) }
+        } catch (error: unknown) {
+          return { notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
+        }
+      },
+      toggleCards: () => { this.transcript?.toggleCards(); return undefined },
+      toggleReasoning: () => { this.transcript?.toggleReasoning(); return undefined },
+    }
+    const display = {
+      color: this.config.color,
+      animation: this.config.animation,
+      previewLines: this.config.previewLines,
+      windowBlocks: this.config.windowBlocks,
+      title: this.config.title,
+      locale: this.config.locale,
+    }
+    const rows = await loadConfigRows({
+      model: {
+        provider: selection.provider,
+        model: selection.model,
+        effort: selection.reasoningEffort,
+        effortImplicit: this.effectiveEffort().implicit,
+      },
+      permission: this.status?.snapshot().permission,
+      display,
+      ...(permissionPresets === undefined ? {} : { permissionPresets }),
+      ...(pluginManager === undefined ? {} : { pluginManager }),
+      actions,
+    })
+    const container: { handle?: ReturnType<TUI['showOverlay']> } = {}
+    await this.modal.run(
+      () => { finish() },
+      () => new Promise<void>((resolve) => {
+        finish = () => { container.handle?.hide(); resolve() }
+        const panel = new ConfigPanel({
+          rows,
+          palette: this.palette,
+          handlers: {
+            onCancel: () => { this.tui?.requestRender(); finish() },
+            onNotice: (message) => { this.transcript?.notice(message) },
+            onRestartNotice: (message) => { this.transcript?.notice(message) },
+          },
+        })
+        container.handle = tui.showOverlay(panel, { width: '90%', maxHeight: '80%', anchor: 'center', margin: 1 })
+      }),
+    )
+  }
+
+  /** Push the current turn and modal state to the terminal's own status reporting. */
+  private updateActivity(): void {
+    const terminal = this.terminal?.terminal
+    if (terminal === undefined) return
+    const running = this.agent?.status === 'running'
+    terminal.setProgress(running)
+    const status = this.modal.hasActive()
+      ? { state: 'blocked' as const, app: 'dsh', kind: 'question' as const, message: copy.activity.blocked }
+      : running
+        ? { state: 'working' as const, app: 'dsh', message: copy.activity.working }
+        : { state: 'idle' as const, app: 'dsh' }
+    terminal.setProgramStatus(status)
+  }
+
   /** Handle Ctrl+C: close a modal, cancel a turn, or exit. */
   private handleInterrupt(): void {
     if (this.modal.cancelCurrent()) return
@@ -457,6 +605,8 @@ export class TerminalApp {
   private requestExit(code: number): void {
     if (this.exiting) return
     this.exiting = true
+    this.transcript?.notice(copy.exit.requested)
+    this.tui?.renderNow(true)
     void (async () => {
       const agent = this.agent
       /* v8 ignore next -- every requestExit() caller runs after the Agent was bound */
@@ -712,9 +862,9 @@ export class TerminalApp {
    * @param text - the submitted prompt line.
    * @returns the message content and any attachment diagnostics.
    */
-  private expandPrompt(text: string): Promise<{ content: readonly import('@deepseek-ai/dsh-llm').ContentBlock[]; notices: readonly string[] }> {
+  private async expandPrompt(text: string): Promise<{ content: readonly import('@deepseek-ai/dsh-llm').ContentBlock[]; notices: readonly string[] }> {
     const agent = this.agent
-    return expandPromptMentions({
+    const expanded = await expandPromptMentions({
       ctx: this.ctx,
       cwd: () => this.status?.snapshot().cwd ?? agent?.session.header.cwd ?? process.cwd(),
       route: () => {
@@ -722,6 +872,52 @@ export class TerminalApp {
         return current === undefined ? undefined : { provider: current.provider, model: current.model }
       },
     }, text)
+    const pending = this.pendingImages
+    if (pending.length === 0) return expanded
+    this.pendingImages = []
+    return { content: [...expanded.content, ...pending], notices: expanded.notices }
+  }
+
+  /** Admit one clipboard image and hold it for the next submitted prompt. */
+  private async attachClipboardImage(): Promise<void> {
+    const read = await readClipboardImage()
+    if (read.kind === 'unavailable' || read.kind === 'none') {
+      this.transcript?.notice(copy.clipboard.unsupported)
+      return
+    }
+    if (read.kind === 'failed') {
+      this.transcript?.notice(copy.clipboard.failed(read.message))
+      return
+    }
+    const route = this.selection?.current
+    if (route !== undefined) {
+      const info = await this.ctx.llm.resolveModelInfo(route.provider, route.model)
+      if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+        this.transcript?.notice(copy.mention.unsupportedModel(route.model))
+        return
+      }
+    }
+    const attachments = this.ctx.get('attachments')
+    if (attachments === undefined) {
+      this.transcript?.notice(copy.mention.noAttachments)
+      return
+    }
+    try {
+      const admitted = await attachments.admitPromptContent([{
+        type: 'image',
+        mediaType: read.mediaType,
+        data: Buffer.from(read.bytes).toString('base64'),
+        name: read.name,
+      }])
+      const block = admitted[0]
+      /* v8 ignore next -- admitting one image part always returns one image part */
+      if (block?.type !== 'image') return
+      this.pendingImages.push(block)
+      this.transcript?.notice(copy.clipboard.attached(read.name))
+      this.tui?.requestRender()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.clipboard.failed(error instanceof Error ? error.message : String(error)))
+    }
   }
 
   /** Advance the current model's reasoning effort and report the new level. */
@@ -759,20 +955,24 @@ export class TerminalApp {
       this.showText(copy.panel.status, ['The agent is not ready yet.'])
       return
     }
+    const labels = copy.statusPanel
+    const effort = state.effort === undefined
+      ? labels.effortDefault
+      : state.effortImplicit ? labels.effortImplicit(state.effort) : state.effort
     const lines = [
-      `Session      ${agent.session.id}`,
-      `Created      ${new Date(agent.session.header.createdAt).toISOString()}`,
-      `Working dir  ${state.cwd}`,
+      `${labels.session.padEnd(12, ' ')} ${agent.session.id}`,
+      `${labels.created.padEnd(12, ' ')} ${new Date(agent.session.header.createdAt).toISOString()}`,
+      `${labels.cwd.padEnd(12, ' ')} ${state.cwd}`,
       /* v8 ignore start -- run() installs a current selection before the status panel opens */
-      `Provider     ${this.selection?.current?.provider ?? agent.options.provider}`,
+      `${labels.provider.padEnd(12, ' ')} ${this.selection?.current?.provider ?? agent.options.provider}`,
       /* v8 ignore stop */
-      `Model        ${state.model}`,
-      `Effort       ${state.effort ?? 'default'}${state.effortImplicit ? ' (default)' : ''}`,
-      `Permissions  ${state.permission ?? 'unknown'}`,
-      `Status       ${state.status}`,
-      `Tokens       ↑${String(state.inputTokens)} ↓${String(state.outputTokens)}`,
-      `Cache        ${state.cacheRate === undefined ? 'n/a' : `${String(Math.round(state.cacheRate * 100))}%`}`,
-      `Context      ${state.contextPercent === undefined ? 'n/a' : `${String(Math.round(state.contextPercent * 100))}%`}`,
+      `${labels.model.padEnd(12, ' ')} ${state.model}`,
+      `${labels.effort.padEnd(12, ' ')} ${effort}`,
+      `${labels.permissions.padEnd(12, ' ')} ${state.permission ?? 'unknown'}`,
+      `${labels.state.padEnd(12, ' ')} ${state.status}`,
+      `${labels.tokens.padEnd(12, ' ')} ↑${String(state.inputTokens)} ↓${String(state.outputTokens)}`,
+      `${labels.cache.padEnd(12, ' ')} ${state.cacheRate === undefined ? labels.notAvailable : `${String(Math.round(state.cacheRate * 100))}%`}`,
+      `${labels.context.padEnd(12, ' ')} ${state.contextPercent === undefined ? labels.notAvailable : `${String(Math.round(state.contextPercent * 100))}%`}`,
     ]
     this.showText(copy.panel.status, lines)
   }

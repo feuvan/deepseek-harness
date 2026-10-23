@@ -7,6 +7,7 @@
  */
 
 import { ProcessTerminal, TuiAltScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'
+import { copy } from './copy.ts'
 
 /** The terminal surface this plugin owns for one application lifetime. */
 export interface TerminalSession {
@@ -38,7 +39,11 @@ export function assertInteractiveTerminal(stdinIsTty: boolean | undefined, stdou
  * @returns the renderer/terminal pair with an idempotent stop.
  */
 export function createTerminalSession(terminal: Terminal = new ProcessTerminal()): TerminalSession {
-  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false })
+  const tui = new TuiAltScreen(terminal, false, undefined, {
+    mouse: true,
+    copyOnSelect: true,
+    scrollToEndIndicator: () => copy.composer.scrollToEnd,
+  })
   let stopped = false
   return {
     tui,

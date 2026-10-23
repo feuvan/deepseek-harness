@@ -58,12 +58,18 @@ describe('PromptEditor', () => {
     expect(component.render(80)[0]).toBe('dsh> second hint')
   })
 
-  it('shows the cursor marker rather than the hint while focused', () => {
-    const component = editor({ hint: 'hidden hint' })
+  it('omits the cursor marker while unfocused and empty', () => {
+    const first = editor({ hint: 'visible hint' }).render(80)[0] ?? ''
+    expect(first).toBe('dsh> visible hint')
+    expect(first).not.toContain(CURSOR_MARKER)
+  })
+
+  it('shows the hint while focused and empty', () => {
+    const component = editor({ hint: 'visible hint' })
     component.focused = true
     const first = component.render(80)[0] ?? ''
+    expect(first).toContain('visible hint')
     expect(first).toContain(CURSOR_MARKER)
-    expect(first).not.toContain('hidden hint')
   })
 
   it('shows the typed text through getText and setText', () => {

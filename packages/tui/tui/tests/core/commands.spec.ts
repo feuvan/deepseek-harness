@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommandId } from '@deepseek-ai/dsh-commands'
 import type { CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -6,11 +6,15 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Composer, type ComposerDeps, type LocalCommands } from '../../src/commands.ts'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { copy } from '../../src/copy.ts'
+import { chinese, copy, setCopyLocale } from '../../src/copy.ts'
 import { mountSessions } from '../support/fakes.ts'
 import {
   agentDouble, commandsDouble, freshContext, type AgentDouble, type CommandsDouble,
 } from './harness.ts'
+
+afterEach(() => {
+  setCopyLocale('en')
+})
 
 /** One composer under test with its recorded outcomes. */
 interface ComposerHarness {
@@ -19,6 +23,8 @@ interface ComposerHarness {
   readonly local: string[]
   readonly effortArgs: (string | undefined)[]
   readonly permissionArgs: (string | undefined)[]
+  readonly queueArgs: (string | undefined)[]
+  readonly configures: string[]
   readonly notices: string[]
   readonly agent: AgentDouble
   readonly ready: (agent: Agent | undefined) => void
@@ -48,6 +54,8 @@ async function composerHarness(options: {
   const local: string[] = []
   const effortArgs: (string | undefined)[] = []
   const permissionArgs: (string | undefined)[] = []
+  const queueArgs: (string | undefined)[] = []
+  const configures: string[] = []
   const notices: string[] = []
   let presented: Agent | undefined = agent.agent
   const record = (name: string) => (): void => { local.push(name) }
@@ -61,6 +69,8 @@ async function composerHarness(options: {
     redraw: record('redraw'),
     effort: (argument) => { local.push('effort'); effortArgs.push(argument) },
     permission: (argument) => { local.push('permission'); permissionArgs.push(argument) },
+    queue: (argument) => { local.push('queue'); queueArgs.push(argument) },
+    config: () => { local.push('config'); configures.push('config') },
     exit: record('exit'),
   }
   const composer = new Composer({
@@ -77,6 +87,8 @@ async function composerHarness(options: {
     local,
     effortArgs,
     permissionArgs,
+    queueArgs,
+    configures,
     notices,
     agent,
     ready: (next) => { presented = next },
@@ -94,6 +106,8 @@ describe('Composer.submit', () => {
     ['redraw', 'redraw'],
     ['effort', 'effort'],
     ['permission', 'permission'],
+    ['queue', 'queue'],
+    ['config', 'config'],
     ['exit', 'exit'],
     ['quit', 'exit'],
   ] as const)('runs the terminal-local /%s control', async (name, control) => {
@@ -293,7 +307,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'config', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -358,15 +372,15 @@ describe('Composer.statusLines', () => {
       agent: () => agent.agent,
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
-        reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {}, exit: () => {},
+        reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
+        queue: () => {}, config: () => {}, exit: () => {},
       },
       notice: () => {},
     })
 
     expect(composer.statusLines()).toEqual([
       'Session    status-session',
-      `Started    ${new Date(session.header.createdAt).toISOString()}`,
-      'Origin     subagent',
+      `Created    ${new Date(session.header.createdAt).toISOString()}`,
       'Provider   prov',
       'Model      mod',
       'Status     running',
@@ -375,10 +389,13 @@ describe('Composer.statusLines', () => {
     ])
   })
 
-  it('reports a root origin by default', async () => {
+  it('labels the status facts through the active copy', async () => {
     const harness = await composerHarness()
 
-    expect(harness.composer.statusLines()).toContain('Origin     root')
+    const lines = harness.composer.statusLines()
+
+    expect(lines.some(line => line.startsWith(copy.statusPanel.session))).toBe(true)
+    expect(lines.some(line => line.startsWith(copy.statusPanel.model))).toBe(true)
   })
 })
 
@@ -502,5 +519,91 @@ describe('Composer command arguments', () => {
     expect(lines).toContain('  Shift+Tab          cycle reasoning effort')
     expect(lines).toContain('  /effort             Show or set the reasoning effort')
     expect(lines).toContain('  /permission         Show or switch the permission preset')
+    expect(lines).toContain('  /config             Show and change the configuration')
+  })
+})
+
+
+describe('Composer copy and /queue', () => {
+  it('sources every local description from the active copy', async () => {
+    const harness = await composerHarness()
+
+    const expected: Record<string, string> = {
+      help: copy.commands.help,
+      status: copy.commands.status,
+      model: copy.commands.model,
+      clear: copy.commands.clear,
+      reasoning: copy.commands.reasoning,
+      cards: copy.commands.cards,
+      redraw: copy.commands.redraw,
+      effort: copy.commands.effort,
+      permission: copy.commands.permission,
+      queue: copy.commands.queue,
+      config: copy.commands.config,
+      exit: copy.commands.exit,
+      quit: copy.commands.quit,
+    }
+    for (const command of harness.composer.slashCommands()) {
+      if (expected[command.name] !== undefined) expect(command.description).toBe(expected[command.name])
+    }
+    expect(harness.composer.helpLines()[0]).toBe(copy.commands.helpTitle)
+    expect(harness.composer.helpLines()).toContain(copy.commands.helpCommandsTitle)
+    expect(harness.composer.helpLines().join('\n')).toContain('  Ctrl+V             attach an image from the clipboard')
+  })
+
+  it('sources the status panel labels from the active copy', async () => {
+    const harness = await composerHarness()
+
+    const lines = harness.composer.statusLines()
+    const labels = copy.statusPanel
+
+    expect(lines[0]).toContain(labels.session)
+    expect(lines[1]).toContain(labels.created)
+    expect(lines[2]).toContain(labels.provider)
+    expect(lines[3]).toContain(labels.model)
+    expect(lines[4]).toContain(labels.state)
+  })
+
+  it('switches the command labels with the locale', async () => {
+    setCopyLocale('zh')
+    const harness = await composerHarness()
+
+    const queue = harness.composer.slashCommands().find(command => command.name === 'queue')
+    const lines = harness.composer.helpLines()
+
+    expect(queue?.description).toBe(chinese.commands.queue)
+    expect(lines[0]).toBe(chinese.commands.helpTitle)
+    expect(lines).toContain(chinese.commands.helpCommandsTitle)
+  })
+
+  it('passes a parsed queue argument', async () => {
+    const harness = await composerHarness()
+
+    harness.composer.submit('/queue remember this')
+    harness.composer.submit('/queue')
+
+    expect(harness.queueArgs).toEqual(['remember this', undefined])
+    expect(harness.local).toEqual(['queue', 'queue'])
+  })
+})
+
+describe('Composer.statusLines provider fallback', () => {
+  it('renders a dash when the Agent carries no provider route', async () => {
+    const ctx = freshContext()
+    await mountSessions(ctx)
+    const session = ctx.sessions.create(SessionId('no-provider-session'))
+    const agent = agentDouble({ session, options: { model: 'mod' } })
+    const composer = new Composer({
+      ctx,
+      agent: () => agent.agent,
+      local: {
+        help: () => {}, status: () => {}, model: () => {}, clear: () => {},
+        reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
+        queue: () => {}, config: () => {}, exit: () => {},
+      },
+      notice: () => {},
+    })
+
+    expect(composer.statusLines().map(line => line.trimEnd())).toContain('Provider   -')
   })
 })

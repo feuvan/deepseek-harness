@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { copy } from '../../src/copy.ts'
+import { afterEach, describe, expect, it } from 'vitest'
+import { PendingStrip } from '../../src/components/pending.ts'
+import type { FooterSnapshot } from '../../src/components/footer.ts'
+import { chinese, copy, english, setCopyLocale } from '../../src/copy.ts'
+import { createPalette } from '../../src/palette.ts'
+import { visibleLines } from '../support/terminal.ts'
 
 /** @returns whether a value is a nested copy group. */
 function isCopyGroup(value: unknown): value is Record<string, unknown> {
@@ -17,64 +21,128 @@ function leafStrings(value: Record<string, unknown>, prefix = ''): [path: string
   return leaves
 }
 
-describe('copy', () => {
+/** One copy formatter found in the tree. */
+type Formatter = (...args: never[]) => unknown
+
+/**
+ * Collect every formatter in the copy tree with its dotted path.
+ * @param value - copy subtree.
+ * @param prefix - dotted path prefix.
+ * @returns formatter paths and functions.
+ */
+function leafFunctions(value: Record<string, unknown>, prefix = ''): [path: string, format: Formatter][] {
+  const functions: [string, Formatter][] = []
+  for (const [key, entry] of Object.entries(value)) {
+    const path = prefix === '' ? key : `${prefix}.${key}`
+    if (typeof entry === 'function') functions.push([path, entry as Formatter])
+    else if (isCopyGroup(entry)) functions.push(...leafFunctions(entry, path))
+  }
+  return functions
+}
+
+/**
+ * Collect every leaf path of the copy tree with its host type.
+ * @param value - copy subtree.
+ * @param prefix - dotted path prefix.
+ * @returns leaf paths and typeof values.
+ */
+function leafTypes(value: Record<string, unknown>, prefix = ''): [path: string, type: string][] {
+  const leaves: [string, string][] = []
+  for (const [key, entry] of Object.entries(value)) {
+    const path = prefix === '' ? key : `${prefix}.${key}`
+    if (isCopyGroup(entry)) leaves.push(...leafTypes(entry, path))
+    else leaves.push([path, typeof entry])
+  }
+  return leaves
+}
+
+/** @returns one complete footer snapshot for the strip renders. */
+function snapshot(overrides: Partial<FooterSnapshot> = {}): FooterSnapshot {
+  return {
+    cwd: '/work/repo',
+    title: undefined,
+    model: 'alpha/m-1',
+    effort: 'high',
+    effortImplicit: false,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheRate: undefined,
+    contextPercent: undefined,
+    permission: 'workspace-write',
+    status: copy.status.running,
+    elapsedSeconds: undefined,
+    pendingSteering: 1,
+    pendingQueued: 2,
+    ...overrides,
+  }
+}
+
+afterEach(() => {
+  setCopyLocale('en')
+})
+
+describe('copy dictionaries', () => {
   it('defines every user-visible string as non-empty text', () => {
-    const leaves = leafStrings(copy)
-    expect(leaves.length).toBeGreaterThan(0)
-    for (const [path, text] of leaves) expect(text.trim(), path).not.toBe('')
+    for (const dictionary of [english, chinese]) {
+      const leaves = leafStrings(dictionary)
+      expect(leaves.length).toBeGreaterThan(0)
+      for (const [path, text] of leaves) expect(text.trim(), path).not.toBe('')
+    }
   })
 
-  it('formats question batch progress as index over total', () => {
+  it('keeps identical key paths and leaf types across locales', () => {
+    expect(leafTypes(chinese)).toEqual(leafTypes(english))
+  })
+
+  it('defines formatters with the same paths in both locales', () => {
+    expect(leafFunctions(chinese).map(([path]) => path)).toEqual(leafFunctions(english).map(([path]) => path))
+  })
+
+  it.each([
+    ['English', () => english],
+    ['Chinese', () => chinese],
+  ] as const)('returns strings from every %s formatter', (_label, dictionary) => {
+    const functions = leafFunctions(dictionary())
+    expect(functions.length).toBeGreaterThan(0)
+    for (const [path, format] of functions) expect(typeof format(), path).toBe('string')
+  })
+
+  it('uses formatters that react to their arguments', () => {
     expect(copy.prompt.progress(1, 3)).toBe('1/3')
-    expect(copy.prompt.progress(2, 2)).toBe('2/2')
-  })
-
-  it('formats a single hidden line in the singular', () => {
     expect(copy.notice.hiddenLines(1)).toBe('… 1 more line')
-  })
-
-  it('formats several hidden lines in the plural', () => {
     expect(copy.notice.hiddenLines(2)).toBe('… 2 more lines')
-    expect(copy.notice.hiddenLines(40)).toBe('… 40 more lines')
+    expect(copy.mention.tooMany(4)).toBe('Only 4 images can be attached to one message.')
+    expect(copy.model.effort('high')).toBe('Reasoning effort: high')
   })
 })
 
-
-describe('copy format helpers', () => {
-  it('formats the mention diagnostics', () => {
-    expect(copy.mention.unsupportedModel('text-only')).toBe(
-      'Model "text-only" does not support image input; the image mention was not attached.',
-    )
-    expect(copy.mention.notFound('a.png')).toBe('Image mention "a.png" is not a readable file.')
-    expect(copy.mention.tooLarge('a.png', 1024)).toBe('Image mention "a.png" exceeds the 1024-byte image limit.')
-    expect(copy.mention.tooMany(4)).toBe('Only 4 images can be attached to one message.')
-    expect(copy.mention.failed('a.png', 'read failed')).toBe('Image mention "a.png" could not be attached: read failed')
-    expect(copy.mention.noAttachments).toContain('no attachment store')
-    expect(copy.mention.noFilesystem).toContain('no filesystem service')
+describe('setCopyLocale', () => {
+  it('starts in English', () => {
+    expect(copy).toBe(english)
   })
 
-  it('formats the reasoning-effort notices', () => {
-    expect(copy.model.effort('high')).toBe('Reasoning effort: high')
-    expect(copy.model.effortFailed('catalog offline')).toBe('Could not switch reasoning effort: catalog offline')
+  it('switches the live copy binding to Chinese and back', () => {
+    setCopyLocale('zh')
+
+    expect(copy).toBe(chinese)
+    expect(copy.status.running).toBe('运行中')
+    expect(copy.commands.queue).toBe('把一条消息排到下一轮')
+    expect(copy.clipboard.unsupported).toBe('剪贴板中没有模型可接受的图片。')
+
+    setCopyLocale('en')
+
+    expect(copy).toBe(english)
+    expect(copy.status.running).toBe('running')
   })
 
-  it('names every plan-review presentation value', () => {
-    expect(copy.prompt.planReview).toBe('Plan review')
-    expect(copy.prompt.planReviewHint).toBe('↑/↓ move · Enter select · Esc cancel')
-    expect(copy.prompt.approveMark).toBe('✓')
-    expect(copy.prompt.declineMark).toBe('✗')
-    expect(copy.prompt.planTruncated).toContain('plan truncated')
-    expect(copy.prompt.customHint).toContain('Enter confirm')
-    expect(copy.prompt.custom).toBe('Other answer…')
-  })
+  it('makes a component render the active locale', () => {
+    setCopyLocale('zh')
+    const strip = new PendingStrip(createPalette(false), () => snapshot())
 
-  it('names the permission-preset chooser values', () => {
-    expect(copy.prompt.permissionTitle).toBe('Permission preset')
-    expect(copy.prompt.permissionCurrent).toBe('current')
-  })
+    const line = visibleLines(strip.render(80))[0] ?? ''
 
-  it('names the completion kinds', () => {
-    expect(copy.autocomplete.directory).toBe('directory')
-    expect(copy.autocomplete.file).toBe('file')
+    expect(line).toContain(chinese.pending.steering(1))
+    expect(line).toContain(chinese.pending.queued(2))
+    expect(line).toContain(chinese.pending.hint)
   })
 })

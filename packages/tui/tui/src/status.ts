@@ -78,6 +78,8 @@ export class StatusModel {
         permission: undefined,
         status: copy.status.idle,
         elapsedSeconds: undefined,
+        pendingSteering: 0,
+        pendingQueued: 0,
       }
     }
     const projections = this.deps.ctx.get('sessionProjections')
@@ -97,6 +99,7 @@ export class StatusModel {
     const contextPercent = occupied !== undefined && pressure?.contextWindow !== undefined
       ? occupied / pressure.contextWindow
       : undefined
+    const inbox = values?.inbox
     const startedAt = this.deps.turnStartedAt()
     const elapsedSeconds = agent.status === 'running' && startedAt !== undefined
       ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
@@ -115,6 +118,8 @@ export class StatusModel {
       permission: permissions?.currentValue,
       status: agent.status === 'running' ? copy.status.running : copy.status.idle,
       elapsedSeconds,
+      pendingSteering: inbox?.['next-step'].length ?? 0,
+      pendingQueued: inbox?.['next-turn'].length ?? 0,
     }
   }
 }

@@ -38,6 +38,8 @@ export interface InteractionDeps {
 export class ModalHost {
   private tail: Promise<void> = Promise.resolve()
   private cancelActive: (() => void) | undefined
+  /** Receives every modal open/close transition. */
+  onChange: ((active: boolean) => void) | undefined
 
   /**
    * Queue one modal operation.
@@ -48,7 +50,11 @@ export class ModalHost {
   run<T>(cancel: () => void, open: () => Promise<T>): Promise<T> {
     const result = this.tail.then(() => new Promise<T>((resolve, reject) => {
       this.cancelActive = cancel
-      open().then(resolve, reject).finally(() => { this.cancelActive = undefined })
+      this.onChange?.(true)
+      open().then(resolve, reject).finally(() => {
+        this.cancelActive = undefined
+        this.onChange?.(false)
+      })
     }))
     this.tail = result.then(() => undefined, () => undefined)
     return result

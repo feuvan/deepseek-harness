@@ -4257,7 +4257,7 @@ export type ToolPresentationMode = 'native' | 'ptc'
 ## `@deepseek-ai/dsh-tui`
 
 - `inject`: `agents` · `approval` · `commands` · `llm` · `sessionProjections` · `sessionQuery` · `sessions` · `tools` · `userQuestions`
-- `source`: [`packages/tui/tui/src/config.ts:17`](../packages/tui/tui/src/config.ts)
+- `source`: [`packages/tui/tui/src/config.ts:18`](../packages/tui/tui/src/config.ts)
 
 ```ts config-catalog
 /**
@@ -4282,7 +4282,18 @@ export interface Config {
   windowBlocks: number
   /** Prefix for the terminal title; the Session title is shown before it. */
   title: string
+  /**
+   * Interface language: an explicit `en` or `zh`, or `auto` to follow
+   * `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`.
+   */
+  locale: LocaleConfig
 }
+
+/** Configuration value an operator may set: an explicit locale or environment detection. */
+export type LocaleConfig = Locale | 'auto'
+
+/** Interface languages the terminal ships. */
+export type Locale = 'en' | 'zh'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tui -->
 

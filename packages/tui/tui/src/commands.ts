@@ -31,6 +31,10 @@ export interface LocalCommands {
   effort(argument: string | undefined): void | Promise<void>
   /** Choose or switch the permission preset; an absent argument opens the chooser. */
   permission(argument: string | undefined): void | Promise<void>
+  /** Queue one message for the next turn instead of steering the running one. */
+  queue(argument: string | undefined): void | Promise<void>
+  /** Show the configuration panel. */
+  config(): void
   /** Close the terminal. */
   exit(): void
 }
@@ -86,17 +90,19 @@ export class Composer {
   constructor(deps: ComposerDeps) {
     this.deps = deps
     this.locals = {
-      help: { description: 'Show keys and commands', run: () => { deps.local.help() } },
-      status: { description: 'Show Session, model, and usage facts', run: () => { deps.local.status() } },
-      model: { description: 'Select the model for this session', run: () => { deps.local.model() } },
-      clear: { description: 'Clear the rendered transcript', run: () => { deps.local.clear() } },
-      reasoning: { description: 'Toggle reasoning visibility', run: () => { deps.local.reasoning() } },
-      cards: { description: 'Cycle collapsed, expanded, and hidden tool cards', run: () => { deps.local.cards() } },
-      redraw: { description: 'Repaint the screen', run: () => { deps.local.redraw() } },
-      effort: { description: 'Show or set the reasoning effort', run: (argument) => { void deps.local.effort(argument) } },
-      permission: { description: 'Show or switch the permission preset', run: (argument) => { void deps.local.permission(argument) } },
-      exit: { description: 'Close the terminal', run: () => { deps.local.exit() } },
-      quit: { description: 'Close the terminal', run: () => { deps.local.exit() } },
+      help: { description: copy.commands.help, run: () => { deps.local.help() } },
+      status: { description: copy.commands.status, run: () => { deps.local.status() } },
+      model: { description: copy.commands.model, run: () => { deps.local.model() } },
+      clear: { description: copy.commands.clear, run: () => { deps.local.clear() } },
+      reasoning: { description: copy.commands.reasoning, run: () => { deps.local.reasoning() } },
+      cards: { description: copy.commands.cards, run: () => { deps.local.cards() } },
+      redraw: { description: copy.commands.redraw, run: () => { deps.local.redraw() } },
+      effort: { description: copy.commands.effort, run: (argument) => { void deps.local.effort(argument) } },
+      permission: { description: copy.commands.permission, run: (argument) => { void deps.local.permission(argument) } },
+      queue: { description: copy.commands.queue, run: (argument) => { void deps.local.queue(argument) } },
+      config: { description: copy.commands.config, run: () => { deps.local.config() } },
+      exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
+      quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
     }
   }
 
@@ -119,23 +125,23 @@ export class Composer {
       }
       const agent = this.deps.agent()
       if (agent === undefined) {
-        this.deps.notice('The agent is not ready yet.')
+        this.deps.notice(copy.commands.agentNotReady)
         return
       }
       const controller = new AbortController()
       void this.deps.ctx.commands.execute(agent, text, [], controller.signal).then(
         (result) => {
-          if (result === undefined) this.deps.notice(`Unknown command: /${name}. Type /help for the available commands.`)
+          if (result === undefined) this.deps.notice(copy.commands.unknown(name))
         },
         (error: unknown) => {
-          this.deps.notice(`Command failed: ${error instanceof Error ? error.message : String(error)}`)
+          this.deps.notice(copy.commands.failed(error instanceof Error ? error.message : String(error)))
         },
       )
       return
     }
     const agent = this.deps.agent()
     if (agent === undefined) {
-      this.deps.notice('The agent is not ready yet.')
+      this.deps.notice(copy.commands.agentNotReady)
       return
     }
     const expand = this.deps.expandPrompt
@@ -147,12 +153,12 @@ export class Composer {
       for (const notice of notices) this.deps.notice(notice)
       const current = this.deps.agent()
       if (current === undefined) {
-        this.deps.notice('The agent is not ready yet.')
+        this.deps.notice(copy.commands.agentNotReady)
         return
       }
       this.send(current, [...content])
     }).catch((error: unknown) => {
-      this.deps.notice(`Prompt preparation failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.deps.notice(copy.commands.promptFailed(error instanceof Error ? error.message : String(error)))
       const current = this.deps.agent()
       if (current !== undefined) this.send(current, [{ type: 'text', text: line }])
     })
@@ -219,17 +225,10 @@ export class Composer {
    */
   helpLines(): string[] {
     const lines = [
-      'Keys',
-      '  Enter              send, steer, or run a command',
-      '  Alt+Enter/Ctrl+J   insert a newline',
-      '  Ctrl+C             cancel a running turn, then exit when idle',
-      '  Ctrl+O             cycle collapsed, expanded, and hidden tool cards',
-      '  Ctrl+R             toggle reasoning visibility',
-      '  Ctrl+L             repaint',
-      '  Shift+Tab          cycle reasoning effort',
-      '  PgUp/PgDn          scroll the transcript',
+      copy.commands.helpTitle,
+      ...copy.commands.helpKeys,
       '',
-      'Commands',
+      copy.commands.helpCommandsTitle,
     ]
     for (const [name, entry] of Object.entries(this.locals)) {
       lines.push(`  /${name.padEnd(18, ' ')} ${entry.description}`)
@@ -253,13 +252,13 @@ export class Composer {
     if (agent === undefined) return ['The agent is not ready yet.']
     const session = agent.session
     const header = session.header
+    const labels = copy.statusPanel
     const lines = [
-      `Session    ${session.id}`,
-      `Started    ${new Date(header.createdAt).toISOString()}`,
-      `Origin     ${header.origin ?? 'root'}`,
-      `Provider   ${agent.options.provider}`,
-      `Model      ${agent.options.model}`,
-      `Status     ${agent.status}`,
+      `${labels.session.padEnd(10, ' ')} ${session.id}`,
+      `${labels.created.padEnd(10, ' ')} ${new Date(header.createdAt).toISOString()}`,
+      `${labels.provider.padEnd(10, ' ')} ${agent.options.provider ?? '-'}`,
+      `${labels.model.padEnd(10, ' ')} ${agent.options.model}`,
+      `${labels.state.padEnd(10, ' ')} ${agent.status}`,
       '',
       copy.panel.closeHint,
     ]

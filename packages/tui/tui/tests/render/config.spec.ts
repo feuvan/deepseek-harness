@@ -11,6 +11,7 @@ describe('resolveConfig', () => {
       previewLines: 4,
       windowBlocks: 20,
       title: 'Test',
+      locale: 'auto',
     })
     expect(resolved).toEqual({
       sessionId: 'session-test',
@@ -19,6 +20,7 @@ describe('resolveConfig', () => {
       previewLines: 4,
       windowBlocks: 20,
       title: 'Test',
+      locale: 'auto',
     })
     expect(Object.isFrozen(resolved)).toBe(true)
   })
@@ -31,6 +33,7 @@ describe('resolveConfig', () => {
       previewLines: 4,
       windowBlocks: 20,
       title: 'Test',
+      locale: 'auto',
     })).toThrow('sessionId must not be blank')
   })
 
@@ -41,6 +44,7 @@ describe('resolveConfig', () => {
       color: true,
       animation: true,
       previewLines: 10,
+      locale: 'auto',
       windowBlocks: 200,
       title: 'DeepSeek Harness',
     })

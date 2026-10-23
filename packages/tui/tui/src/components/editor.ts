@@ -5,7 +5,7 @@
  * @module @deepseek-ai/dsh-tui/components/editor
  */
 
-import { Editor, truncateToWidth, visibleWidth, type EditorTheme, type TUI } from '@earendil-works/pi-tui'
+import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth, type EditorTheme, type TUI } from '@earendil-works/pi-tui'
 
 /** Options for the terminal composer. */
 export interface PromptEditorOptions {
@@ -63,8 +63,8 @@ export class PromptEditor extends Editor {
     if (withoutTop.length === 0) return [this.promptText]
     /* v8 ignore next -- slice after the always-present top border always has its content line */
     const first = withoutTop[0] ?? ''
-    if (this.getText() === '' && !this.focused) {
-      withoutTop[0] = this.promptText + truncateToWidth(this.hintText, bodyWidth, '')
+    if (this.getText() === '') {
+      withoutTop[0] = this.promptText + (this.focused ? CURSOR_MARKER : '') + truncateToWidth(this.hintText, bodyWidth - 1, '')
     } else {
       withoutTop[0] = this.promptText + truncateToWidth(first, bodyWidth, '')
     }

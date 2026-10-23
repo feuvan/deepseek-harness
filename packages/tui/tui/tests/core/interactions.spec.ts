@@ -539,3 +539,56 @@ describe('ModalHost', () => {
     expect(modal.cancelCurrent()).toBe(false)
   })
 })
+
+describe('ModalHost change notifications', () => {
+  it('reports the open and close transitions', async () => {
+    const modal = new ModalHost()
+    const states: boolean[] = []
+    modal.onChange = (active) => { states.push(active) }
+
+    const result = modal.run(() => {}, () => Promise.resolve('done'))
+    await Promise.resolve()
+
+    expect(modal.hasActive()).toBe(true)
+    expect(states).toEqual([true])
+
+    await expect(result).resolves.toBe('done')
+    await Promise.resolve()
+
+    expect(states).toEqual([true, false])
+    expect(modal.hasActive()).toBe(false)
+  })
+
+  it('reports the close transition when the open promise rejects', async () => {
+    const modal = new ModalHost()
+    const states: boolean[] = []
+    modal.onChange = (active) => { states.push(active) }
+
+    const result = modal.run(() => {}, () => Promise.reject(new Error('open failed')))
+    await Promise.resolve()
+    await expect(result).rejects.toThrow('open failed')
+
+    expect(states).toEqual([true, false])
+    expect(modal.hasActive()).toBe(false)
+  })
+
+  it('works without a change callback', async () => {
+    const modal = new ModalHost()
+
+    await expect(modal.run(() => {}, () => Promise.resolve('value'))).resolves.toBe('value')
+
+    expect(modal.hasActive()).toBe(false)
+  })
+
+  it('reports each queued operation separately', async () => {
+    const modal = new ModalHost()
+    const states: boolean[] = []
+    modal.onChange = (active) => { states.push(active) }
+
+    const first = modal.run(() => {}, () => Promise.resolve())
+    const second = modal.run(() => {}, () => Promise.resolve())
+    await Promise.all([first, second])
+
+    expect(states).toEqual([true, false, true, false])
+  })
+})

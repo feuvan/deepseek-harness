@@ -8,6 +8,7 @@
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { LocaleConfig } from './locale.ts'
 
 /**
  * Cordis row configuration for the terminal front door. Every deployment-varying
@@ -31,6 +32,11 @@ export interface Config {
   windowBlocks: number
   /** Prefix for the terminal title; the Session title is shown before it. */
   title: string
+  /**
+   * Interface language: an explicit `en` or `zh`, or `auto` to follow
+   * `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`.
+   */
+  locale: LocaleConfig
 }
 
 /** Validated schema for {@link Config}. */
@@ -41,6 +47,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
   previewLines: z.number().step(1).min(1).max(200).default(10),
   windowBlocks: z.number().step(1).min(20).max(5000).default(200),
   title: z.string().default('DeepSeek Harness'),
+  locale: z.union([z.const('en'), z.const('zh'), z.const('auto')]).default('auto'),
 })
 
 /** Immutable runtime values resolved once when the plugin activates. */
@@ -57,6 +64,8 @@ export interface ResolvedConfig {
   readonly windowBlocks: number
   /** Prefix for the terminal title. */
   readonly title: string
+  /** Configured interface language, with `auto` still unresolved. */
+  readonly locale: LocaleConfig
 }
 
 /**
@@ -75,5 +84,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     previewLines: config.previewLines,
     windowBlocks: config.windowBlocks,
     title: config.title,
+    locale: config.locale,
   })
 }

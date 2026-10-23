@@ -38,8 +38,12 @@ The banner names the model and the Session. The transcript above the composer sh
 | Ctrl+O | Cycle collapsed, expanded, and hidden tool cards |
 | Ctrl+R | Show or hide reasoning |
 | Ctrl+L | Repaint the screen |
+| Esc | Interrupt a running turn when the composer is empty |
+| Ctrl+V | Attach an image from the clipboard |
 | Shift+Tab | Advance the current model's reasoning effort |
 | PgUp / PgDn | Scroll the transcript |
+| Mouse wheel / drag | Scroll, and copy the selection through the terminal |
+| Ctrl+Shift+F | Search the rendered transcript |
 
 Completion appears as you type. Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
 
@@ -57,7 +61,7 @@ A question tagged as a plan review renders its own panel: the plan document is f
 
 ### Commands
 
-Terminal-only controls: `/help`, `/status`, `/model`, `/effort`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`.
+Terminal-only controls: `/help`, `/status`, `/model`, `/effort`, `/permission`, `/queue`, `/config`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`.
 
 Registered agent commands also work from the composer, including `/compact`, `/goal`, `/plan`, `/permission`, and skill invocations. Their recorded outcome appears in the transcript like any other command.
 
@@ -68,6 +72,22 @@ Registered agent commands also work from the composer, including `/compact`, `/g
 ### Command arguments
 
 Command arguments complete: type `/effort ` and press Tab to pick from the model's levels, or type `/permission ` and press Tab to pick from the composed permission presets, each with its description. The footer reflects a permission switch after the command completes.
+
+### Pending input and interruption
+
+While a turn runs, Enter steers it at the next step boundary. A dim strip above the composer shows how many steering and queued messages the Agent has accepted but not consumed yet. `/queue <text>` queues a message for the next turn instead of steering; it expands `@` mentions like a normal prompt. With the composer empty, Esc cancels the running turn; with text present, Esc stays in the editor, and while a panel is open it closes the panel.
+
+### Clipboard images
+
+Ctrl+V attaches an image from your system clipboard to the next prompt, provided the selected model accepts image input; otherwise the terminal explains why the image was not attached. Clipboard images and `@` image mentions can be combined in one prompt, and the attachment is cleared after the prompt is sent. Inline image rendering is still not implemented, so attached images appear as labeled placeholders in the transcript.
+
+### Configuration
+
+`/config` shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; toggling one saves it through the plugin manager and tells you a restart is required (the terminal profile has no configuration reload), and rows the profile patch cannot change show their read-only reason. Terminal display values (styling, animation, card lines, transcript window, title, language) are shown read-only because the profile patch owns them; edit the `terminal-ui` row in your profile to change them.
+
+### Interface language
+
+The terminal ships English and Chinese copy. Set `locale` on the `terminal-ui` row to `en` or `zh`, or leave it `auto` to follow `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`. Every panel, notice, help line, and status label follows the selected language; other languages fall back to English.
 
 ## Continue a session
 

@@ -19,6 +19,7 @@ kind: "subsystem"
 | `previewLines` | `10` | 折叠工具卡展示的正文行数 |
 | `windowBlocks` | `200` | 保留渲染的 transcript 块上限 |
 | `title` | `DeepSeek Harness` | 终端标题后缀 |
+| `locale` | `auto` | 界面语言：`en`、`zh`，或 `auto` 依次跟随 `DSH_LOCALE`、`LC_ALL`、`LC_MESSAGES`、`LANG` |
 
 除非 stdin 与 stdout 均为 TTY，终端拒绝激活。该失败是启动诊断，并指出 `dsh --profile headless "<task>"`；进程从不进入备用屏。
 
@@ -47,6 +48,14 @@ kind: "subsystem"
 助手 Markdown 与 plan review 中的代码围栏通过把 `highlight.js` 的 scope 映射到标准调色板来高亮；未知语言与未标注语言的围栏按纯代码渲染。高亮只输出标准前景色 SGR，因此与其他组件遵守同一套样式策略。
 
 `Shift+Tab` 在当前模型适配器声明的强度循环中前进，并通过选择器写入的同一模型选择记录该选择，从而作用于下一次请求。`/effort` 打开同组强度的带标题选择器，`/effort <level>` 直接应用；当适配器没有声明默认值时，两者都接受 provider 默认哨兵值。命令参数通过同一补全面板补全：`/effort ` 列出模型强度，`/permission ` 列出组合的权限预设及其描述。不带参数的 `/permission` 会打开同组预设的带标题选择器，标记当前生效值，并把所选预设交给已注册的 `/permission` 命令派发，从而由该所有者包保留持久事件与投影更新。页脚始终在模型名之后显示实际生效的强度，选择中未携带时使用适配器默认值，状态面板与之保持一致。
+
+## 编辑器输入与中断
+
+Enter 会 steer 运行中的轮次；`/queue <text>` 改为把消息排到下一轮，并像普通提示一样展开 `@` 提及。编辑器上方的待处理提示行读取 `inbox` 投影，在 Agent 消费之前显示 steering 与排队计数，运行中时还会显示 Esc 提示。编辑器为空时 Esc 取消运行中的轮次；有文本或面板打开时，Esc 仍交给编辑器或面板处理。Ctrl+V 从宿主剪贴板读取一张图片，校验当前模型的输入模态，经附件存储准入后与 `@` 图片提及一起暂存，随下一条提交的提示发送。
+
+`/config` 在实时服务之上打开一个按分类组织的面板，而不是静态配置文件。模型与强度行激活已有的选择器与选择面板；权限行通过已注册的 `/permission` 命令写入本会话预设；实验性行读取 `ctx.pluginManager.listBundles()`，只切换随附的可选组合包，并报告 manager 结果（由于终端组合包禁用 HMR，通常为 `restart-required`，或显示只读原因）；显示行展示已解析的 profile 值，保持只读并标注归属层。写入从不绕过归属服务，失败会直接显示而不是盲目重试。
+
+终端也会在 transcript 之外报告自身状态：运行中通过 OSC 9;4 报告进度，通过 OSC 7501 报告程序状态（`working`；问题或审批面板等待时为 `blocked`；其他情况为 `idle`），dispose 时清除。界面文案提供中英文；`locale` 显式选择字典，`auto` 跟随启动环境，页脚、面板、通知、帮助与诊断会一起切换。鼠标上报已启用，滚轮可滚动 transcript，拖拽选择通过 OSC 52 复制，滚动视图显示跳到末尾指示；`Ctrl+Shift+F` 打开 transcript 搜索。
 
 ## 人工交互
 
