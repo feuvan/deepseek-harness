@@ -408,6 +408,10 @@ export function headlessSession(options: { columns?: number; rows?: number; main
     const session: TerminalSession = {
       tui,
       terminal: headless,
+      scrollTop: () => 0,
+      scrollBy: () => {},
+      scrollToBottom: () => {},
+      isFollowingEnd: () => true,
       stop: () => {
         if (stopped) return
         stopped = true

@@ -336,6 +336,7 @@ export class TerminalApp {
       findTool: name => this.ctx.tools.get(name, agent),
     })
     this.transcript = transcript
+    transcript.setRenderWidth(tui.terminal.columns)
     transcript.setAgent(agent)
     const selection = this.selection
     /* v8 ignore next -- run() installs the selection before this renderer is built */
@@ -399,7 +400,14 @@ export class TerminalApp {
       editor.addToHistory(line)
       composer.submit(line)
     }
-    const transcriptView = new ScrollView(transcript.component, {
+    const transcriptHost: Component = {
+      render: (width) => {
+        transcript.setRenderWidth(width)
+        return transcript.component.render(width)
+      },
+      invalidate: () => { transcript.component.invalidate() },
+    }
+    const transcriptView = new ScrollView(transcriptHost, {
       follow: 'end',
       primary: true,
       overscroll: 'chain',
@@ -463,6 +471,11 @@ export class TerminalApp {
         } else if (this.agent?.status === 'running') {
           this.steerAllQueued()
         }
+        return { consume: true }
+      }
+      if (matchesKey(data, 'escape') && !isKeyRelease(data) && this.terminal?.isFollowingEnd() === false) {
+        this.terminal.scrollToBottom()
+        this.tui?.requestRender()
         return { consume: true }
       }
       if (matchesKey(data, 'escape') && this.editor?.getText() === '' && this.agent?.status === 'running' && !this.modal.hasActive()) {
@@ -874,6 +887,28 @@ export class TerminalApp {
   }
 
   /**
+   * Page older transcript blocks into the scroll view when the reader reaches
+   * the top. Input still flows to the viewport so its page/wheel scroll applies
+   * after the content grows; the added line count keeps the viewport anchored
+   * on the block it was showing.
+   * @param data - one raw input sequence.
+   */
+  private loadOlderTranscript(data: string): void {
+    const transcript = this.transcript
+    const terminal = this.terminal
+    if (transcript === undefined || terminal === undefined || !transcript.hasOlder()) return
+    if (terminal.scrollTop() !== 0) return
+    if (this.dockOverlay !== undefined || this.configPanel !== undefined || this.modal.hasActive()) return
+    if (this.bottomList?.active === true || this.completion?.active === true) return
+    if (isKeyRelease(data)) return
+    const all = matchesKey(data, 'ctrl+home')
+    const wheelUp = /^\x1b\[<64;\d+;\d+[Mm]$/.test(data)
+    if (!all && !wheelUp && !matchesKey(data, 'pageUp')) return
+    const added = transcript.showOlder(all)
+    if (added > 0) terminal.scrollBy(added)
+  }
+
+  /**
    * Pre-dispatch input hook: while a dock surface owns input, every sequence
    * except Ctrl+C goes to it, so the renderer's viewport cannot also scroll or
    * edit the composer underneath.
@@ -883,7 +918,10 @@ export class TerminalApp {
   private interceptDockInput(data: string): boolean {
     if (matchesKey(data, 'ctrl+c')) return false
     const surface = this.activeDockSurface()
-    if (surface === undefined) return false
+    if (surface === undefined) {
+      this.loadOlderTranscript(data)
+      return false
+    }
     // Kitty key-release reports arrive after the press; consuming them keeps a
     // dock surface from acting twice per physical key.
     if (isKeyRelease(data)) return true

@@ -37,6 +37,24 @@ describe('createTerminalSession', () => {
     await headless.settle()
   })
 
+  it('delegates transcript viewport scrolling to the renderer', async () => {
+    const { headless, session } = headlessSession()
+    const tui = session.tui as TuiAltScreen
+    const scrollBy = vi.spyOn(tui, 'scrollBy')
+    const scrollToBottom = vi.spyOn(tui, 'scrollToBottom')
+
+    expect(session.scrollTop()).toBe(tui.viewportTop)
+    expect(session.isFollowingEnd()).toBe(tui.isFollowingOutput)
+
+    session.scrollBy(3)
+    session.scrollToBottom()
+
+    expect(scrollBy).toHaveBeenCalledWith(3)
+    expect(scrollToBottom).toHaveBeenCalled()
+    session.stop()
+    await headless.settle()
+  })
+
   it('stops the renderer only once', async () => {
     const { headless, session } = headlessSession()
     const stop = vi.spyOn(session.tui, 'stop')

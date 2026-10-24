@@ -160,6 +160,23 @@ describe('copy dictionaries', () => {
     expect(copy.statusPanel.preset).toBe('Agent preset')
   })
 
+  it('formats the transcript scrollback labels and help keys', () => {
+    expect(copy.composer.scrollToEnd).toBe('↓ Back to bottom · esc')
+    expect(copy.commands.helpKeys).toContain(
+      '  Esc                return to the transcript bottom, then interrupt a running turn',
+    )
+    expect(copy.commands.helpKeys).toContain(
+      '  PgUp/PgDn          scroll the transcript; older history pages in at the top',
+    )
+
+    setCopyLocale('zh')
+    expect(copy.composer.scrollToEnd).toBe('↓ 回到底部 · esc')
+    expect(copy.commands.helpKeys).toContain(
+      '  Esc                回到 transcript 底部；已在底部时中断运行中的轮次',
+    )
+    expect(copy.commands.helpKeys).toContain('  PgUp/PgDn          滚动 transcript；到达顶部时载入更早历史')
+  })
+
   it('formats the bottom-dock and reasoning labels', () => {
     expect(copy.moreRows(1)).toBe('1 more row')
     expect(copy.moreRows(3)).toBe('3 more rows')

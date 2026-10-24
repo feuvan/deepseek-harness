@@ -10,7 +10,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
 import type { BusyEnter } from '../../src/config.ts'
-import type { TerminalTranscript } from '../../src/transcript.ts'
+import { TerminalTranscript } from '../../src/transcript.ts'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
 import type { Composer } from '../../src/commands.ts'
@@ -35,7 +35,7 @@ import { readClipboardImage } from '../../src/clipboard.ts'
 import { mountSessions } from '../support/fakes.ts'
 
 vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
-import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
+import { sessionTitle, toolCall, toolResult, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
   agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
@@ -108,6 +108,8 @@ interface LifecycleOptions {
   readonly execute?: (line: string) => Promise<import('@deepseek-ai/dsh-commands').CommandExecution | undefined>
   /** Plain-Enter delivery mode while the Agent runs. */
   readonly busyEnter?: BusyEnter
+  /** Attached transcript block window. */
+  readonly windowBlocks?: number
   /** Messages already queued in the Agent inbox. */
   readonly queued?: readonly UserMessage[]
 }
@@ -166,6 +168,7 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   const config = terminalConfig({
     ...(options.animation === true ? { animation: true } : {}),
     ...(options.busyEnter === undefined ? {} : { busyEnter: options.busyEnter }),
+    ...(options.windowBlocks === undefined ? {} : { windowBlocks: options.windowBlocks }),
   })
   const app = new TerminalApp(ctx, config, exit.exit, () => owned.session)
   onTestFinished(() => { app.dispose() })
@@ -4637,5 +4640,335 @@ describe('TerminalApp contribution seam', () => {
     harness.start()
     await harness.awaitStarted()
     await waitForScreen(harness.terminal.headless, 'dsh>')
+  })
+})
+
+describe('TerminalApp transcript scrollback', () => {
+  /** One fake terminal session recording viewport operations. */
+  interface ScrollState {
+    top: number
+    following: boolean
+    readonly by: number[]
+    bottoms: number
+  }
+
+  /** One scrollback scenario. */
+  interface ScrollHarness {
+    readonly harness: LifecycleHarness
+    readonly state: ScrollState
+    readonly transcript: TerminalTranscript
+    readonly restore: () => void
+  }
+
+  /**
+   * Install one fake scroll session over a started application.
+   * @param options - harness options.
+   * @param state - initial viewport state.
+   * @returns the scenario.
+   */
+  async function scrollHarness(
+    options: Parameters<typeof lifecycleHarness>[0],
+    state: Partial<ScrollState> = {},
+  ): Promise<ScrollHarness> {
+    const harness = await lifecycleHarness(options)
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+    const viewport: ScrollState = {
+      top: state.top ?? 0,
+      following: state.following ?? true,
+      by: [],
+      bottoms: 0,
+    }
+    const real = harness.terminal.session
+    const fake: TerminalSession = {
+      ...real,
+      scrollTop: () => viewport.top,
+      scrollBy: (lines) => {
+        viewport.by.push(lines)
+        viewport.top = Math.max(0, viewport.top + lines)
+      },
+      scrollToBottom: () => {
+        viewport.bottoms += 1
+        viewport.top = 0
+      },
+      isFollowingEnd: () => viewport.following,
+    }
+    Reflect.set(harness.app, 'terminal', fake)
+    return {
+      harness,
+      state: viewport,
+      transcript,
+      restore: () => { Reflect.set(harness.app, 'terminal', real) },
+    }
+  }
+
+  /**
+   * Queue enough notices to archive older blocks.
+   * @param scenario - the scrollback scenario.
+   * @param count - total notices.
+   */
+  function archive(scenario: ScrollHarness, count = 3): void {
+    for (let index = 0; index < count; index += 1) scenario.transcript.notice(`notice ${String(index)}`)
+  }
+
+  it('pages one archived window in on PageUp at the top and anchors the viewport', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 })
+    archive(scenario, 3)
+    expect(scenario.transcript.hasOlder()).toBe(true)
+
+    scenario.harness.terminal.headless.press('\u001b[5~')
+
+    expect(scenario.transcript.hasOlder()).toBe(true)
+    expect(scenario.state.by).toHaveLength(1)
+    expect(scenario.state.by[0]).toBeGreaterThan(0)
+  })
+
+  it('pages the whole archive in on Ctrl+Home', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 })
+    archive(scenario, 4)
+    expect(scenario.transcript.hasOlder()).toBe(true)
+
+    scenario.harness.terminal.headless.press('\u001b[1;5H')
+
+    expect(scenario.transcript.hasOlder()).toBe(false)
+    expect(scenario.state.by).toHaveLength(1)
+    const added = scenario.state.by[0] ?? 0
+    expect(added).toBeGreaterThan(0)
+    expect(scenario.harness.transcriptText()).toContain('notice 0')
+  })
+
+  it('pages older history on wheel-up at the top', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 })
+    archive(scenario, 3)
+
+    scenario.harness.terminal.headless.press('\u001b[<64;10;10M')
+
+    expect(scenario.state.by).toHaveLength(1)
+    expect(scenario.transcript.hasOlder()).toBe(true)
+  })
+
+  it('does not load history while the viewport is not at the top', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 }, { top: 5 })
+    archive(scenario, 3)
+    expect(scenario.transcript.hasOlder()).toBe(true)
+
+    scenario.harness.terminal.headless.press('\u001b[5~')
+
+    expect(scenario.state.by).toEqual([])
+    expect(scenario.transcript.hasOlder()).toBe(true)
+  })
+
+  it('does not load history without archived blocks', async () => {
+    const scenario = await scrollHarness({})
+    scenario.transcript.notice('only notice')
+    expect(scenario.transcript.hasOlder()).toBe(false)
+
+    scenario.harness.terminal.headless.press('\u001b[5~')
+
+    expect(scenario.state.by).toEqual([])
+  })
+
+  it('does not load history while a dock surface owns input', async () => {
+    const help = await scrollHarness({ windowBlocks: 1 })
+    archive(help, 3)
+    await submitLine(help.harness, '/help')
+    await waitForDock(help.harness, copy.panel.help)
+    help.harness.terminal.headless.press('\u001b[5~')
+    expect(help.state.by).toEqual([])
+    expect(help.transcript.hasOlder()).toBe(true)
+
+    const config = await scrollHarness({ windowBlocks: 1 })
+    archive(config, 3)
+    await submitLine(config.harness, '/config')
+    await waitForDock(config.harness, copy.config.modelSection)
+    config.harness.terminal.headless.press('\u001b[5~')
+    expect(config.state.by).toEqual([])
+
+    const completion = await scrollHarness({ windowBlocks: 1 })
+    archive(completion, 3)
+    completion.harness.terminal.headless.press('/')
+    await waitForDock(completion.harness, copy.completion.title)
+    completion.harness.terminal.headless.press('\u001b[5~')
+    expect(completion.state.by).toEqual([])
+
+    const list = await scrollHarness({
+      windowBlocks: 1,
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
+    })
+    archive(list, 3)
+    await submitLine(list.harness, '/effort')
+    await waitForDock(list.harness, copy.model.effortTitle)
+    list.harness.terminal.headless.press('\u001b[5~')
+    expect(list.state.by).toEqual([])
+
+    const modal = await scrollHarness({ windowBlocks: 1 })
+    archive(modal, 3)
+    const answer = modal.harness.ctx.waterfall('user-questions/request', {
+      agent: modal.harness.agent.agent,
+      questions: [{ id: 'q', question: 'Proceed?', options: [{ label: 'Yes' }] }],
+    }, () => Promise.resolve({ answers: [] }))
+    await dockPanel(modal.harness)
+    modal.harness.terminal.headless.press('\u001b[5~')
+    expect(modal.state.by).toEqual([])
+    modal.harness.terminal.headless.press('\x03')
+    await expect(answer).rejects.toThrow('The user cancelled the question.')
+  })
+
+  it('returns to the transcript bottom on the first Escape and interrupts on the next', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 }, { following: false, top: 6 })
+    archive(scenario, 3)
+    scenario.harness.agent.setStatus('running')
+
+    scenario.harness.terminal.headless.press('\u001b')
+
+    expect(scenario.state.bottoms).toBe(1)
+    expect(scenario.state.top).toBe(0)
+    expect(scenario.harness.agent.cancels).toEqual([])
+    expect(scenario.harness.exit.codes).toEqual([])
+
+    scenario.state.following = true
+    scenario.harness.terminal.headless.press('\u001b')
+
+    expect(scenario.harness.agent.cancels).toEqual(['user'])
+  })
+
+  it('ignores page-up key releases and records the render width through the host', async () => {
+    const spy = vi.spyOn(TerminalTranscript.prototype, 'setRenderWidth')
+    onTestFinished(() => { spy.mockRestore() })
+    const scenario = await scrollHarness({ windowBlocks: 1 })
+    archive(scenario, 3)
+    expect(spy).toHaveBeenCalled()
+    expect(spy.mock.calls.at(-1)?.[0]).toBeGreaterThan(0)
+
+    scenario.harness.terminal.headless.press('\u001b[1;5:3H')
+
+    expect(scenario.state.by).toEqual([])
+    expect(scenario.transcript.hasOlder()).toBe(true)
+  })
+
+  it('documents the scrollback keys in the help panel', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const composer = privateValue(harness.app, 'composer') as Composer
+    const lines = composer.helpLines()
+
+    expect(lines).toContain(
+      '  PgUp/PgDn          scroll the transcript; older history pages in at the top',
+    )
+    expect(lines).toContain('  Esc                return to the transcript bottom, then interrupt a running turn')
+  })
+
+  it('does not anchor the viewport when archived blocks render no lines', async () => {
+    const scenario = await scrollHarness({ windowBlocks: 1 })
+    scenario.transcript.setCardsMode('hidden')
+    for (let index = 0; index < 4; index += 1) {
+      scenario.transcript.append(toolCall(index * 2, 1, 1, `call-${String(index)}`, 'echo', '{}'))
+      scenario.transcript.append(toolResult(index * 2 + 1, 1, 1, `call-${String(index)}`, []))
+    }
+    expect(scenario.transcript.hasOlder()).toBe(true)
+
+    scenario.harness.terminal.headless.press('\u001b[5~')
+
+    expect(scenario.state.by).toEqual([])
+  })
+
+  it('refuses direct history loading while another surface owns the app', async () => {
+    const load = async (
+      open: (scenario: ScrollHarness) => Promise<void>,
+      close: (scenario: ScrollHarness) => Promise<void>,
+      options: Parameters<typeof lifecycleHarness>[0] = {},
+    ): Promise<ScrollHarness> => {
+      const scenario = await scrollHarness({ windowBlocks: 1, ...options })
+      archive(scenario, 3)
+      await open(scenario)
+      const loader = privateValue(scenario.harness.app, 'loadOlderTranscript') as (data: string) => void
+      loader.call(scenario.harness.app, '\u001b[5~')
+      await close(scenario)
+      expect(scenario.transcript.hasOlder()).toBe(true)
+      expect(scenario.state.by).toEqual([])
+      return scenario
+    }
+
+    await load(
+      async (scenario) => {
+        await submitLine(scenario.harness, '/help')
+        await waitForDock(scenario.harness, copy.panel.help)
+      },
+      async (scenario) => {
+        scenario.harness.terminal.headless.press('\x03')
+        await awaitDockClosed(scenario.harness)
+      },
+    )
+    await load(
+      async (scenario) => {
+        await submitLine(scenario.harness, '/config')
+        await waitForDock(scenario.harness, copy.config.modelSection)
+      },
+      async (scenario) => {
+        scenario.harness.terminal.headless.press('\x03')
+        await awaitDockClosed(scenario.harness)
+      },
+    )
+    await load(
+      async (scenario) => {
+        scenario.harness.terminal.headless.press('/')
+        await waitForDock(scenario.harness, copy.completion.title)
+      },
+      async (scenario) => {
+        scenario.harness.terminal.headless.press('\u001b')
+        await awaitDockClosed(scenario.harness)
+      },
+    )
+    await load(
+      async (scenario) => {
+        await submitLine(scenario.harness, '/effort')
+        await waitForDock(scenario.harness, copy.model.effortTitle)
+      },
+      async (scenario) => {
+        scenario.harness.terminal.headless.press('\u001b')
+        await awaitDockClosed(scenario.harness)
+      },
+      {
+        agentOptions: { provider: 'alpha', model: 'm-1' },
+        llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
+      },
+    )
+    const modal = await scrollHarness({ windowBlocks: 1 })
+    archive(modal, 3)
+    const answer = modal.harness.ctx.waterfall('user-questions/request', {
+      agent: modal.harness.agent.agent,
+      questions: [{ id: 'q', question: 'Proceed?', options: [{ label: 'Yes' }] }],
+    }, () => Promise.resolve({ answers: [] }))
+    await dockPanel(modal.harness)
+    const loader = privateValue(modal.harness.app, 'loadOlderTranscript') as (data: string) => void
+    loader.call(modal.harness.app, '\u001b[5~')
+    modal.harness.terminal.headless.press('\x03')
+    await expect(answer).rejects.toThrow('The user cancelled the question.')
+    expect(modal.state.by).toEqual([])
+  })
+
+  it('invalidates the transcript through the width-tracking host', async () => {
+    const scenario = await scrollHarness({})
+    const spy = vi.spyOn(scenario.transcript.component, 'invalidate')
+    scenario.harness.terminal.session.tui.invalidate()
+    await vi.waitFor(() => { expect(spy).toHaveBeenCalled() })
+    spy.mockRestore()
+  })
+
+  it('ignores history loading when no terminal session is installed', async () => {
+    const harness = await lifecycleHarness({ windowBlocks: 1 })
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+    transcript.notice('one')
+    transcript.notice('two')
+    const load = privateValue(harness.app, 'loadOlderTranscript') as (data: string) => void
+    Reflect.set(harness.app, 'terminal', undefined)
+
+    expect(() => { load.call(harness.app, '\u001b[5~') }).not.toThrow()
+    expect(transcript.hasOlder()).toBe(true)
   })
 })

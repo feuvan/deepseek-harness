@@ -496,7 +496,7 @@ describe('TerminalTranscript.live', () => {
     transcript.append(userMessage(0, 'another block'))
     transcript.append(assistantMessage(1, 1, 1, [{ type: 'text', text: 'settled' }]))
 
-    expect(transcript.renderedBlocks()).toEqual(['AssistantBlock'])
+    expect(transcript.hasOlder()).toBe(true)
     expect(transcript.component.children).toHaveLength(1)
     expect(renderedText(transcript)).toContain('settled')
   })
@@ -518,10 +518,101 @@ describe('Transcript clear, cards, reasoning, and notices', () => {
     transcript.notice('two')
     transcript.notice('three')
 
-    expect(transcript.renderedBlocks()).toEqual(['NoticeBlock', 'NoticeBlock'])
+    expect(transcript.renderedBlocks()).toEqual(['NoticeBlock', 'NoticeBlock', 'NoticeBlock'])
+    expect(transcript.hasOlder()).toBe(true)
     expect(transcript.component.children).toHaveLength(2)
     expect(renderedText(transcript)).toContain('two')
     expect(renderedText(transcript)).toContain('three')
+  })
+
+  it('reattaches one archived window and reports the added lines', () => {
+    const { transcript, requestRender } = transcriptHarness({ windowBlocks: 2 })
+    transcript.notice('one')
+    transcript.notice('two')
+    transcript.notice('three')
+    expect(transcript.hasOlder()).toBe(true)
+    requestRender.mockClear()
+
+    const added = transcript.showOlder()
+
+    expect(added).toBe(1)
+    expect(transcript.hasOlder()).toBe(false)
+    expect(transcript.component.children).toHaveLength(3)
+    expect(renderedText(transcript)).toContain('one')
+    expect(requestRender).toHaveBeenCalled()
+  })
+
+  it('reattaches all archived blocks at once', () => {
+    const { transcript } = transcriptHarness({ windowBlocks: 1 })
+    for (const text of ['one', 'two', 'three', 'four']) transcript.notice(text)
+
+    expect(transcript.hasOlder()).toBe(true)
+    const added = transcript.showOlder(true)
+
+    expect(added).toBe(3)
+    expect(transcript.hasOlder()).toBe(false)
+    expect(transcript.component.children).toHaveLength(4)
+    expect(renderedText(transcript)).toContain('one')
+  })
+
+  it('keeps showOlder a no-op without archived history', () => {
+    const { transcript, requestRender } = transcriptHarness()
+    transcript.notice('only')
+    requestRender.mockClear()
+
+    expect(transcript.showOlder()).toBe(0)
+    expect(transcript.showOlder(true)).toBe(0)
+    expect(requestRender).not.toHaveBeenCalled()
+  })
+
+  it('accounts for the recorded render width when counting added lines', () => {
+    const wide = transcriptHarness({ windowBlocks: 1 })
+    wide.transcript.notice('a notice whose text wraps when the render width is narrow')
+    wide.transcript.notice('current')
+    wide.transcript.setRenderWidth(200)
+    const wideLines = wide.transcript.showOlder()
+
+    const narrow = transcriptHarness({ windowBlocks: 1 })
+    narrow.transcript.notice('a notice whose text wraps when the render width is narrow')
+    narrow.transcript.notice('current')
+    narrow.transcript.setRenderWidth(12)
+    const narrowLines = narrow.transcript.showOlder()
+
+    expect(narrowLines).toBeGreaterThan(wideLines)
+  })
+
+  it('adjusts the archived window when an archived block is removed', () => {
+    const { transcript } = transcriptHarness({ windowBlocks: 1 })
+    bindAgent(transcript)
+    transcript.live(startFrame('abandoned'))
+    transcript.append(userMessage(0, 'kept block'))
+    expect(transcript.hasOlder()).toBe(true)
+
+    transcript.live(endFrame('abandoned', true))
+
+    expect(transcript.hasOlder()).toBe(false)
+    expect(transcript.renderedBlocks()).toEqual(['UserMessageBlock'])
+    expect(transcript.component.children).toHaveLength(1)
+  })
+
+  it('ignores removing a block that is not in the transcript', () => {
+    const { transcript } = transcriptHarness()
+    const removeBlock = Reflect.get(transcript, 'removeBlock') as (block: object) => void
+
+    expect(() => { removeBlock.call(transcript, {}) }).not.toThrow()
+  })
+
+  it('resets archived history on clear', () => {
+    const { transcript } = transcriptHarness({ windowBlocks: 1 })
+    transcript.notice('one')
+    transcript.notice('two')
+    expect(transcript.hasOlder()).toBe(true)
+
+    transcript.clear()
+
+    expect(transcript.hasOlder()).toBe(false)
+    expect(transcript.renderedBlocks()).toEqual([])
+    expect(transcript.showOlder()).toBe(0)
   })
 
   it('clears every block and pending pairing', () => {

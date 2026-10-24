@@ -4278,7 +4278,7 @@ export interface Config {
   animation: boolean
   /** Maximum body lines shown for a collapsed tool card. */
   previewLines: number
-  /** Maximum transcript blocks kept rendered at once. */
+  /** Transcript blocks kept attached before older history pages back in at the top. */
   windowBlocks: number
   /** Prefix for the terminal title; the Session title is shown before it. */
   title: string

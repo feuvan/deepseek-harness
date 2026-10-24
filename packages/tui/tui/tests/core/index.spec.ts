@@ -52,6 +52,10 @@ function capturedTerminal(): CapturedTerminal {
   const session: TerminalSession = {
     tui,
     terminal: headless,
+    scrollTop: () => 0,
+    scrollBy: () => {},
+    scrollToBottom: () => {},
+    isFollowingEnd: () => true,
     stop: () => {
       stops += 1
       tui.stop()

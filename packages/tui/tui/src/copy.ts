@@ -25,7 +25,7 @@ const en = {
     /** Placeholder shown while a turn runs. */
     running: 'Enter queues for the next turn; Ctrl+C cancels the turn.',
     /** Label of the scroll-to-end indicator. */
-    scrollToEnd: 'Jump to end',
+    scrollToEnd: '↓ Back to bottom · esc',
   },
   /** Status labels. */
   status: {
@@ -282,7 +282,7 @@ const en = {
     /** Help panel key descriptions. */
     helpKeys: [
       '  Enter              send, steer, or run a command',
-      '  Esc                interrupt a running turn when the composer is empty',
+      '  Esc                return to the transcript bottom, then interrupt a running turn',
       '  Alt+Enter/Ctrl+J   insert a newline',
       '  Ctrl+C             cancel a running turn, then exit when idle',
       '  Ctrl+O             cycle collapsed, expanded, and hidden tool cards',
@@ -291,7 +291,7 @@ const en = {
       '  Ctrl+L             repaint',
       '  Ctrl+V             attach an image from the clipboard',
       '  Shift+Tab          cycle reasoning effort',
-      '  PgUp/PgDn          scroll the transcript',
+      '  PgUp/PgDn          scroll the transcript; older history pages in at the top',
     ],
     /** Help panel command section title. */
     helpCommandsTitle: 'Commands',
@@ -460,7 +460,7 @@ export const chinese: Copy = {
   composer: {
     idle: '输入消息。Enter 发送；Ctrl+C 取消或退出。',
     running: 'Enter 排队到下一轮；Ctrl+C 取消当前轮次。',
-    scrollToEnd: '跳到末尾',
+    scrollToEnd: '↓ 回到底部 · esc',
   },
   status: {
     idle: '空闲',
@@ -580,7 +580,7 @@ export const chinese: Copy = {
     helpTitle: '按键',
     helpKeys: [
       '  Enter              发送、steer 或执行命令',
-      '  Esc                编辑器为空时中断运行中的轮次',
+      '  Esc                回到 transcript 底部；已在底部时中断运行中的轮次',
       '  Alt+Enter/Ctrl+J   插入换行',
       '  Ctrl+C             取消运行中的轮次，空闲时退出',
       '  Ctrl+O             在折叠、展开与隐藏工具卡之间循环',
@@ -589,7 +589,7 @@ export const chinese: Copy = {
       '  Ctrl+L             重绘',
       '  Ctrl+V             从剪贴板附加图片',
       '  Shift+Tab          循环推理强度',
-      '  PgUp/PgDn          滚动 transcript',
+      '  PgUp/PgDn          滚动 transcript；到达顶部时载入更早历史',
     ],
     helpCommandsTitle: '命令',
   },

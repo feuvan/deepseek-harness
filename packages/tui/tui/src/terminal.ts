@@ -24,6 +24,14 @@ export interface TerminalSession {
    * @param interceptor - returns true when the sequence was consumed.
    */
   setInputInterceptor?(interceptor: ((data: string) => boolean) | undefined): void
+  /** @returns the primary transcript scroll offset in lines. */
+  scrollTop(): number
+  /** Scroll the primary transcript viewport by lines. */
+  scrollBy(lines: number): void
+  /** Scroll the primary transcript viewport to the end. */
+  scrollToBottom(): void
+  /** @returns whether the transcript follows new output at its end. */
+  isFollowingEnd(): boolean
   /** Restore the terminal and retain the final document; safe to call more than once. */
   stop(): void
 }
@@ -99,6 +107,10 @@ export function createTerminalSession(terminal: Terminal = new ProcessTerminal()
   return {
     tui,
     terminal: wrapped,
+    scrollTop: () => tui.viewportTop,
+    scrollBy: (lines) => { tui.scrollBy(lines) },
+    scrollToBottom: () => { tui.scrollToBottom() },
+    isFollowingEnd: () => tui.isFollowingOutput,
     stop: () => {
       if (stopped) return
       stopped = true

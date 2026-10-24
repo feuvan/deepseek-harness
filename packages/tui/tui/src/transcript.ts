@@ -81,6 +81,8 @@ export class TerminalTranscript {
   private readonly deps: TerminalTranscriptDeps
   private readonly context: BlockContext
   private readonly blocks: (UserMessageBlock | AssistantBlock | NoticeBlock | CommandBlock | ToolCardBlock)[] = []
+  private windowStart = 0
+  private renderWidth = 80
   private readonly pendingAssistants = new Map<string, PendingAssistant>()
   private readonly attemptByStep = new Map<string, string>()
   private readonly pendingTools = new Map<string, PendingTool>()
@@ -121,6 +123,7 @@ export class TerminalTranscript {
   /** Remove every rendered block and pending pairing. */
   clear(): void {
     this.blocks.length = 0
+    this.windowStart = 0
     this.pendingAssistants.clear()
     this.attemptByStep.clear()
     this.pendingTools.clear()
@@ -425,16 +428,50 @@ export class TerminalTranscript {
   }
 
   /**
-   * Append one block and trim the rendered window.
+   * Record the width the scroll view renders the transcript at.
+   * @param width - content columns passed by the scroll view.
+   */
+  setRenderWidth(width: number): void {
+    this.renderWidth = width
+  }
+
+  /**
+   * Whether older blocks were trimmed from the active scroll window.
+   * @returns whether archived blocks can be paged back in.
+   */
+  hasOlder(): boolean {
+    return this.windowStart > 0
+  }
+
+  /**
+   * Reattach older blocks above the active window.
+   * @param all - load the whole archived history instead of one window.
+   * @returns the number of lines added above the viewport.
+   */
+  showOlder(all = false): number {
+    if (this.windowStart === 0) return 0
+    const count = all ? this.windowStart : Math.min(this.deps.windowBlocks, this.windowStart)
+    const start = this.windowStart - count
+    const added = this.blocks.slice(start, this.windowStart)
+    const lines = added.reduce((total, block) => total + block.render(this.renderWidth).length, 0)
+    this.component.children.unshift(...added)
+    this.windowStart = start
+    this.deps.requestRender()
+    return lines
+  }
+
+  /**
+   * Append one block and trim the active scroll window.
    * @param block - the block component.
    */
   private appendBlock(block: UserMessageBlock | AssistantBlock | NoticeBlock | CommandBlock | ToolCardBlock): void {
     this.blocks.push(block)
     this.component.addChild(block)
-    while (this.blocks.length > this.deps.windowBlocks) {
-      const removed = this.blocks.shift()
-      /* v8 ignore next -- the loop condition proves the shifted list is non-empty */
+    while (this.blocks.length - this.windowStart > this.deps.windowBlocks) {
+      const removed = this.blocks[this.windowStart]
+      /* v8 ignore next -- the loop condition proves the indexed block exists */
       if (removed !== undefined) this.component.removeChild(removed)
+      this.windowStart += 1
     }
     this.deps.requestRender()
   }
@@ -444,9 +481,11 @@ export class TerminalTranscript {
    * @param block - the block to remove.
    */
   private removeBlock(block: UserMessageBlock | AssistantBlock | NoticeBlock | CommandBlock | ToolCardBlock): void {
-    this.component.removeChild(block)
     const index = this.blocks.indexOf(block)
-    if (index !== -1) this.blocks.splice(index, 1)
+    if (index === -1) return
+    if (index >= this.windowStart) this.component.removeChild(block)
+    else this.windowStart -= 1
+    this.blocks.splice(index, 1)
     this.deps.requestRender()
   }
 }
