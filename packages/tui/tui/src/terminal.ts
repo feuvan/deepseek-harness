@@ -7,7 +7,7 @@
  */
 
 import {
-  ProcessTerminal, TuiAltScreen, type ProgramStatus, type Terminal, type TUI,
+  ProcessTerminal, TuiAltScreen, isKeyRelease, type ProgramStatus, type Terminal, type TUI,
 } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 
@@ -52,6 +52,10 @@ class InterceptingTerminal implements Terminal {
 
   start(onInput: (data: string) => void, onResize: () => void): void {
     this.inner.start((data) => {
+      // Kitty reports a release after every press. Releases carry the same key
+      // identity as the press, so drop them at the input boundary: no dock,
+      // shortcut, or editor receives one physical key twice.
+      if (isKeyRelease(data)) return
       const intercept = this.interceptor()
       if (intercept?.(data) === true) return
       onInput(data)

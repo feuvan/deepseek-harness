@@ -16,7 +16,7 @@ import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepsee
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScrollView, VStack, isKeyRelease, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
+  ScrollView, VStack, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
 import { copy } from './copy.ts'
@@ -450,7 +450,6 @@ export class TerminalApp {
         this.handleInterrupt()
         return { consume: true }
       }
-      if (isKeyRelease(data) && this.activeDockSurface() !== undefined) return { consume: true }
       if (this.dockOverlay !== undefined) {
         this.dockOverlay.handleInput(data)
         this.tui?.requestRender()
@@ -473,7 +472,7 @@ export class TerminalApp {
         }
         return { consume: true }
       }
-      if (matchesKey(data, 'escape') && !isKeyRelease(data) && this.terminal?.isFollowingEnd() === false) {
+      if (matchesKey(data, 'escape') && this.terminal?.isFollowingEnd() === false) {
         this.terminal.scrollToBottom()
         this.tui?.requestRender()
         return { consume: true }
@@ -900,7 +899,6 @@ export class TerminalApp {
     if (terminal.scrollTop() !== 0) return
     if (this.dockOverlay !== undefined || this.configPanel !== undefined || this.modal.hasActive()) return
     if (this.bottomList?.active === true || this.completion?.active === true) return
-    if (isKeyRelease(data)) return
     const all = matchesKey(data, 'ctrl+home')
     const wheelUp = /^\x1b\[<64;\d+;\d+[Mm]$/.test(data)
     if (!all && !wheelUp && !matchesKey(data, 'pageUp')) return
@@ -922,9 +920,6 @@ export class TerminalApp {
       this.loadOlderTranscript(data)
       return false
     }
-    // Kitty key-release reports arrive after the press; consuming them keeps a
-    // dock surface from acting twice per physical key.
-    if (isKeyRelease(data)) return true
     const handled = surface.handleInput(data)
     if (surface.consumeAll === false && handled !== true) return false
     this.tui?.requestRender()

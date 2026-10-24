@@ -671,6 +671,9 @@ describe('TerminalApp input handling', () => {
 
     harness.terminal.headless.press('\x12')
     expect(transcript.reasoningLevel()).toBe('detailed')
+    // Kitty's release report for the same physical key must not toggle again.
+    harness.terminal.headless.press('\u001b[114;5:3u')
+    expect(transcript.reasoningLevel()).toBe('detailed')
     expect(harness.transcriptText()).toContain('thought six')
     expect(footerText(harness.app)).toContain(copy.reasoning.label(copy.reasoning.levels.detailed))
     expect(harness.transcriptText()).toContain(copy.reasoning.changed(copy.reasoning.levels.detailed))
@@ -687,6 +690,8 @@ describe('TerminalApp input handling', () => {
     harness.ctx.emit('session/event', harness.session, toolCall(1, 1, 1, 'call-1', 'echo', '{}'))
     expect(transcript.cardsMode()).toBe('collapsed')
     harness.terminal.headless.press('\x0f')
+    expect(transcript.cardsMode()).toBe('expanded')
+    harness.terminal.headless.press('\u001b[111;5:3u')
     expect(transcript.cardsMode()).toBe('expanded')
     expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
     harness.terminal.headless.press('\x0f')
