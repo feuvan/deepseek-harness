@@ -39,6 +39,9 @@ import { TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
+import { TeamPanel } from './components/team-panel.ts'
+import { TeamStrip } from './components/team-strip.ts'
+import { readTeamProjection } from './team.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
 import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
@@ -64,6 +67,8 @@ export class TerminalApp {
   private bottom: BottomPanel | undefined
   private bottomList: BottomList | undefined
   private queuePanel: QueuePanel | undefined
+  private teamPanel: TeamPanel | undefined
+  private teamStop: (() => void) | undefined
   private completion: CompletionController | undefined
   private configPanel: ConfigPanel | undefined
   private dockOverlay: DockSurface | undefined
@@ -129,6 +134,8 @@ export class TerminalApp {
       }
     }
     this.status?.dispose()
+    this.teamStop?.()
+    this.teamStop = undefined
     try {
       this.terminal?.terminal.setProgramStatus({ state: 'clear', app: 'dsh' })
     } catch (error: unknown) {
@@ -283,6 +290,7 @@ export class TerminalApp {
         steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
+        team: () => { this.openTeamPanel() },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
       },
@@ -299,6 +307,8 @@ export class TerminalApp {
       overscroll: 'chain',
     })
     const pending = new PendingStrip(this.palette, () => status.snapshot())
+    const teamStrip = new TeamStrip(this.palette, this.ctx, () => this.teamProjection())
+    this.teamPanel = new TeamPanel(this.palette, () => { this.closeTeamPanel() })
     const bottom = new BottomPanel()
     this.bottom = bottom
     this.bottomList = new BottomList(this.palette, () => { this.syncDock(); tui.requestRender() })
@@ -316,7 +326,7 @@ export class TerminalApp {
       submit: (line) => { editor.onSubmit?.(line) },
     })
     editor.onChange = () => { this.completion?.schedule() }
-    const lower = new VStack([pending, editor, bottom, footer])
+    const lower = new VStack([teamStrip, pending, editor, bottom, footer])
     if (isViewportTUI(tui)) {
       tui.setLayoutRoot(new VStack([
         { component: banner, basis: 'auto' },
@@ -402,7 +412,10 @@ export class TerminalApp {
       this.transcript?.live(frame)
     }))
     this.disposers.push(this.ctx.on('agent/status', ({ agent: subject }) => {
-      if (subject !== this.agent) return
+      if (subject !== this.agent) {
+        if (this.isTeamMember(subject.session.id)) this.tui?.requestRender()
+        return
+      }
       this.editor?.setHint(subject.status === 'running' ? copy.composer.running : copy.composer.idle)
       this.updateActivity()
       this.tui?.requestRender()
@@ -729,6 +742,65 @@ export class TerminalApp {
     }
     this.transcript?.notice(copy.queue.steeredAll(messages.length))
     this.refreshQueuePanel()
+  }
+
+  /** @returns the presented Session's Agent Team projection, when composed. */
+  private teamProjection() {
+    return readTeamProjection(this.ctx, this.agent)
+  }
+
+  /**
+   * Whether one live Agent belongs to the presented Team roster.
+   * @param id - candidate Session identity.
+   * @returns whether the roster names this teammate.
+   */
+  private isTeamMember(id: string): boolean {
+    const team = this.teamProjection()
+    return team?.members.some(member => member.id === id && member.role === 'teammate') === true
+  }
+
+  /** Present the Agent Team roster and task board in the dock. */
+  private openTeamPanel(): void {
+    const panel = this.teamPanel
+    const team = this.teamProjection()
+    if (panel === undefined) return
+    if (team === undefined) {
+      this.transcript?.notice(copy.team.unavailable)
+      return
+    }
+    panel.setTeam(team)
+    this.teamStop?.()
+    const projections = this.ctx.get('sessionProjections')
+    this.teamStop = projections?.onChanged((session) => {
+      if (session === this.agent?.session) this.refreshTeamPanel()
+    })
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data); this.tui?.requestRender() },
+      close: () => { this.closeTeamPanel() },
+    })
+  }
+
+  /** Refresh the open Team panel from the projection, closing it when it disappears. */
+  private refreshTeamPanel(): void {
+    const panel = this.teamPanel
+    if (panel === undefined) return
+    const team = this.teamProjection()
+    if (team === undefined) {
+      this.closeTeamPanel()
+      return
+    }
+    panel.setTeam(team)
+    this.tui?.requestRender()
+  }
+
+  /** Release the Team dock and its projection subscription. */
+  private closeTeamPanel(): void {
+    this.teamStop?.()
+    this.teamStop = undefined
+    this.teamPanel?.setTeam(undefined)
+    if (this.teamPanel === undefined) return
+    this.setDockOverlay(undefined)
   }
 
   /** @returns the surface that currently owns dock input, if any. */

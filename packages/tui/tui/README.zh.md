@@ -50,9 +50,9 @@ kind: "package-reference"
 
 ### 交互界面
 
-Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
+当组合包挂载实验性 Agent Teams bundle 时，编辑器上方会显示一行 Team 状态（teammate 与共享任务计数），`/team` 在 dock 中打开只读的 Members/Tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 滚动，Esc 关闭）。数据来自 Lead Session 的 `agentTeam` projection；未启用 bundle 的 profile 既没有状态行也没有面板，`/team` 会说明如何启用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
 
-已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
+已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/team`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
 
 输入 `/` 或 `@` 会在编辑器下方打开补全 dock，显示每条命令的描述或文件类型；↑/↓ 移动，Tab 插入，Enter 运行已接受的命令（或在提及/参数补全时插入），Esc 关闭。普通文字与裸路径不会打开补全——输入空格不会列出工作区，本地文件需要显式用 `@` 引用；编辑器原有的内联下拉已移除。命令参数同样可补全：`/effort ` 提供当前模型声明的强度，`/permission ` 提供组合的权限预设及其描述。不带参数的 `/effort` 会打开同组强度的带标题选择器；`/effort <level>` 直接应用，所选（或适配器默认）强度会立即显示在页脚中模型名之后。不带参数的 `/permission` 在编辑器下方打开选择 dock，逐项列出组合的权限预设及说明并标记当前值；选中后交给已注册命令执行，`/permission <preset>` 直接派发。不带参数的 `/effort` 使用同一 dock。接受的 `@` 提及通常保留为字面提示文本；当它指向受支持的图片文件时，终端会从工作区读取该图片、经附件存储准入后附到发出的用户消息。任何准入失败都会变成 transcript 通知，同时文本仍照常发送。Shift+Tab 在当前模型适配器声明的强度之间循环，并通过与选择器相同的模型选择把选择记入会话日志；页脚始终显示实际生效的强度，包括用户未显式选择的默认值。带 `plan-review` 标记的问题会以专用评审呈现：带边框的计划文档、批准/拒绝标记，且不提供自由文本答案行。
 
@@ -117,6 +117,7 @@ Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Agent Teams 视图只读。** 终端只显示成员与任务板，不能打开 teammate 会话、发送 peer 消息或编辑任务；这些仍属于 Web/Desktop 流程。启用实验性 bundle 会在 host 平面追加 Team 工具，而 preset scope 仍会挂载普通 subagent 工具。
 - **preset 由组合包提供。** 终端本身只读取并切换已组装的 preset 注册表；随附的 `@deepseek-ai/dsh-tui-app` 组合包声明四个内置 preset，默认 `standard`。
 - **没有剪贴板图片粘贴，也没有内联图片渲染。** 图片通过 `@` 提及命名后附加；已附加或收到的图片块渲染为带标签的占位符，而不是像素。随附组合包不选择 PTC 模式。
 - **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。

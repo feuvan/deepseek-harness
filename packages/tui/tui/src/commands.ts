@@ -40,6 +40,8 @@ export interface LocalCommands {
   steer(argument: string | undefined): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
+  /** Show the Agent Team roster and task board. */
+  team(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
   preset(argument: string | undefined): void | Promise<void>
   /** Close the terminal. */
@@ -112,6 +114,7 @@ export class Composer {
       steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
+      team: { description: copy.commands.team, run: () => { deps.local.team() } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
       quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
     }

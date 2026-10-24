@@ -116,6 +116,12 @@ dsh tui --preset ptc
 
 `/preset` lists the four with one-line descriptions and marks the current one. Choosing a preset before the first turn recomposes that Session and records `agent-preset/selected`; after the first turn the composition is fixed and `/preset` reports that it is locked. `/status` shows the current preset. Sessions created in Desktop or Web under any of these presets resume here, and Sessions created here resume there.
 
+## Agent Teams
+
+Enable the experimental Agent Teams bundle from `/config` → Experimental capabilities (or `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`), then restart the terminal. While the Lead Session runs a Team, a dim strip above the composer reports teammates, running members, and shared-task counts. `/team` opens the read-only Team dock: Tab or ←/→ switches between Members and Tasks, ↑/↓ and PgUp/PgDn scroll, Esc closes. Rows show member role/phase and task status, owner, blockers, and write-scope warnings; updates arrive from the Lead Session's `agentTeam` projection while the panel stays open.
+
+The panel is read-only: it does not open teammate conversations, send peer messages, or change tasks. Those remain Web and Desktop workflows. Enabling the bundle adds the Team tools alongside the preset-scoped subagent tools; a profile without the bundle shows no strip and `/team` explains how to enable it.
+
 ## Continue a session
 
 Resume an exact Session identity with `--resume`:

@@ -10,6 +10,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
 import type { BusyEnter } from '../../src/config.ts'
+import type { TeamProjection } from '../../src/team.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TerminalTranscript } from '../../src/transcript.ts'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
@@ -38,8 +40,8 @@ vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
 import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
-  agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
-  screenLines, sessionQueryDouble, terminalConfig,
+  agentPresetsDouble, agentTeam, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
+  screenLines, sessionQueryDouble, teamMember, teamTask, terminalConfig,
   toolsDouble, userQuestionsDouble, waitForScreen,
   type AgentDouble, type AgentsDouble, type AppExitDouble, type CommandsDouble,
   type ObservationDouble, type ProjectionsDouble, type SessionQueryDouble,
@@ -110,6 +112,10 @@ interface LifecycleOptions {
   readonly busyEnter?: BusyEnter
   /** Messages already queued in the Agent inbox. */
   readonly queued?: readonly UserMessage[]
+  /** Agent Team projection values for the presented Session. */
+  readonly team?: TeamProjection
+  /** Teammate Agents the Agent registry resolves for their Session identities. */
+  readonly teammates?: readonly Agent[]
 }
 
 /**
@@ -120,7 +126,8 @@ interface LifecycleOptions {
 async function lifecycleHarness(options: LifecycleOptions = {}): Promise<LifecycleHarness> {
   const exit = appExitDouble()
   const agents = agentsDouble()
-  const projections = projectionsDouble(options.values ?? {})
+  for (const teammate of options.teammates ?? []) agents.bindTeammate(teammate)
+  const projections = projectionsDouble(options.team === undefined ? options.values ?? {} : { ...options.values, agentTeam: options.team })
   const query = sessionQueryDouble(options.read ?? (async () => observation([])))
   const commands = commandsDouble({
     ...(options.descriptors === undefined ? {} : { descriptors: options.descriptors }),
@@ -4437,5 +4444,263 @@ describe('TerminalApp /steer command', () => {
     resolveExpansion({ content: [{ type: 'text', text: 'remember' }], notices: [] })
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.commands.agentNotReady) })
+  })
+})
+
+describe('TerminalApp /team', () => {
+  it('reports the unavailable notice without a Team projection', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/team')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain('Agent Teams is not composed in this profile') })
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+
+  it('opens the dock with the tab bar and roster, and closes on Escape', async () => {
+    const harness = await lifecycleHarness({
+      team: agentTeam({
+        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+      }),
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.team.title)
+    expect(dock).toContain(copy.team.membersTab)
+    expect(dock).toContain(copy.team.tasksTab)
+    expect(dock).toContain('★ Lead')
+    expect(dock).toContain('● Worker')
+    expect(dock).toContain(copy.team.hint)
+
+    harness.terminal.headless.press('\u001b')
+
+    await awaitDockClosed(harness)
+    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
+  })
+
+  it('switches to the task board and back with single keys', async () => {
+    const harness = await lifecycleHarness({
+      team: agentTeam({
+        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+        tasks: [
+          teamTask({ id: 'ready', subject: 'Ready work' }),
+          teamTask({ id: 'done', subject: 'Finished work', status: 'completed' }),
+        ],
+      }),
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    const panel = privateValue(harness.app, 'teamPanel') as { render(width: number): string[] }
+
+    harness.terminal.headless.press('\t')
+    expect(Reflect.get(panel, 'tab')).toBe('tasks')
+    expect(dockText(harness.app)).toContain('Ready work')
+    expect(dockText(harness.app)).toContain('Finished work')
+
+    harness.terminal.headless.press('\u001b[Z')
+    expect(Reflect.get(panel, 'tab')).toBe('members')
+    expect(dockText(harness.app)).toContain('★ Lead')
+  })
+
+  it('scrolls one row or one page per key', async () => {
+    const tasks = Array.from({ length: 9 }, (_, index) => teamTask({
+      id: `task-${String(index)}`,
+      subject: `Task ${String(index)}`,
+    }))
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    const panel = privateValue(harness.app, 'teamPanel') as { render(width: number): string[] }
+    harness.terminal.headless.press('\t')
+
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(panel, 'offset')).toBe(1)
+    harness.terminal.headless.press('\u001b[6~')
+    expect(Reflect.get(panel, 'offset')).toBe(3)
+    harness.terminal.headless.press('\u001b[5~')
+    expect(Reflect.get(panel, 'offset')).toBe(0)
+  })
+
+  it('closes the panel through Ctrl+C', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+
+    harness.terminal.headless.press('\x03')
+
+    await awaitDockClosed(harness)
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('refreshes an open panel on a live projection change for the presented Session', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask({ subject: 'Initial task' })] }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    harness.terminal.headless.press('\t')
+
+    harness.projections.values.agentTeam = agentTeam({ tasks: [teamTask({ subject: 'Updated task' })] })
+    harness.projections.emit(harness.session)
+
+    await vi.waitFor(() => { expect(dockText(harness.app)).toContain('Updated task') })
+    expect(dockText(harness.app)).not.toContain('Initial task')
+  })
+
+  it('ignores projection changes for another Session', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask({ subject: 'Stable task' })] }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    harness.terminal.headless.press('\t')
+
+    harness.projections.values.agentTeam = agentTeam({ tasks: [teamTask({ subject: 'Wrong Session task' })] })
+    harness.projections.emit(harness.ctx.sessions.create(SessionId('other-team-session')))
+
+    await Promise.resolve()
+    expect(dockText(harness.app)).toContain('Stable task')
+    expect(dockText(harness.app)).not.toContain('Wrong Session task')
+  })
+
+  it('closes the panel when the projection disappears', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+
+    delete harness.projections.values.agentTeam
+    harness.projections.emit(harness.session)
+
+    await awaitDockClosed(harness)
+    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
+  })
+
+  it('requests a render when a teammate changes status and ignores foreign Agents', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam() })
+    harness.start()
+    await harness.awaitStarted()
+    const renderCount = harness.terminal.requestRender.mock.calls.length
+
+    harness.ctx.emit('agent/status', { agent: harness.agent.agent, status: 'running' })
+    const ownCount = harness.terminal.requestRender.mock.calls.length
+    expect(ownCount).toBeGreaterThan(renderCount)
+
+    harness.ctx.emit('agent/status', {
+      agent: agentDouble({ session: harness.ctx.sessions.create(SessionId('foreign-team-member')) }).agent,
+      status: 'running',
+    })
+    expect(harness.terminal.requestRender.mock.calls.length).toBe(ownCount)
+
+    const teammateSession = harness.ctx.sessions.create(SessionId('teammate-1'))
+    harness.projections.values.agentTeam = agentTeam({
+      members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+    })
+    harness.ctx.emit('agent/status', { agent: agentDouble({ session: teammateSession }).agent, status: 'running' })
+    expect(harness.terminal.requestRender.mock.calls.length).toBeGreaterThan(ownCount)
+  })
+
+  it('shows the strip above the composer while a Team is visible and hides a lead-only one', async () => {
+    const visible = await lifecycleHarness({
+      team: agentTeam({
+        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+        tasks: [teamTask()],
+      }),
+    })
+    visible.start()
+    await visible.awaitStarted()
+    await waitForScreen(visible.terminal.headless, copy.team.teammates(1))
+
+    const lines = await screenLines(visible.terminal.headless)
+    const stripLine = lines.findIndex(line => line.includes(copy.team.teammates(1)))
+    const composerLine = lines.findIndex(line => line.includes('dsh>'))
+    expect(stripLine).toBeGreaterThanOrEqual(0)
+    expect(composerLine).toBeGreaterThan(stripLine)
+
+    const hidden = await lifecycleHarness({ team: agentTeam() })
+    hidden.start()
+    await hidden.awaitStarted()
+    expect((await screenLines(hidden.terminal.headless)).some(line => line.includes(copy.team.teammates(0)))).toBe(false)
+  })
+
+  it('lists /team in help and slash completion', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/help')
+    await waitForDock(harness, copy.panel.help)
+    for (let page = 0; page < 3; page += 1) harness.terminal.headless.press('\u001b[6~')
+    expect(dockText(harness.app)).toContain(`/${'team'.padEnd(18, ' ')} ${copy.commands.team}`)
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    for (const key of '/tea') harness.terminal.headless.press(key)
+    await waitForDock(harness, copy.completion.title)
+    expect(dockText(harness.app)).toContain(copy.commands.team)
+  })
+
+  it('ignores Team helpers before the terminal starts', async () => {
+    const harness = await lifecycleHarness()
+    const openTeamPanel = privateValue(harness.app, 'openTeamPanel') as () => void
+    const refreshTeamPanel = privateValue(harness.app, 'refreshTeamPanel') as () => void
+    const closeTeamPanel = privateValue(harness.app, 'closeTeamPanel') as () => void
+    const isTeamMember = privateValue(harness.app, 'isTeamMember') as (id: string) => boolean
+    const teamProjection = privateValue(harness.app, 'teamProjection') as () => unknown
+
+    expect(() => {
+      openTeamPanel.call(harness.app)
+      refreshTeamPanel.call(harness.app)
+      closeTeamPanel.call(harness.app)
+    }).not.toThrow()
+    expect(isTeamMember.call(harness.app, 'teammate-1')).toBe(false)
+    expect(teamProjection.call(harness.app)).toBeUndefined()
+  })
+
+  it('unsubscribes from the projection on dispose', async () => {
+    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    expect(privateValue(harness.app, 'teamStop')).toBeDefined()
+
+    harness.app.dispose()
+
+    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
+    expect(() => { harness.projections.emit(harness.session) }).not.toThrow()
+  })
+
+  it('renders the panel in Chinese', async () => {
+    setCopyLocale('zh')
+    const harness = await lifecycleHarness({
+      team: agentTeam({
+        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+        tasks: [teamTask({ subject: '任务一' })],
+      }),
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/team')
+    await waitForDock(harness, copy.team.title)
+    expect(dockText(harness.app)).toContain(copy.team.membersTab)
+    harness.terminal.headless.press('\t')
+    expect(dockText(harness.app)).toContain(copy.team.tasksTab)
+    expect(dockText(harness.app)).toContain(copy.team.statuses.ready)
   })
 })

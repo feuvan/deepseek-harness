@@ -116,6 +116,12 @@ dsh tui --preset ptc
 
 `/preset` 列出四项及一行说明并标记当前项。第一轮开始前选择会重新组装该会话并记录 `agent-preset/selected`；第一轮开始后组合固定，`/preset` 会提示已锁定。`/status` 显示当前 preset。在 Desktop 或 Web 下用这些 preset 创建的会话可以在这里恢复，反之亦然。
 
+## Agent Teams
+
+在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开只读的 Team dock：Tab 或 ←/→ 在 Members 与 Tasks 间切换，↑/↓ 与 PgUp/PgDn 滚动，Esc 关闭。行内显示成员角色/阶段，以及任务状态、owner、阻塞项与写作用域警告；面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
+
+面板只读：不会打开 teammate 会话、发送 peer 消息或修改任务，这些仍属于 Web 与 Desktop 流程。启用 bundle 会在 preset scope 的 subagent 工具之外追加 Team 工具；未启用 bundle 的 profile 不显示状态行，`/team` 会说明如何启用。
+
 ## 继续会话
 
 使用 `--resume` 恢复精确的会话标识：

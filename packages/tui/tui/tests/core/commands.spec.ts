@@ -82,6 +82,7 @@ async function composerHarness(options: {
     steer: (argument) => { local.push('steer'); steerArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
+    team: () => { local.push('team') },
     exit: record('exit'),
   }
   const composer = new Composer({
@@ -126,6 +127,7 @@ describe('Composer.submit', () => {
     ['steer', 'steer'],
     ['config', 'config'],
     ['preset', 'preset'],
+    ['team', 'team'],
     ['exit', 'exit'],
     ['quit', 'exit'],
   ] as const)('runs the terminal-local /%s control', async (name, control) => {
@@ -379,7 +381,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'team', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -411,6 +413,7 @@ describe('Composer.helpLines', () => {
     expect(lines).toContain('  /preset             ' + copy.commands.preset)
     expect(lines).toContain('  /cards              ' + copy.commands.cards)
     expect(lines).toContain('  /steer              ' + copy.commands.steer)
+    expect(lines).toContain('  /team               ' + copy.commands.team)
     expect(lines.some(line => line.includes('/inspect'))).toBe(false)
   })
 
@@ -448,7 +451,7 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, team: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
@@ -745,7 +748,7 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, team: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
