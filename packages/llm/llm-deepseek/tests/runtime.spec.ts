@@ -1794,7 +1794,13 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', inputModalities: ['text', 'image'] },
+      {
+        provider: 'deepseek-official',
+        id: 'deepseek-flash',
+        name: 'DeepSeek-V4.1-Flash',
+        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
+        inputModalities: ['text', 'image'],
+      },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
@@ -1922,7 +1928,13 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
     LlmDeepSeek.apply(ctx, LlmDeepSeek.Config({ baseURL: 'http://127.0.0.1:1' }))
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', inputModalities: ['text', 'image'] },
+      {
+        provider: 'deepseek-official',
+        id: 'deepseek-flash',
+        name: 'DeepSeek-V4.1-Flash',
+        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
+        inputModalities: ['text', 'image'],
+      },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
