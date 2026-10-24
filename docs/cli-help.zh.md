@@ -178,11 +178,14 @@ Run the DeepSeek Harness agent in a full-screen terminal interface.
 
 Options:
   --resume <id>  resume the persisted Session with this id
+  --preset <id>  agent preset for a fresh Session (standard, ptc, minimal,
+                 cordis)
   -h, --help     show this help
 
 Examples:
   dsh tui                       start a fresh Session in the terminal
   dsh tui --resume <session>    continue a persisted Session
+  dsh tui --preset ptc          start a fresh Session under the ptc preset
 
 ```
 

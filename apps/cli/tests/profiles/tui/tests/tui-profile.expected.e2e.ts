@@ -84,7 +84,9 @@ describe('dsh --profile tui', () => {
     expect(stdout).toContain('Usage: dsh --profile tui [options]')
     expect(stdout).toContain('Run the DeepSeek Harness agent in a full-screen terminal interface.')
     expect(stdout).toContain('--resume <id>')
+    expect(stdout).toContain('--preset <id>')
     expect(stdout).toContain('dsh tui --resume <session>')
+    expect(stdout).toContain('dsh tui --preset ptc')
   }, processTimeoutMs + 15_000)
 
   it('fails a non-interactive launch with the terminal diagnostic before taking the screen', async () => {

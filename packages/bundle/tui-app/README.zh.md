@@ -29,14 +29,15 @@ kind: "package-bundle"
 
 ```sh
 dsh tui
+dsh tui --preset ptc
 dsh tui --resume session-<id>
 ```
 
-首次启动会像其他具名 profile 一样，从随附模板在 `$DSH_HOME/profiles/tui` 下初始化 `tui` profile。`--resume` 接受精确的会话标识；运行会拒绝未知标识、subagent 或 fork 的会话、记录了本组合包未组装之 agent preset 的会话，以及记录在另一个工作目录中的会话。
+首次启动会像其他具名 profile 一样，从随附模板在 `$DSH_HOME/profiles/tui` 下初始化 `tui` profile。新会话运行在 agent preset 下：随附四个为 `standard`（默认）、`ptc`、`minimal`、`cordis`，与 Desktop、Web 一致；`--preset <id>` 可在第一轮开始前选择其他 preset。`/preset` 列出它们并切换当前会话，直到第一轮开始。`--resume` 接受精确的会话标识；运行会拒绝未知标识、subagent 或 fork 的会话、没有记录 agent preset 的会话（更早的无 preset 终端启动）、`--preset` 与已记录 preset 冲突的会话，以及记录在另一个工作目录中的会话。
 
 `dsh tui --help` 打印应用自己的帮助并在占用终端前退出。非交互启动会在进入屏幕前失败，并指出 `dsh --profile headless "<task>"`。
 
-该 profile 除部署 persona 与被禁用的配置 HMR 条目外原样继承 `dsh-base`；其他所有能力、工具与策略都来自 base。
+该 profile 继承 `dsh-base` 的 host 平面，并用与 Web profile 相同的四个 preset 声明替换其 agent 平面，因此在任一界面创建的 preset 会话都能在另一界面恢复。与 base 的差别只有部署 persona、被禁用的配置 HMR 条目与终端相关条目。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -88,7 +89,8 @@ patch 按顺序插入五个条目。`tui-startup`（`./startup` 入口）解析�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **不组装 preset。** 组合包直接挂载 base 的 agent 平面条目，因此在 agent preset 下创建的会话无法在这里恢复。
+- **Schedule 工具需要 Web host。** preset 声明逐字复制自 Web，而 Web 的 `schedule` host 条目依赖 API session controller；终端不组装该 controller，因此 preset 的 `tool-schedule` 条目在这里不会注册工具。
+- **preset 组装是副本。** `presets/` 下的四个声明是 Web bundle 文件的逐字节副本；一旦漂移，parity 测试会失败。
 - **没有配置 HMR。** 组装在每次启动时读取一次；编辑 profile patch 后请重启终端。
 - **没有自动会话选择器。** 恢复需要精确的会话标识。
 - **Windows 未由随附验收通道验证。** PTY profile 验收运行在 POSIX 主机上。

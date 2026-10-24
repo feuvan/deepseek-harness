@@ -24,8 +24,8 @@
   en: dbb2f07aec112626
   zh: 6f0d69b68081cfa3
 /use-the-terminal-interface/what-you-see/commands:
-  en: 53cfdae407e9c6ad
-  zh: 0404984a0907b9e9
+  en: 64ca21478c14f862
+  zh: 51cd6a12321f4b2a
 /use-the-terminal-interface/what-you-see/command-arguments:
   en: 1932c78e94bf0ed1
   zh: 72a1b56aac28314b
@@ -44,9 +44,12 @@
 /use-the-terminal-interface/what-you-see/interface-language:
   en: 9efe323d4bf3fcb4
   zh: c957339713a96618
+/use-the-terminal-interface/agent-presets:
+  en: 771f1bea0ce65ce9
+  zh: b849095f38e56370
 /use-the-terminal-interface/continue-a-session:
-  en: a8b2fc4a42915feb
-  zh: a35f90cfc0155a4a
+  en: a8e63769681e2351
+  zh: 1c3af56f069a1075
 /use-the-terminal-interface/exit:
   en: e07ab0d1552610a7
   zh: 53a257b477ef874f

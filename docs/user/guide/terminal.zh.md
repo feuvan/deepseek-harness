@@ -61,7 +61,7 @@ dsh --profile headless "run the tests"
 
 ### 命令
 
-终端专属控制：`/help`、`/status`、`/model`、`/effort`、`/permission`、`/queue`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。
+终端专属控制：`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。
 
 已注册的 agent 命令也可从编辑器使用，包括 `/compact`、`/goal`、`/plan`、`/permission` 以及 skill 调用。它们记录的结果会像其他命令一样出现在 transcript 中。
 
@@ -95,6 +95,16 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 
 终端随附中英文文案。把 `terminal-ui` 行的 `locale` 设为 `en` 或 `zh`，或保持 `auto` 依次跟随 `DSH_LOCALE`、`LC_ALL`、`LC_MESSAGES`、`LANG`。面板、通知、帮助行与状态标签都会跟随所选语言；其他语言回退到英文。
 
+## Agent preset
+
+终端组装与 Desktop、Web 相同的四个内置 agent preset：`standard`（默认）、`ptc`、`minimal`、`cordis`。新启动默认运行 `standard`；加 `--preset <id>` 可改用其他 preset：
+
+```sh
+dsh tui --preset ptc
+```
+
+`/preset` 列出四项及一行说明并标记当前项。第一轮开始前选择会重新组装该会话并记录 `agent-preset/selected`；第一轮开始后组合固定，`/preset` 会提示已锁定。`/status` 显示当前 preset。在 Desktop 或 Web 下用这些 preset 创建的会话可以在这里恢复，反之亦然。
+
 ## 继续会话
 
 使用 `--resume` 恢复精确的会话标识：
@@ -103,7 +113,7 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 dsh tui --resume session-<id>
 ```
 
-终端在接受输入前回放已存 transcript。它会拒绝未知标识、subagent 会话、记录在不同工作目录中的会话，以及在终端 profile 未组装的 agent preset 下创建的会话。
+终端在接受输入前回放已存 transcript。它会拒绝未知标识、subagent 会话、记录在不同工作目录中的会话、没有记录 agent preset 的会话（更早的无 preset 终端启动），以及 `--preset` 与已记录 preset 冲突的会话。
 
 ## 退出
 

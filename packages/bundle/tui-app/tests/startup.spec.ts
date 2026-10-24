@@ -70,14 +70,38 @@ describe('tui-startup', () => {
   it('mints a fresh session-<uuid> identity when no argument names a persisted Session', () => {
     const run = runStartup([])
     const published = run.published()
-    expect(Object.keys(published ?? {})).toEqual(['sessionId', 'resumeSessionId'])
+    expect(Object.keys(published ?? {})).toEqual(['sessionId', 'resumeSessionId', 'preset'])
     expect(published?.resumeSessionId).toBeUndefined()
+    expect(published?.preset).toBeUndefined()
     expect(published?.sessionId).toMatch(
       /^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
     )
     expect(run.exits).toEqual([])
     expect(run.out()).toBe('')
     expect(run.err()).toBe('')
+  })
+
+  it('publishes an explicit --preset for a fresh Session', () => {
+    const run = runStartup(['--preset', 'ptc'])
+    const published = run.published()
+    expect(published?.preset).toBe('ptc')
+    expect(published?.resumeSessionId).toBeUndefined()
+    expect(run.exits).toEqual([])
+    expect(run.err()).toBe('')
+  })
+
+  it('rejects a whitespace-only preset id through the launcher exit request', () => {
+    const run = runStartup(['--preset', '   '])
+    expect(run.published()).toBeUndefined()
+    expect(run.err()).toContain('error: --preset requires a non-empty agent preset id')
+    expect(run.exits).toEqual([1])
+  })
+
+  it('rejects a preset flag without a value', () => {
+    const run = runStartup(['--preset'])
+    expect(run.published()).toBeUndefined()
+    expect(run.err()).toContain("option '--preset <id>' argument missing")
+    expect(run.exits).toEqual([1])
   })
 
   it('mints a distinct identity for each fresh launch', () => {
@@ -111,7 +135,9 @@ describe('tui-startup', () => {
     expect(run.out()).toContain('Usage: dsh --profile tui [options]')
     expect(run.out()).toContain('Run the DeepSeek Harness agent in a full-screen terminal interface.')
     expect(run.out()).toContain('--resume <id>')
+    expect(run.out()).toContain('--preset <id>')
     expect(run.out()).toContain('dsh tui --resume <session>')
+    expect(run.out()).toContain('dsh tui --preset ptc')
     expect(run.err()).toBe('')
     expect(run.exits).toEqual([0])
   })

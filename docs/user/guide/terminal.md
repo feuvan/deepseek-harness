@@ -61,7 +61,7 @@ A question tagged as a plan review renders its own panel: the plan document is f
 
 ### Commands
 
-Terminal-only controls: `/help`, `/status`, `/model`, `/effort`, `/permission`, `/queue`, `/config`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`.
+Terminal-only controls: `/help`, `/status`, `/model`, `/preset`, `/effort`, `/permission`, `/queue`, `/config`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`.
 
 Registered agent commands also work from the composer, including `/compact`, `/goal`, `/plan`, `/permission`, and skill invocations. Their recorded outcome appears in the transcript like any other command.
 
@@ -95,6 +95,16 @@ Reasoning blocks render at one of four visibility levels, matching the Desktop w
 
 The terminal ships English and Chinese copy. Set `locale` on the `terminal-ui` row to `en` or `zh`, or leave it `auto` to follow `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`. Every panel, notice, help line, and status label follows the selected language; other languages fall back to English.
 
+## Agent presets
+
+The terminal composes the same four built-in agent presets as Desktop and Web: `standard` (the default), `ptc`, `minimal`, and `cordis`. A fresh launch runs under `standard`; add `--preset <id>` to start under another one:
+
+```sh
+dsh tui --preset ptc
+```
+
+`/preset` lists the four with one-line descriptions and marks the current one. Choosing a preset before the first turn recomposes that Session and records `agent-preset/selected`; after the first turn the composition is fixed and `/preset` reports that it is locked. `/status` shows the current preset. Sessions created in Desktop or Web under any of these presets resume here, and Sessions created here resume there.
+
 ## Continue a session
 
 Resume an exact Session identity with `--resume`:
@@ -103,7 +113,7 @@ Resume an exact Session identity with `--resume`:
 dsh tui --resume session-<id>
 ```
 
-The terminal replays the stored transcript before accepting input. It refuses an unknown identity, a subagent Session, a Session recorded in a different working directory, and a Session created under an agent preset that the terminal profile does not compose.
+The terminal replays the stored transcript before accepting input. It refuses an unknown identity, a subagent Session, a Session recorded in a different working directory, a Session recorded without an agent preset (an earlier preset-less terminal launch), and a `--preset` that conflicts with the recorded one.
 
 ## Exit
 

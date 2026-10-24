@@ -36,6 +36,8 @@ export interface LocalCommands {
   queue(argument: string | undefined): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
+  /** Choose or switch the agent preset; an absent argument opens the chooser. */
+  preset(argument: string | undefined): void | Promise<void>
   /** Close the terminal. */
   exit(): void
 }
@@ -102,6 +104,7 @@ export class Composer {
       permission: { description: copy.commands.permission, run: (argument) => { void deps.local.permission(argument) } },
       queue: { description: copy.commands.queue, run: (argument) => { void deps.local.queue(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
+      preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
       quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
     }

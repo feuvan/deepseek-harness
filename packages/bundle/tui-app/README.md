@@ -29,14 +29,15 @@ Run the shipped profile from an interactive terminal:
 
 ```sh
 dsh tui
+dsh tui --preset ptc
 dsh tui --resume session-<id>
 ```
 
-The first launch initializes the `tui` profile under `$DSH_HOME/profiles/tui` from the shipped template, exactly like the other named profiles. `--resume` takes an exact Session identity; the run refuses an unknown identity, a subagent or forked Session, a Session recorded under an agent preset this bundle does not compose, and a Session recorded in another working directory.
+The first launch initializes the `tui` profile under `$DSH_HOME/profiles/tui` from the shipped template, exactly like the other named profiles. A fresh Session runs under an agent preset: the shipped four are `standard` (the default), `ptc`, `minimal`, and `cordis`, matching Desktop and Web, and `--preset <id>` picks another before the first turn. `/preset` lists them and switches the current Session until its first turn starts. `--resume` takes an exact Session identity; the run refuses an unknown identity, a subagent or forked Session, a Session recorded without an agent preset (an earlier preset-less terminal launch), a `--preset` that conflicts with the recorded one, and a Session recorded in another working directory.
 
 `dsh tui --help` prints the app's own help and exits without claiming the terminal. Non-interactive launches fail before the screen is entered and name `dsh --profile headless "<task>"`.
 
-The profile inherits `dsh-base` unchanged apart from the deployment persona and the disabled configuration HMR row; every other capability, tool, and policy comes from base.
+The profile inherits `dsh-base`'s host plane and replaces its agent plane with the same four preset declarations the Web profile ships, so a preset Session created in either surface can be resumed in the other. Only the deployment persona, the disabled configuration HMR row, and the terminal rows differ from base.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -88,7 +89,8 @@ The section is stable across requests in one composition, so it does not invalid
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No preset composition.** The bundle mounts the base agent-plane rows directly, so Sessions created under an agent preset cannot be resumed here.
+- **Schedule tools need the Web host.** The preset declarations are copied verbatim from Web, whose `schedule` host row depends on the API session controller; the terminal does not compose that controller, so the preset's `tool-schedule` row registers no tools here.
+- **Preset composition is a copy.** The four declarations under `presets/` are byte-identical copies of the Web bundle's files; a parity test fails when they drift.
 - **No configuration HMR.** Composition is read once per launch; restart the terminal after editing profile patches.
 - **No automatic session picker.** Resume requires the exact Session identity.
 - **Windows is unverified by the shipped acceptance lane.** The PTY profile acceptance runs on POSIX hosts.

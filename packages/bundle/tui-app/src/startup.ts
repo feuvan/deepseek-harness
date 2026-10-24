@@ -35,6 +35,8 @@ export interface TuiStartupValues {
   readonly sessionId: SessionId
   /** Persisted identity to resume; absent for a fresh Session. */
   readonly resumeSessionId: SessionId | undefined
+  /** Agent preset requested for a fresh Session; the registry default when omitted. */
+  readonly preset: string | undefined
 }
 
 /**
@@ -47,10 +49,12 @@ function tuiCommand(): Command {
     .description('Run the DeepSeek Harness agent in a full-screen terminal interface.')
     .helpOption('-h, --help', 'show this help')
     .option('--resume <id>', 'resume the persisted Session with this id')
+    .option('--preset <id>', 'agent preset for a fresh Session (standard, ptc, minimal, cordis)')
     .addHelpText('after', `
 Examples:
   dsh tui                       start a fresh Session in the terminal
   dsh tui --resume <session>    continue a persisted Session
+  dsh tui --preset ptc          start a fresh Session under the ptc preset
 `)
 }
 
@@ -62,14 +66,18 @@ Examples:
 export function apply(ctx: Context): void {
   const program = tuiCommand()
   program.action(() => {
-    const options = program.opts<{ resume?: string }>()
+    const options = program.opts<{ resume?: string; preset?: string }>()
     const resume = options.resume
     if (resume !== undefined && resume.trim() === '') {
       program.error('error: --resume requires a non-empty session id')
     }
+    const preset = options.preset
+    if (preset !== undefined && preset.trim() === '') {
+      program.error('error: --preset requires a non-empty agent preset id')
+    }
     const resumeSessionId = resume === undefined ? undefined : brandString<SessionId>(resume)
     const sessionId = resumeSessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
-    ctx.provide(TUI_STARTUP_SERVICE, { sessionId, resumeSessionId } satisfies TuiStartupValues)
+    ctx.provide(TUI_STARTUP_SERVICE, { sessionId, resumeSessionId, preset } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)
 }

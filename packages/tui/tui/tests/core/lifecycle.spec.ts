@@ -36,7 +36,7 @@ vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
 import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
-  headlessSession, llmDouble, observation, projectionsDouble, sessionQueryDouble, terminalConfig,
+  agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, sessionQueryDouble, terminalConfig,
   toolsDouble, userQuestionsDouble, waitForScreen,
   type AgentDouble, type AgentsDouble, type AppExitDouble, type CommandsDouble,
   type ObservationDouble, type ProjectionsDouble, type SessionQueryDouble,
@@ -887,8 +887,10 @@ describe('TerminalApp panel projections and secondary paths', () => {
     await harness.awaitStarted()
 
     await submitLine(harness, '/status')
-    const panel = await dockPanel(harness)
-    const text = panel.render(100).join('\n')
+    await dockPanel(harness)
+    harness.terminal.headless.press('\u001b[6~')
+    harness.terminal.headless.press('\u001b[6~')
+    const text = dockText(harness.app)
     expect(text).toContain('Cache        75%')
     expect(text).toContain('Context      25%')
     expect(text).toContain('Permissions  workspace-write')
@@ -3433,5 +3435,305 @@ describe('TerminalApp dock input interception', () => {
     expect(editorOf(harness.app).getText()).toBe('/he')
     harness.terminal.headless.press('\u001b')
     await awaitDockClosed(harness)
+  })
+})
+
+describe('TerminalApp /preset', () => {
+  it('opens the dock chooser with localized rows, descriptions, and the current marker', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset')
+    await waitForDock(harness, copy.prompt.presetTitle)
+
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.prompt.presetTitle)
+    expect(dock).toContain('Standard')
+    expect(dock).toContain('PTC')
+    expect(dock).toContain('Minimal')
+    expect(dock).toContain('Cordis')
+    expect(dock).toContain(copy.prompt.presetCurrent)
+    expect(dock).toContain(copy.preset.descriptions.ptc)
+    expect(dock).toContain(copy.prompt.selectHint)
+    expect(presets.selected).toEqual([])
+  })
+
+  it('selects the highlighted preset once and reports the localized notice', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/preset')
+    await waitForDock(harness, copy.prompt.presetTitle)
+    const list = bottomListOf(harness.app)
+    expect(Reflect.get(list, 'index')).toBe(0)
+
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(list, 'index')).toBe(1)
+    expect(dockText(harness.app)).toContain('❯ PTC')
+
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(presets.selected).toHaveLength(1) })
+    expect(presets.selected[0]?.id).toBe('ptc')
+    expect(presets.selected[0]?.agent).toBe(harness.agent.agent)
+    await awaitDockClosed(harness)
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.preset.selected(copy.preset.names['ptc'] ?? 'ptc'))
+    })
+  })
+
+  it('applies an explicit preset identity', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset minimal')
+
+    await vi.waitFor(() => { expect(presets.selected).toEqual([{ agent: harness.agent.agent, id: 'minimal' }]) })
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.preset.selected(copy.preset.names['minimal'] ?? 'minimal'))
+    })
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+
+  it('reports an already-current preset without calling the registry', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset standard')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.preset.selected(copy.preset.names['standard'] ?? 'standard'))
+    })
+    expect(presets.selected).toEqual([])
+  })
+
+  it('locks switching after the Session started', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard', turnBoundary: { openTurnStartSeq: 2, lastTurn: 1 } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset ptc')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.locked) })
+    expect(presets.selected).toEqual([])
+  })
+
+  it('locks switching when an earlier turn ended without an open one', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard', turnBoundary: { openTurnStartSeq: null, lastTurn: 1 } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset ptc')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.locked) })
+    expect(presets.selected).toEqual([])
+  })
+
+  it('reports the unavailable notice without the preset service', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.unavailable) })
+    expect(bottomOf(harness.app).active).toBe(false)
+  })
+
+  it('reports the unavailable notice without a live Agent', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({ services: { agentPresets: presets.service } })
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'agent', undefined)
+
+    await submitLine(harness, '/preset')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.unavailable) })
+    expect(presets.selected).toEqual([])
+  })
+
+  it('reports a failed selection with the error message', async () => {
+    const presets = agentPresetsDouble({ selectError: new Error('locked elsewhere') })
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset ptc')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.failed('locked elsewhere')) })
+  })
+
+  it('reports a failed selection thrown as a non-Error', async () => {
+    const presets = agentPresetsDouble({ selectError: 'not an error' })
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset ptc')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.failed('not an error')) })
+  })
+
+  it('cancels the chooser without selecting', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/preset')
+    await waitForDock(harness, copy.prompt.presetTitle)
+
+    harness.terminal.headless.press('\u001b')
+
+    await awaitDockClosed(harness)
+    expect(presets.selected).toEqual([])
+  })
+
+  it('honors registry names and descriptions, falling back to the row id', async () => {
+    const presets = agentPresetsDouble({
+      rows: [
+        { id: 'standard', name: 'Standard' },
+        { id: 'mystery', name: 'Mystery', description: 'Registry description.' },
+        { id: 'plain' },
+      ],
+    })
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service },
+      values: { agentPreset: 'standard' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/preset')
+    await waitForDock(harness, copy.prompt.presetTitle)
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.prompt.presetCurrent)
+    expect(dock).toContain('Mystery')
+    expect(dock).toContain('Registry description.')
+    expect(dock).toContain('plain')
+    expect(dock).toContain('plain')
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    await submitLine(harness, '/preset mystery')
+    await vi.waitFor(() => { expect(presets.selected).toEqual([{ agent: harness.agent.agent, id: 'mystery' }]) })
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.selected('mystery')) })
+  })
+
+  it('treats presets as unavailable while the agent or projection service is gone', async () => {
+    const presets = agentPresetsDouble()
+    const harness = await lifecycleHarness({
+      services: { agentPresets: presets.service, sessionProjections: undefined },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const presetId = privateValue(harness.app, 'presetId') as () => string | undefined
+    const selectPreset = privateValue(harness.app, 'selectPreset') as (id: string) => Promise<void>
+
+    expect(presetId.call(harness.app)).toBeUndefined()
+
+    Reflect.set(harness.app, 'agent', undefined)
+    expect(presetId.call(harness.app)).toBeUndefined()
+    await selectPreset.call(harness.app, 'ptc')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.preset.unavailable) })
+    expect(presets.selected).toEqual([])
+  })
+
+  it('renders the status row defensively when the projection clears between reads', async () => {
+    const base = projectionsDouble({ agentPreset: 'ptc' })
+    let reads = 0
+    const projections = {
+      ...base.service,
+      stateOf: (session: Parameters<typeof base.service.stateOf>[0], key: string): unknown => {
+        if (key !== 'agentPreset') return base.service.stateOf(session, key)
+        reads += 1
+        return reads === 1 ? 'ptc' : undefined
+      },
+    }
+    const harness = await lifecycleHarness({ services: { sessionProjections: projections } })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/status')
+    await waitForDock(harness, copy.panel.status)
+
+    expect(dockText(harness.app)).toContain(`${copy.statusPanel.preset.padEnd(12, ' ')} `)
+  })
+
+  it('shows the localized preset in the status panel and falls back to not available', async () => {
+    const harness = await lifecycleHarness({
+      services: { agentPresets: agentPresetsDouble().service },
+      values: { agentPreset: 'ptc' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/status')
+    await waitForDock(harness, copy.panel.status)
+    const row = `${copy.statusPanel.preset.padEnd(12, ' ')} ${copy.preset.names['ptc'] ?? 'ptc'}`
+    expect(dockText(harness.app)).toContain(row)
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    const bare = await lifecycleHarness()
+    bare.start()
+    await bare.awaitStarted()
+    await submitLine(bare, '/status')
+    await waitForDock(bare, copy.panel.status)
+    const missing = `${copy.statusPanel.preset.padEnd(12, ' ')} ${copy.statusPanel.notAvailable}`
+    expect(dockText(bare.app)).toContain(missing)
+  })
+
+  it('lists the preset command in help and slash completion', async () => {
+    const harness = await lifecycleHarness({ services: { agentPresets: agentPresetsDouble().service } })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/help')
+    await waitForDock(harness, copy.panel.help)
+    for (let page = 0; page < 3; page += 1) harness.terminal.headless.press('\u001b[6~')
+    expect(dockText(harness.app)).toContain(`/${'preset'.padEnd(18, ' ')} ${copy.commands.preset}`)
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    for (const key of '/pres') harness.terminal.headless.press(key)
+    await waitForDock(harness, copy.completion.title)
+    expect(dockText(harness.app)).toContain(copy.commands.preset)
   })
 })

@@ -4304,7 +4304,7 @@ export type Locale = 'en' | 'zh'
 
 ## `@deepseek-ai/dsh-tui-app`
 
-- `inject`: `agentDefaultModel` · `agents`
+- `inject`: `agentDefaultModel` · `agentPresets` · `agents`
 - `source`: [`packages/bundle/tui-app/src/index.ts:30`](../packages/bundle/tui-app/src/index.ts)
 
 ```ts config-catalog
@@ -4314,6 +4314,8 @@ export interface Config {
   sessionId: string
   /** Persisted Session to resume instead of creating a fresh one. */
   resumeSessionId?: string
+  /** Agent preset requested for a fresh Session; the registry default when omitted. */
+  preset?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tui-app -->

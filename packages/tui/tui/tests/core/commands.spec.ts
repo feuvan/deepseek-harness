@@ -25,6 +25,7 @@ interface ComposerHarness {
   readonly effortArgs: (string | undefined)[]
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
+  readonly presetArgs: (string | undefined)[]
   readonly configures: string[]
   readonly notices: string[]
   readonly agent: AgentDouble
@@ -57,6 +58,7 @@ async function composerHarness(options: {
   const effortArgs: (string | undefined)[] = []
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
+  const presetArgs: (string | undefined)[] = []
   const configures: string[] = []
   const notices: string[] = []
   let presented: Agent | undefined = agent.agent
@@ -73,6 +75,7 @@ async function composerHarness(options: {
     permission: (argument) => { local.push('permission'); permissionArgs.push(argument) },
     queue: (argument) => { local.push('queue'); queueArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
+    preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
     exit: record('exit'),
   }
   const composer = new Composer({
@@ -91,6 +94,7 @@ async function composerHarness(options: {
     effortArgs,
     permissionArgs,
     queueArgs,
+    presetArgs,
     configures,
     notices,
     agent,
@@ -111,6 +115,7 @@ describe('Composer.submit', () => {
     ['permission', 'permission'],
     ['queue', 'queue'],
     ['config', 'config'],
+    ['preset', 'preset'],
     ['exit', 'exit'],
     ['quit', 'exit'],
   ] as const)('runs the terminal-local /%s control', async (name, control) => {
@@ -310,7 +315,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'config', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'config', 'preset', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -339,6 +344,7 @@ describe('Composer.helpLines', () => {
 
     expect(lines[0]).toBe('Keys')
     expect(lines).toContain('  /help               Show keys and commands')
+    expect(lines).toContain('  /preset             ' + copy.commands.preset)
     expect(lines.some(line => line.includes('/inspect'))).toBe(false)
   })
 
@@ -376,7 +382,7 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, config: () => {}, exit: () => {},
+        queue: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
     })
@@ -637,7 +643,7 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, config: () => {}, exit: () => {},
+        queue: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
     })

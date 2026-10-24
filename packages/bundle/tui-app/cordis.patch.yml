@@ -34,6 +34,7 @@
       config:
         sessionId: !!js ctx.tuiStartup.sessionId
         resumeSessionId: !!js ctx.tuiStartup.resumeSessionId
+        preset: !!js ctx.tuiStartup.preset
 
     # The presentation-only front door. It waits for the matching live root
     # Agent, then takes the screen over and restores it on every exit path.
@@ -48,7 +49,101 @@
     - id: file-reference-local
       name: '@deepseek-ai/dsh-file-reference-local'
 
-    # The model-facing question tool is opt-in per composition; the terminal
-    # registers the answerer for it.
-    - id: tool-ask-user
-      name: '@deepseek-ai/dsh-tool-ask-user'
+
+# ── the agent plane moves behind agent presets ─────────────────────────────
+#
+# The declared tools, prompt sections, and delegation backends below compose
+# what ONE agent contributes. Presets own those rows; the base host plane keeps
+# services every preset reads (jobs, goals, skills, subagents, token meter).
+# This mirrors the Web profile so a Session created there resumes here and
+# vice versa.
+
+- id: tool-plugin-manager
+  disabled: true
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+- id: skill-filesystem
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: command-goal
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+- id: compaction-basic
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+- id: tool-result-pruner
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: agent-instructions
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-web
+  disabled: true
+
+# Process-global host services the preset rows read. The Web profile owns the
+# same rows; a preset mounts per Session and cannot provide them itself.
+- insert:
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    - id: cordis-inspect-providers
+      name: '@deepseek-ai/dsh-tool-cordis/host'
+
+    - id: cordis-host-runner
+      name: '@deepseek-ai/dsh-cordis-host-runner'
+
+# The preset selection registry. The shipped declarations live in
+# `presets/*.patch.yml`, listed after this file in `package.json`
+# `dsh.bundle.patch`, exactly like the Web profile.
+- insert:
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard

@@ -7,6 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plugin-manager'
@@ -276,6 +277,7 @@ export class TerminalApp {
         permission: (argument) => { this.choosePermission(argument) },
         queue: argument => this.queuePrompt(argument),
         config: () => { void this.openConfigPanel() },
+        preset: (argument) => { void this.pickPreset(argument) },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
       },
@@ -1088,6 +1090,85 @@ export class TerminalApp {
     }
   }
 
+  /** @returns the preset recorded for the presented Session, if any. */
+  private presetId(): string | undefined {
+    const agent = this.agent
+    if (agent === undefined) return undefined
+    return this.ctx.get('sessionProjections')?.stateOf(agent.session, 'agentPreset') ?? undefined
+  }
+
+  /** @returns the localized display name for one preset identity. */
+  private presetLabel(id: string): string {
+    return copy.preset.names[id] ?? id
+  }
+
+  /**
+   * Switch the Session to one agent preset before its first turn.
+   * @param id - the requested preset identity.
+   * @param label - display name already resolved for the chooser row.
+   */
+  private async selectPreset(id: string, label?: string): Promise<void> {
+    const presets = this.ctx.get('agentPresets')
+    const agent = this.agent
+    if (presets === undefined || agent === undefined) {
+      this.transcript?.notice(copy.preset.unavailable)
+      return
+    }
+    const name = label ?? this.presetLabel(id)
+    if (this.presetId() === id) {
+      this.transcript?.notice(copy.preset.selected(name))
+      return
+    }
+    const boundary = this.ctx.get('sessionProjections')?.stateOf(agent.session, 'turnBoundary')
+    if (boundary !== undefined && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
+      this.transcript?.notice(copy.preset.locked)
+      return
+    }
+    try {
+      const selected = await presets.select(agent, id)
+      this.transcript?.notice(copy.preset.selected(label ?? this.presetLabel(selected)))
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.preset.failed(error instanceof Error ? error.message : String(error)))
+    }
+    this.tui?.requestRender()
+  }
+
+  /**
+   * Choose an agent preset, or apply one named on the command line.
+   * @param argument - explicit preset identity, when given.
+   */
+  private async pickPreset(argument: string | undefined): Promise<void> {
+    const presets = this.ctx.get('agentPresets')
+    const agent = this.agent
+    if (presets === undefined || agent === undefined) {
+      this.transcript?.notice(copy.preset.unavailable)
+      return
+    }
+    const requested = argument?.trim()
+    if (requested !== undefined && requested !== '') {
+      await this.selectPreset(requested)
+      return
+    }
+    const rows = await presets.list()
+    const current = this.presetId()
+    this.completion?.close()
+    this.closeConfigPanel()
+    this.bottomList?.open(
+      copy.prompt.presetTitle,
+      rows.map(row => ({
+        value: row.id,
+        label: row.name ?? this.presetLabel(row.id),
+        ...(row.id === current
+          ? { description: copy.prompt.presetCurrent }
+          : copy.preset.descriptions[row.id] === undefined
+            ? row.description === undefined ? {} : { description: row.description }
+            : { description: copy.preset.descriptions[row.id] }),
+      })),
+      (item) => { void this.selectPreset(item.value, item.label) },
+      () => {},
+    )
+  }
+
   /** Present the Session status panel. */
   private showStatus(): void {
     const state = this.status?.snapshot()
@@ -1109,6 +1190,7 @@ export class TerminalApp {
       `${labels.provider.padEnd(12, ' ')} ${this.selection?.current?.provider ?? agent.options.provider}`,
       /* v8 ignore stop */
       `${labels.model.padEnd(12, ' ')} ${state.model}`,
+      `${labels.preset.padEnd(12, ' ')} ${this.presetId() === undefined ? labels.notAvailable : this.presetLabel(this.presetId() ?? '')}`,
       `${labels.effort.padEnd(12, ' ')} ${effort}`,
       `${labels.reasoning.padEnd(12, ' ')} ${copy.reasoning.levels[this.transcript?.reasoningLevel() ?? 'standard']}`,
       `${labels.permissions.padEnd(12, ' ')} ${state.permission ?? 'unknown'}`,

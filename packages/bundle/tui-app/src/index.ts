@@ -24,7 +24,7 @@ import z from '@deepseek-ai/schemastery'
 export const name = 'tui-session'
 
 /** Services required before the presented Agent can be created or resumed. */
-export const inject = ['agentDefaultModel', 'agents']
+export const inject = ['agentDefaultModel', 'agentPresets', 'agents']
 
 /** Row configuration supplied from the app's startup service. */
 export interface Config {
@@ -32,12 +32,15 @@ export interface Config {
   sessionId: string
   /** Persisted Session to resume instead of creating a fresh one. */
   resumeSessionId?: string
+  /** Agent preset requested for a fresh Session; the registry default when omitted. */
+  preset?: string
 }
 
 /** Validated schema for {@link Config}. */
 export const Config: z<Config> = z.object({
   sessionId: z.string().min(1),
   resumeSessionId: z.string().min(1),
+  preset: z.string().min(1),
 })
 
 /** The Session facts that decide whether the TUI may drive a stored Session. */
@@ -71,20 +74,13 @@ function currentPreset(header: AdoptableHeader, events: Iterable<SessionEvent>, 
 }
 
 /**
- * Reject a Session the preset-less terminal composition must not adopt.
+ * Reject a Session the terminal must not adopt.
  * @param header - the Session header.
- * @param events - the Session's durable events.
  * @param sessionId - the presented identity.
  * @param cwd - the current process working directory.
- * @throws when the Session belongs to another composition or directory.
+ * @throws when the Session is a child, forked, or recorded elsewhere.
  */
-function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>, sessionId: SessionId, cwd: string): void {
-  const preset = currentPreset(header, events, sessionId)
-  if (preset !== undefined) {
-    throw new Error(
-      `session "${sessionId}" runs under agent preset "${preset}", which the TUI profile does not compose`,
-    )
-  }
+function assertAdoptable(header: AdoptableHeader, sessionId: SessionId, cwd: string): void {
   if (header.origin === 'subagent' || header.parentSession !== undefined) {
     throw new Error(`session "${sessionId}" is a subagent or forked session and cannot be driven directly`)
   }
@@ -111,6 +107,7 @@ async function start(ctx: Context, config: Config): Promise<void> {
   // Loader siblings mount concurrently; wait for the composed tools, adapters,
   // and policies before the first Agent is published.
   await ctx.get('loader')?.await()
+  const presets = ctx.agentPresets
   const selection = ctx.agentDefaultModel.currentSelection()
   const agentOptions: AgentOptions = {
     provider: selection.provider,
@@ -121,7 +118,15 @@ async function start(ctx: Context, config: Config): Promise<void> {
   const cwd = fs === undefined ? process.cwd() : fs.processPath(await fs.resolve('.'))
   const sessionId = brandString<SessionId>(config.sessionId)
   if (config.resumeSessionId === undefined) {
-    const handle = await ctx.agents.create({ sessionId, meta: { cwd }, agentOptions })
+    const preset = await presets.resolve(config.preset)
+    await using scope = await presets.acquireScope(preset.id)
+    void scope
+    const handle = await ctx.agents.create({
+      sessionId,
+      meta: { cwd, agentPreset: preset.id },
+      agentOptions,
+      setup: async (agentCtx) => { await presets.mount(agentCtx, preset.id) },
+    })
     ctx.effect(() => () => handle.dispose(), 'tui-session: presented Agent')
     return
   }
@@ -134,12 +139,36 @@ async function start(ctx: Context, config: Config): Promise<void> {
     throw new Error('tui --resume requires the sessionQuery service; dsh-base provides it')
   }
   using observation = await query.observeSession(resumeSessionId)
-  assertAdoptable(observation.header, observation.events, resumeSessionId, cwd)
-  const handle = await ctx.agents.resume({ resumeSessionId, agentOptions })
-  // The observation was a snapshot: another writer may have appended a preset
-  // selection or moved the Session before this process took the write lease.
+  assertAdoptable(observation.header, resumeSessionId, cwd)
+  const presetId = currentPreset(observation.header, observation.events, resumeSessionId)
+  if (presetId === undefined) {
+    throw new Error(
+      `session "${resumeSessionId}" recorded no agent preset; the terminal runs agent presets, so start a new Session`,
+    )
+  }
+  if (config.preset !== undefined && config.preset !== presetId) {
+    throw new Error(
+      `session "${resumeSessionId}" runs under agent preset "${presetId}", not "${config.preset}"; drop --preset or start a new Session`,
+    )
+  }
+  const preset = await presets.resolve(presetId)
+  await using scope = await presets.acquireScope(preset.id)
+  void scope
+  const handle = await ctx.agents.resume({
+    resumeSessionId,
+    agentOptions,
+    setup: async (agentCtx) => { await presets.mount(agentCtx, preset.id) },
+  })
+  // The observation was a snapshot: another writer may have moved the Session
+  // before this process took the write lease.
   using resumed = await query.observeSession(resumeSessionId)
-  assertAdoptable(resumed.header, resumed.events, resumeSessionId, cwd)
+  assertAdoptable(resumed.header, resumeSessionId, cwd)
+  const resumedPreset = currentPreset(resumed.header, resumed.events, resumeSessionId)
+  if (resumedPreset !== presetId) {
+    throw new Error(
+      `session "${resumeSessionId}" changed agent preset to "${resumedPreset ?? 'none'}" while the terminal was resuming it`,
+    )
+  }
   ctx.effect(() => () => handle.dispose(), 'tui-session: resumed Agent')
 }
 

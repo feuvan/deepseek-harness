@@ -100,6 +100,10 @@ const en = {
     planReview: 'Plan review',
     /** Heading for the permission-preset chooser. */
     permissionTitle: 'Permission preset',
+    /** Heading for the agent-preset chooser. */
+    presetTitle: 'Agent preset',
+    /** Description marking the current agent preset. */
+    presetCurrent: 'current',
     /** Description marking the current permission preset. */
     permissionCurrent: 'current',
     /** Built-in explanations for the shipped permission presets, used when the catalog omits one. */
@@ -112,6 +116,31 @@ const en = {
     } as Readonly<Record<string, string>>,
     /** Batch progress formatter. */
     progress: (index: number, total: number): string => `${index}/${total}`,
+  },
+  /** Agent-preset labels and chooser copy. */
+  preset: {
+    /** Display names for the shipped presets; the id is the fallback. */
+    names: {
+      standard: 'Standard',
+      ptc: 'PTC',
+      minimal: 'Minimal',
+      cordis: 'Cordis',
+    } as Readonly<Record<string, string>>,
+    /** One-line descriptions for the shipped presets. */
+    descriptions: {
+      standard: 'Full coding tools, plan mode, goals, subagents, and skills.',
+      ptc: 'Standard tools plus the PTC runtime and workflow tooling.',
+      minimal: 'A compact prompt with files, a persistent shell, and compaction.',
+      cordis: 'Standard tools plus the Cordis self-modification tools and skills.',
+    } as Readonly<Record<string, string>>,
+    /** Notice naming the selected preset. */
+    selected: (name: string): string => `Agent preset: ${name}`,
+    /** Notice that the session already started and cannot switch. */
+    locked: 'This session has already started; its agent preset is fixed.',
+    /** Notice that no preset service is composed. */
+    unavailable: 'Agent presets are not composed in this terminal.',
+    /** Notice that the preset could not be changed. */
+    failed: (message: string): string => `Agent preset unchanged: ${message}`,
   },
   /** Reasoning-visibility labels. */
   reasoning: {
@@ -196,6 +225,7 @@ const en = {
     quit: 'Close the terminal',
     queue: 'Queue a message for the next turn',
     config: 'Show and change the configuration',
+    preset: 'Show or switch the agent preset',
     /** The Agent is not live yet. */
     agentNotReady: 'The agent is not ready yet.',
     /** The Agent was disposed while the terminal was open. */
@@ -238,6 +268,8 @@ const en = {
     provider: 'Provider',
     /** Model label. */
     model: 'Model',
+    /** Agent preset label. */
+    preset: 'Agent preset',
     /** Reasoning effort label. */
     effort: 'Effort',
     /** Reasoning visibility label. */
@@ -426,6 +458,10 @@ export const chinese: Copy = {
     custom: '其他答案…',
     planReview: '计划评审',
     permissionTitle: '权限预设',
+    /** agent preset 选择列表的标题。 */
+    presetTitle: 'Agent preset',
+    /** 标记当前 agent preset 的描述。 */
+    presetCurrent: '当前',
     permissionCurrent: '当前',
     permissionDescriptions: {
       'read-only': '只读取文件；不写入，也不执行改变状态的命令。',
@@ -477,6 +513,7 @@ export const chinese: Copy = {
     quit: '关闭终端',
     queue: '把一条消息排到下一轮',
     config: '显示并修改配置',
+    preset: '显示或切换 agent preset',
     agentNotReady: 'Agent 尚未就绪。',
     disposed: 'Agent 已被释放；正在关闭终端。',
     unknown: name => `未知命令：/${name}。输入 /help 查看可用命令。`,
@@ -504,6 +541,7 @@ export const chinese: Copy = {
     cwd: '工作目录',
     provider: 'Provider',
     model: '模型',
+    preset: 'Agent preset',
     effort: '推理强度',
     reasoning: '推理显示',
     permissions: '权限',
@@ -542,6 +580,25 @@ export const chinese: Copy = {
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
     tabHint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
+  },
+  /** Agent preset 名称、描述与提示。 */
+  preset: {
+    names: {
+      standard: '标准',
+      ptc: 'PTC',
+      minimal: '精简',
+      cordis: 'Cordis',
+    },
+    descriptions: {
+      standard: '完整编码工具、计划模式、目标、子代理与技能。',
+      ptc: '标准工具加上 PTC 运行时与工作流工具。',
+      minimal: '精简提示，只含文件工具、持久 shell 与压缩。',
+      cordis: '标准工具加上 Cordis 自我修改工具与技能。',
+    },
+    selected: (name: string): string => `Agent preset：${name}`,
+    locked: '本会话已经开始，agent preset 不能再切换。',
+    unavailable: '当前终端没有组装 agent preset。',
+    failed: (message: string): string => `agent preset 未更改：${message}`,
   },
   reasoning: {
     title: '推理显示',

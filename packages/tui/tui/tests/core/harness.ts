@@ -223,6 +223,7 @@ export interface ProjectionsDouble {
   readonly service: {
     onChanged(listener: (session: Session) => void): () => void
     snapshot(session: Session): { asOfSeq: number; values: Record<string, unknown> }
+    stateOf(session: Session, key: string): unknown
   }
   /** Values returned by `snapshot`; mutated in place to simulate projection changes. */
   readonly values: Record<string, unknown>
@@ -246,6 +247,7 @@ export function projectionsDouble(values: Record<string, unknown> = {}): Project
         return () => { listeners.delete(listener) }
       },
       snapshot: () => ({ asOfSeq: 0, values }),
+      stateOf: (_session, key) => values[key],
     },
     values,
     emit: (session) => { for (const listener of [...listeners]) listener(session) },
@@ -557,4 +559,94 @@ export function plainMarkdownTheme(): MarkdownTheme {
  */
 export function startFrame(attemptId: AssistantStreamFrame['attemptId'], turn: number, step: number): AssistantStreamFrame {
   return { type: 'start', attemptId, revision: 1, turn, step }
+}
+
+
+/** One agent-preset registry entry the chooser lists. */
+export interface AgentPresetRow {
+  /** Stable preset identity. */
+  readonly id: string
+  /** Optional display name. */
+  readonly name?: string
+  /** Optional description. */
+  readonly description?: string
+}
+
+/** Agent-preset registry double options. */
+export interface AgentPresetsOptions {
+  /** Rows returned by `list`; defaults to the four shipped presets. */
+  readonly rows?: readonly AgentPresetRow[]
+  /** Registry default; defaults to `standard`. */
+  readonly defaultId?: string
+  /** Error or non-Error value `select` rejects with. */
+  readonly selectError?: Error | string
+}
+
+/** One agent-preset registry double and its recordings. */
+export interface AgentPresetsDouble {
+  /** The `ctx.agentPresets` service. */
+  readonly service: {
+    readonly defaultId: string
+    list(): Promise<readonly AgentPresetRow[]>
+    resolve(id?: string): Promise<AgentPresetRow>
+    acquireScope(id?: string): Promise<{ readonly key: object; [Symbol.asyncDispose](): Promise<void> }>
+    mount(ctx: unknown, id?: string): Promise<AgentPresetRow>
+    select(agent: unknown, id: string): Promise<string>
+  }
+  /** Every agent/identity pair `select` received. */
+  readonly selected: { readonly agent: unknown; readonly id: string }[]
+  /** Every identity mounted through `mount`. */
+  readonly mounted: string[]
+  /** Every identity resolved. */
+  readonly resolved: (string | undefined)[]
+}
+
+/**
+ * Build the agent-preset registry double.
+ * @param options - rows, default identity, and select failure override.
+ * @returns the service and its recordings.
+ */
+export function agentPresetsDouble(options: AgentPresetsOptions = {}): AgentPresetsDouble {
+  const rows = options.rows ?? [
+    { id: 'standard', name: 'Standard', description: 'Full coding tools.' },
+    { id: 'ptc', name: 'PTC', description: 'PTC runtime and workflows.' },
+    { id: 'minimal', name: 'Minimal', description: 'A compact prompt.' },
+    { id: 'cordis', name: 'Cordis', description: 'Cordis self-modification.' },
+  ]
+  const defaultId = options.defaultId ?? 'standard'
+  const selected: { agent: unknown; id: string }[] = []
+  const mounted: string[] = []
+  const resolved: (string | undefined)[] = []
+  const row = (id?: string): AgentPresetRow => {
+    const wanted = id ?? defaultId
+    const found = rows.find(candidate => candidate.id === wanted)
+    if (found === undefined) throw new Error(`Unknown agent preset: ${wanted}`)
+    return found
+  }
+  return {
+    service: {
+      defaultId,
+      list: async () => rows,
+      resolve: async (id) => {
+        resolved.push(id)
+        return row(id)
+      },
+      acquireScope: async id => ({
+        key: { id: id ?? defaultId },
+        [Symbol.asyncDispose]: async () => {},
+      }),
+      mount: async (_ctx, id) => {
+        mounted.push(id ?? defaultId)
+        return row(id)
+      },
+      select: async (agent, id) => {
+        if (options.selectError !== undefined) throw options.selectError
+        selected.push({ agent, id })
+        return id
+      },
+    },
+    selected,
+    mounted,
+    resolved,
+  }
 }
