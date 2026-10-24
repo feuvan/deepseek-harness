@@ -16,7 +16,7 @@ import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScrollView, VStack, isViewportTUI, matchesKey, type MarkdownTheme, type TUI,
+  ScrollView, VStack, isKeyRelease, isViewportTUI, matchesKey, type MarkdownTheme, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
 import { copy } from './copy.ts'
@@ -322,6 +322,7 @@ export class TerminalApp {
         this.handleInterrupt()
         return { consume: true }
       }
+      if (isKeyRelease(data) && this.activeDockSurface() !== undefined) return { consume: true }
       if (this.dockOverlay !== undefined) {
         this.dockOverlay.handleInput(data)
         this.tui?.requestRender()
@@ -575,6 +576,9 @@ export class TerminalApp {
     if (matchesKey(data, 'ctrl+c')) return false
     const surface = this.activeDockSurface()
     if (surface === undefined) return false
+    // Kitty key-release reports arrive after the press; consuming them keeps a
+    // dock surface from acting twice per physical key.
+    if (isKeyRelease(data)) return true
     const handled = surface.handleInput(data)
     if (surface.consumeAll === false && handled !== true) return false
     this.tui?.requestRender()

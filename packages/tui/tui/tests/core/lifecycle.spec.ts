@@ -3104,6 +3104,59 @@ describe('TerminalApp dock single-step regressions', () => {
     expect(Reflect.get(panel, 'cursor')).toBe(0)
   })
 
+  it('ignores Kitty key-release reports so one physical key moves one step', async () => {
+    const options = Array.from({ length: 12 }, (_, index) => ({ value: `preset-${String(index)}`, name: `Preset ${String(index)}` }))
+    const harness = await lifecycleHarness({
+      services: { permissionPresets: { catalog: () => ({ options }) } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    const before = Reflect.get(panel, 'cursor') as number
+
+    harness.terminal.headless.press('\u001b[1;1:3B')
+    expect(Reflect.get(panel, 'cursor')).toBe(before)
+
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(panel, 'cursor')).toBe(before + 1)
+
+    harness.terminal.headless.press('\u001b[1;1:3C')
+    expect(Reflect.get(panel, 'section')).toBe('model')
+    harness.terminal.headless.press('\u001b[C')
+    expect(Reflect.get(panel, 'section')).toBe('permissions')
+
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+    await submitLine(harness, '/permission')
+    await waitForDock(harness, copy.prompt.permissionTitle)
+    const list = bottomListOf(harness.app)
+    const listIndex = Reflect.get(list, 'index') as number
+    harness.terminal.headless.press('\u001b[1;1:3B')
+    expect(Reflect.get(list, 'index')).toBe(listIndex)
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(list, 'index')).toBe(listIndex + 1)
+  })
+
+  it('filters release reports on the listener path without an interceptor', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.session.setInputInterceptor?.(undefined)
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    const before = Reflect.get(panel, 'cursor') as number
+
+    harness.terminal.headless.press('\u001b[1;1:3B')
+    expect(Reflect.get(panel, 'cursor')).toBe(before)
+    harness.terminal.headless.press('\u001b[B')
+    expect(Reflect.get(panel, 'cursor')).toBe(before + 1)
+  })
+
   it('moves a permission chooser one row per Down and dispatches once per Enter', async () => {
     const harness = await lifecycleHarness({
       descriptors: [{ name: 'permission', description: 'Set the permission preset', input: { hint: '<preset>' } }],
