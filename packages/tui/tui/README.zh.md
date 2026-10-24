@@ -50,7 +50,7 @@ kind: "package-reference"
 
 ### 交互界面
 
-当组合包挂载实验性 Agent Teams bundle 时，编辑器上方会显示一行 Team 状态（teammate 与共享任务计数），`/team` 在 dock 中打开只读的 Members/Tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 滚动，Esc 关闭）。数据来自 Lead Session 的 `agentTeam` projection；未启用 bundle 的 profile 既没有状态行也没有面板，`/team` 会说明如何启用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
+当组合包挂载实验性 Agent Teams bundle 时，编辑器上方会显示一行 Team 状态（teammate 与共享任务计数），`/team` 在 dock 中打开 Members/Tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭）。数据来自 Lead Session 的 `agentTeam` projection。Members：Enter 打开 teammate 只读 transcript，`m` 预填消息命令，`n` 预填任务命令。Tasks：`a` 认领，`c` 完成，`n` 新建。`/team task <subject>` 与 `/team message <member> <text>` 可直接在编辑器使用。未启用 bundle 的 profile 既没有状态行也没有面板，`/team` 会说明如何启用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
 
 已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/team`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
 
@@ -117,7 +117,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Agent Teams 视图只读。** 终端只显示成员与任务板，不能打开 teammate 会话、发送 peer 消息或编辑任务；这些仍属于 Web/Desktop 流程。启用实验性 bundle 会在 host 平面追加 Team 工具，而 preset scope 仍会挂载普通 subagent 工具。
+- **Agent Teams 视图是终端本地视图。** teammate transcript 只读（不能驱动对话），任务动作限于认领/完成/创建。把 teammate 作为主会话打开仍属于 Web/Desktop 流程。bundle 现在会抑制 preset scope 的 subagent 行，由 Team 工具替换它们。
 - **preset 由组合包提供。** 终端本身只读取并切换已组装的 preset 注册表；随附的 `@deepseek-ai/dsh-tui-app` 组合包声明四个内置 preset，默认 `standard`。
 - **没有剪贴板图片粘贴，也没有内联图片渲染。** 图片通过 `@` 提及命名后附加；已附加或收到的图片块渲染为带标签的占位符，而不是像素。随附组合包不选择 PTC 模式。
 - **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。

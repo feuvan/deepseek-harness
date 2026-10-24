@@ -118,9 +118,11 @@ dsh tui --preset ptc
 
 ## Agent Teams
 
-Enable the experimental Agent Teams bundle from `/config` → Experimental capabilities (or `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`), then restart the terminal. While the Lead Session runs a Team, a dim strip above the composer reports teammates, running members, and shared-task counts. `/team` opens the read-only Team dock: Tab or ←/→ switches between Members and Tasks, ↑/↓ and PgUp/PgDn scroll, Esc closes. Rows show member role/phase and task status, owner, blockers, and write-scope warnings; updates arrive from the Lead Session's `agentTeam` projection while the panel stays open.
+Enable the experimental Agent Teams bundle from `/config` → Experimental capabilities (or `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`), then restart the terminal. While the Lead Session runs a Team, a dim strip above the composer reports teammates, running members, and shared-task counts. `/team` opens the Team dock: Tab or ←/→ switches between Members and Tasks, ↑/↓ and PgUp/PgDn move, Esc closes. Rows show member role/phase and task status, owner, blockers, and write-scope warnings; updates arrive from the Lead Session's `agentTeam` projection while the panel stays open.
 
-The panel is read-only: it does not open teammate conversations, send peer messages, or change tasks. Those remain Web and Desktop workflows. Enabling the bundle adds the Team tools alongside the preset-scoped subagent tools; a profile without the bundle shows no strip and `/team` explains how to enable it.
+On Members, Enter opens the selected teammate's read-only transcript (↑/↓ scroll, Esc returns), `m` pre-fills `/team message <name> `, and `n` pre-fills `/team task `. On Tasks, `a` claims the selected ready task for the Lead, `c` completes an in-progress task, and `n` pre-fills a new task. `/team task <subject>` creates a shared task and `/team message <member> <text>` sends a peer message without leaving the composer.
+
+The teammate transcript is a viewer, not a driven conversation: prompts still go through `/team message` from the composer. Enabling the bundle replaces the preset-scoped subagent controls with the Team tools; a profile without the bundle shows no strip and `/team` explains how to enable it.
 
 ## Continue a session
 

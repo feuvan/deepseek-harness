@@ -26,6 +26,7 @@ interface ComposerHarness {
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
   readonly steerArgs: (string | undefined)[]
+  readonly teamArgs: (string | undefined)[]
   readonly presetArgs: (string | undefined)[]
   readonly cardArgs: (string | undefined)[]
   readonly configures: string[]
@@ -62,6 +63,7 @@ async function composerHarness(options: {
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
   const steerArgs: (string | undefined)[] = []
+  const teamArgs: (string | undefined)[] = []
   const presetArgs: (string | undefined)[] = []
   const cardArgs: (string | undefined)[] = []
   const configures: string[] = []
@@ -82,7 +84,7 @@ async function composerHarness(options: {
     steer: (argument) => { local.push('steer'); steerArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
-    team: () => { local.push('team') },
+    team: (argument) => { local.push('team'); teamArgs.push(argument) },
     exit: record('exit'),
   }
   const composer = new Composer({
@@ -103,6 +105,7 @@ async function composerHarness(options: {
     permissionArgs,
     queueArgs,
     steerArgs,
+    teamArgs,
     presetArgs,
     cardArgs,
     configures,
@@ -723,6 +726,17 @@ describe('Composer copy and /queue', () => {
 
     expect(harness.cardArgs).toEqual(['hidden', undefined])
     expect(harness.local).toEqual(['cards', 'cards'])
+  })
+
+  it('passes parsed /team arguments and the bare form', async () => {
+    const harness = await composerHarness()
+
+    harness.composer.submit('/team task Inspect the workspace')
+    harness.composer.submit('/team message Worker please look')
+    harness.composer.submit('/team')
+
+    expect(harness.teamArgs).toEqual(['task Inspect the workspace', 'message Worker please look', undefined])
+    expect(harness.local).toEqual(['team', 'team', 'team'])
   })
 
   it('passes a parsed queue argument', async () => {

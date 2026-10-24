@@ -118,9 +118,11 @@ dsh tui --preset ptc
 
 ## Agent Teams
 
-在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开只读的 Team dock：Tab 或 ←/→ 在 Members 与 Tasks 间切换，↑/↓ 与 PgUp/PgDn 滚动，Esc 关闭。行内显示成员角色/阶段，以及任务状态、owner、阻塞项与写作用域警告；面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
+在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开 Team dock：Tab 或 ←/→ 在 Members 与 Tasks 间切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭。行内显示成员角色/阶段，以及任务状态、owner、阻塞项与写作用域警告；面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
 
-面板只读：不会打开 teammate 会话、发送 peer 消息或修改任务，这些仍属于 Web 与 Desktop 流程。启用 bundle 会在 preset scope 的 subagent 工具之外追加 Team 工具；未启用 bundle 的 profile 不显示状态行，`/team` 会说明如何启用。
+Members 中 Enter 打开选中 teammate 的只读 transcript（↑/↓ 滚动，Esc 返回），`m` 预填 `/team message <name> `，`n` 预填 `/team task `。Tasks 中 `a` 由 Lead 认领选中的就绪任务，`c` 完成进行中的任务，`n` 预填新任务。`/team task <subject>` 创建共享任务，`/team message <member> <text>` 发送 peer 消息，无需离开编辑器。
+
+teammate transcript 只是查看器，不驱动对话：提示仍通过编辑器里的 `/team message` 发送。启用 bundle 会用 Team 工具替换 preset scope 的 subagent 控件；未启用 bundle 的 profile 不显示状态行，`/team` 会说明如何启用。
 
 ## 继续会话
 

@@ -124,7 +124,7 @@ export class ModelSelectorPanel implements Component {
   private readonly palette: Palette
   private readonly onSelect: (selection: ModelSelection) => void
   private readonly onCancel: () => void
-  private readonly filter = new Input({ placeholder: copy.model.filter })
+  private readonly filter: Input
   private readonly efforts = new Map<string, EffortChoice>()
   private index = 0
 
@@ -143,6 +143,7 @@ export class ModelSelectorPanel implements Component {
     this.rows = catalog.rows
     this.failures = catalog.failures
     this.palette = palette
+    this.filter = new Input({ placeholder: copy.model.filter, placeholderStyle: text => palette.dim(text) })
     this.onSelect = onSelect
     this.onCancel = onCancel
     this.filter.focused = true

@@ -501,6 +501,15 @@ Source: [`packages/core/agent-loop/src/index.ts`](../../packages/core/agent-loop
 Registry of YAML-declared presets and the revisions live Agents retain.
 
 ```ts cordis-catalog
+/**
+ * Hide the named child rows from every preset mounted from now on. A bundle
+ * uses this to replace one capability family (subagent controls) without
+ * restating or editing the shipped preset declarations.
+ * @param ids - child row ids removed from each preset composition, including nested groups.
+ * @returns disposer restoring the rows for later mounts.
+ */
+suppressPresetRows(ids: readonly string[]): () => void
+
 /** Register and eagerly load a definition; activation failure remains visible in the roster.
  * @param definition Parsed configuration supplied by the declaring plugin.
  * @returns Definition disposer after activation or its diagnostic settles; the declaring plugin owns it.

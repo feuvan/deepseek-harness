@@ -23,7 +23,7 @@ const en = {
     /** Placeholder shown while the editor is empty and the agent is idle. */
     idle: 'Type a message. Enter sends; Ctrl+C cancels or exits.',
     /** Placeholder shown while a turn runs. */
-    running: 'Enter steers the running turn; Ctrl+C cancels it.',
+    running: 'Enter queues for the next turn; Ctrl+C cancels the turn.',
     /** Label of the scroll-to-end indicator. */
     scrollToEnd: 'Jump to end',
   },
@@ -214,7 +214,35 @@ const en = {
     /** Tasks tab label. */
     tasksTab: 'Tasks',
     /** Panel key hint. */
-    hint: 'Tab/←/→ switch · ↑/↓ scroll · Esc close',
+    hint: 'Tab/←/→ switch · ↑/↓ move · Enter open · m message · a claim · c complete · n new task · Esc close',
+    /** Teammate transcript hint. */
+    memberHint: '↑/↓ scroll · Esc back to the Team panel',
+    /** Teammate transcript heading prefix. */
+    memberTitle: (name: string): string => `Teammate ${name}`,
+    /** One teammate user message. */
+    memberUser: (text: string): string => `› ${text}`,
+    /** One teammate assistant message. */
+    memberAssistant: (text: string): string => `  ${text}`,
+    /** One teammate tool call. */
+    memberTool: (name: string): string => `  ⚙ ${name}`,
+    /** One teammate turn end that is not completion. */
+    memberTurnEnd: (reason: string): string => `  · ${reason}`,
+    /** Empty teammate transcript. */
+    memberEmpty: 'No recorded events yet.',
+    /** Command usage when a /team argument is invalid. */
+    usage: 'Usage: /team [task <subject> | message <member> <text>]',
+    /** Notice after creating a shared task. */
+    taskCreated: (id: string): string => `Created shared task ${id}`,
+    /** Notice after claiming a task. */
+    taskClaimed: (id: string): string => `Claimed task ${id}`,
+    /** Notice after completing a task. */
+    taskCompleted: (id: string): string => `Completed task ${id}`,
+    /** Notice after sending a teammate message. */
+    messageSent: (name: string): string => `Message sent to ${name}`,
+    /** Teammate history cannot be read in this composition. */
+    historyUnavailable: 'Teammate history is unavailable in this composition.',
+    /** A Team action failed. */
+    actionFailed: (message: string): string => `Team action failed: ${message}`,
     /** Notice when the composition mounts no Team service. */
     unavailable: 'Agent Teams is not composed in this profile. Enable dsh-experimental-agent-team-profile under /config → Experimental capabilities, then restart the terminal.',
     /** Failure marker prefix. */
@@ -504,7 +532,7 @@ export const chinese: Copy = {
   },
   composer: {
     idle: '输入消息。Enter 发送；Ctrl+C 取消或退出。',
-    running: 'Enter 在下个步骤 steer 运行中的轮次；Ctrl+C 取消。',
+    running: 'Enter 排队到下一轮；Ctrl+C 取消当前轮次。',
     scrollToEnd: '跳到末尾',
   },
   status: {
@@ -581,7 +609,35 @@ export const chinese: Copy = {
     title: 'Agent Team',
     membersTab: '成员',
     tasksTab: '任务',
-    hint: 'Tab/←/→ 切换 · ↑/↓ 滚动 · Esc 关闭',
+    hint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开 · m 消息 · a 认领 · c 完成 · n 新建任务 · Esc 关闭',
+    /** teammate transcript 提示。 */
+    memberHint: '↑/↓ 滚动 · Esc 返回 Team 面板',
+    /** teammate transcript 标题前缀。 */
+    memberTitle: (name: string): string => `Teammate ${name}`,
+    /** teammate 用户消息。 */
+    memberUser: (text: string): string => `› ${text}`,
+    /** teammate 助手消息。 */
+    memberAssistant: (text: string): string => `  ${text}`,
+    /** teammate 工具调用。 */
+    memberTool: (name: string): string => `  ⚙ ${name}`,
+    /** teammate 非正常结束原因。 */
+    memberTurnEnd: (reason: string): string => `  · ${reason}`,
+    /** 空的 teammate transcript。 */
+    memberEmpty: '还没有记录事件。',
+    /** /team 参数无效时的用法。 */
+    usage: '用法：/team [task <subject> | message <member> <text>]',
+    /** 创建共享任务后的提示。 */
+    taskCreated: (id: string): string => `已创建共享任务 ${id}`,
+    /** 认领任务后的提示。 */
+    taskClaimed: (id: string): string => `已认领任务 ${id}`,
+    /** 完成任务后的提示。 */
+    taskCompleted: (id: string): string => `已完成任务 ${id}`,
+    /** 发送 teammate 消息后的提示。 */
+    messageSent: (name: string): string => `已向 ${name} 发送消息`,
+    /** 当前组合无法读取 teammate 历史。 */
+    historyUnavailable: '当前组合无法读取 teammate 历史。',
+    /** Team 动作失败的提示。 */
+    actionFailed: (message: string): string => `Team 操作失败：${message}`,
     unavailable: '当前 profile 没有组装 Agent Teams。请在 /config → 实验性能力中启用 dsh-experimental-agent-team-profile，然后重启终端。',
     failure: 'team 记录被拒绝',
     emptyMembers: '还没有 teammate。',

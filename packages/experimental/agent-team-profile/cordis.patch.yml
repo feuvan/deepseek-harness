@@ -30,3 +30,9 @@
 
     - id: ui-agent-team
       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+
+    # Presets mount their own subagent controls; suppress those rows so the
+    # Team tools registered above are the only delegation surface in every
+    # preset composition (Web and terminal).
+    - id: agent-team-preset-overlay
+      name: '@deepseek-ai/dsh-experimental-agent-team-profile'

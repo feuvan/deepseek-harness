@@ -155,6 +155,21 @@ describe('ModelSelectorPanel rendering', () => {
     expect(text).toContain('fast model')
   })
 
+  it('dims the empty-filter placeholder through the palette', () => {
+    const panel = new ModelSelectorPanel(
+      { rows: [ALPHA], failures: [] },
+      createPalette(true),
+      () => {},
+      () => {},
+    )
+
+    const filterLine = panel.render(80).find(line => line.includes('\u001b[2m')) ?? ''
+
+    expect(filterLine).toContain('\u001b[2m')
+    expect(filterLine).toContain('\u001b[22m')
+    expect(filterLine).toContain(copy.model.filter.slice(1))
+  })
+
   it('renders the effort after it is cycled', () => {
     const { panel } = selector()
 

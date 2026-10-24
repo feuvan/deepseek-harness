@@ -411,3 +411,120 @@ it('reports every process-global service published by a preset', async () => {
   await declare(ctx, { id: 'leaks', plugins: [{ name: 'cordis:leaks' }] })
   expect((await ctx.agentPresets.resolve('leaks')).broken).toContain('presetAlpha, presetZulu')
 })
+
+describe('preset row suppression', () => {
+  /** A nested preset declaration carrying the subagent rows Team tools replace. */
+  function nestedPreset(): Parameters<typeof declare>[1] {
+    return {
+      id: 'standard',
+      plugins: [
+        { id: 'tool-subagent-control', name: plugin('contribute'), config: { tool: 'tool-subagent-control' } },
+        { id: 'kept-top', name: plugin('contribute'), config: { tool: 'kept-top' } },
+        {
+          id: 'delegation',
+          name: 'cordis:group',
+          group: true,
+          config: [
+            { id: 'tool-subagent', name: plugin('contribute'), config: { tool: 'tool-subagent' } },
+            { id: 'nested-kept', name: plugin('contribute'), config: { tool: 'nested-kept' } },
+            {
+              id: 'deeper',
+              name: 'cordis:group',
+              group: true,
+              config: [
+                { id: 'tool-subagent-fork', name: plugin('contribute'), config: { tool: 'tool-subagent-fork' } },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  const SUPPRESSED = ['tool-subagent-control', 'tool-subagent', 'tool-subagent-fork']
+
+  it('mounts without suppressed top-level and nested rows and restores them on dispose', async () => {
+    const ctx = await setup()
+    const restore = ctx.agentPresets.suppressPresetRows(SUPPRESSED)
+    const definition = await declare(ctx, nestedPreset())
+
+    const mounted = await agentOn(ctx, 'suppressed')
+    expect(ctx.tools.schemas(mounted).map(row => row.name).sort()).toEqual(['kept-top', 'nested-kept'])
+
+    restore()
+    await definition.dispose()
+    await declare(ctx, nestedPreset())
+    const restored = await agentOn(ctx, 'restored')
+    expect(ctx.tools.schemas(restored).map(row => row.name).sort()).toEqual([
+      'kept-top', 'nested-kept', 'tool-subagent', 'tool-subagent-control', 'tool-subagent-fork',
+    ])
+    // Existing compositions keep the revision they mounted.
+    expect(ctx.tools.schemas(mounted).map(row => row.name).sort()).toEqual(['kept-top', 'nested-kept'])
+  })
+
+  it('leaves the declaration unchanged without suppression', async () => {
+    const ctx = await setup()
+    await declare(ctx, nestedPreset())
+
+    const mounted = await agentOn(ctx, 'unsuppressed')
+    expect(ctx.tools.schemas(mounted).map(row => row.name).sort()).toEqual([
+      'kept-top', 'nested-kept', 'tool-subagent', 'tool-subagent-control', 'tool-subagent-fork',
+    ])
+  })
+
+  it('suppresses a whole group when its own row id is named', async () => {
+    const ctx = await setup()
+    const restore = ctx.agentPresets.suppressPresetRows(['delegation'])
+    await declare(ctx, nestedPreset())
+
+    const mounted = await agentOn(ctx, 'group-suppressed')
+    expect(ctx.tools.schemas(mounted).map(row => row.name).sort()).toEqual(['kept-top', 'tool-subagent-control'])
+
+    restore()
+  })
+
+  it('reference-counts overlapping suppression callers', async () => {
+    const ctx = await setup()
+    const first = ctx.agentPresets.suppressPresetRows(['tool-subagent'])
+    const second = ctx.agentPresets.suppressPresetRows(['tool-subagent'])
+    const definition = await declare(ctx, nestedPreset())
+
+    expect(ctx.tools.schemas(await agentOn(ctx, 'first-window')).map(row => row.name)).not.toContain('tool-subagent')
+
+    first()
+    await definition.dispose()
+    const firstReleased = await declare(ctx, nestedPreset())
+    expect(ctx.tools.schemas(await agentOn(ctx, 'second-window')).map(row => row.name)).not.toContain('tool-subagent')
+
+    second()
+    await firstReleased.dispose()
+    await declare(ctx, nestedPreset())
+    expect(ctx.tools.schemas(await agentOn(ctx, 'restored-window')).map(row => row.name)).toContain('tool-subagent')
+  })
+
+  it('deduplicates ids within one suppression call', async () => {
+    const ctx = await setup()
+    const restore = ctx.agentPresets.suppressPresetRows(['tool-subagent', 'tool-subagent'])
+    const definition = await declare(ctx, nestedPreset())
+
+    restore()
+    restore()
+    await definition.dispose()
+    await declare(ctx, nestedPreset())
+    expect(ctx.tools.schemas(await agentOn(ctx, 'deduplicated')).map(row => row.name)).toContain('tool-subagent')
+  })
+
+  it('reports a malformed nested group while filtering rows', async () => {
+    const ctx = await setup()
+    ctx.agentPresets.suppressPresetRows(['tool-subagent'])
+    await declare(ctx, {
+      id: 'malformed-group',
+      plugins: [
+        { id: 'bad-group', name: 'cordis:group', group: true, config: 'not-a-list' },
+      ],
+    })
+
+    const resolved = await ctx.agentPresets.resolve('malformed-group')
+    expect(resolved).toMatchObject({ id: 'malformed-group', broken: expect.any(String) as string })
+  })
+})

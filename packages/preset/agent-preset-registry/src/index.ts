@@ -28,6 +28,24 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Filter child rows by id, recursing through `group` entry lists. */
+function filterPresetRows(
+  rows: PresetDefinition['plugins'],
+  suppressed: ReadonlyMap<string, number>,
+): PresetDefinition['plugins'] {
+  if (suppressed.size === 0) return rows
+  const keep: PresetDefinition['plugins'][number][] = []
+  for (const row of rows) {
+    if (row.id !== undefined && suppressed.has(row.id)) continue
+    if (row.group === true && Array.isArray(row.config)) {
+      keep.push({ ...row, config: filterPresetRows(row.config as PresetDefinition['plugins'], suppressed) })
+      continue
+    }
+    keep.push(row)
+  }
+  return keep
+}
+
 interface Generation {
   scope: Scope
   key: ScopeKey
@@ -60,6 +78,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
   private readonly generations = new Map<ScopeKey, Generation>()
   private readonly bindings = new WeakMap<ScopeKey, Binding>()
   private readonly switches = new Map<string, Promise<unknown>>()
+  private readonly suppressedPresetRows = new Map<string, number>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
@@ -73,6 +92,29 @@ export class AgentPresetRegistry extends TypertRemoteService {
 
   /** Default preset for a subsequently created session. */
   get defaultId(): string { return this.config.selectedDefault.get() ?? this.config.default }
+
+  /**
+   * Hide the named child rows from every preset mounted from now on. A bundle
+   * uses this to replace one capability family (subagent controls) without
+   * restating or editing the shipped preset declarations.
+   * @param ids - child row ids removed from each preset composition, including nested groups.
+   * @returns disposer restoring the rows for later mounts.
+   */
+  suppressPresetRows(ids: readonly string[]): () => void {
+    const unique = [...new Set(ids)]
+    for (const id of unique) this.suppressedPresetRows.set(id, (this.suppressedPresetRows.get(id) ?? 0) + 1)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      for (const id of unique) {
+        /* v8 ignore next -- the disposed guard guarantees this id still has a count */
+        const count = this.suppressedPresetRows.get(id) ?? 0
+        if (count <= 1) this.suppressedPresetRows.delete(id)
+        else this.suppressedPresetRows.set(id, count - 1)
+      }
+    }
+  }
 
   /** Register and eagerly load a definition; activation failure remains visible in the roster.
    * @param definition Parsed configuration supplied by the declaring plugin.
@@ -104,10 +146,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
     const key = {}
     const scope = createScope(this.owner, key)
     try {
-      const problem = entryListProblem(record.config.plugins)
+      const plugins = filterPresetRows(record.config.plugins, this.suppressedPresetRows)
+      const problem = entryListProblem(plugins)
       if (problem !== undefined) throw new Error(problem)
       const context = scope.ctx.extend({ baseUrl: record.context.baseUrl })
-      const mount = await mountPreset(context, record.config.id, record.config.plugins)
+      const mount = await mountPreset(context, record.config.id, plugins)
       const generation: Generation = { scope, key, mount, users: 0, retired: false }
       context.effect(() => {
         this.generations.set(key, generation)

@@ -83,6 +83,7 @@ export function teamMember(overrides: Partial<TeamMemberProjectionRow> = {}): Te
 export function teamTask(overrides: Partial<TeamTaskRow> = {}): TeamTaskRow {
   return {
     id: 'task-1',
+    revision: 1,
     subject: 'Inspect the workspace',
     status: 'pending',
     blockedBy: [],

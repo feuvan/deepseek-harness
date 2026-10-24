@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-终端通过本地的只读结构化视图（`src/team.ts`）读取 Lead Session 的 `agentTeam` projection，并渲染两个内建界面：编辑器上方的紧凑状态行，以及带 Members / Tasks tab 的 `/team` 底部 dock。两者都不是插件贡献；终端自己拥有它们，在 projection 不存在时隐藏，并保持只读。稳定的 TUI 包不依赖实验性 Agent Teams 包：本地视图只镜像它实际渲染的字段，Agent Teams client schema 仍是权威。
+终端通过本地的结构化视图（`src/team.ts`）读取 Lead Session 的 `agentTeam` projection，并渲染两个内建界面：编辑器上方的紧凑状态行，以及带 Members / Tasks tab 的 `/team` 底部 dock。两者都不是插件贡献；终端自己拥有它们，在 projection 不存在时隐藏。Members 可打开只读 teammate transcript；Tasks 提供认领、完成、创建；`/team task` 与 `/team message` 可从编辑器调用 Team 服务。稳定的 TUI 包不依赖实验性 Agent Teams 包：本地视图只镜像它实际渲染的字段，Agent Teams client schema 仍是权威。
 
 状态行显示 teammate、运行中与任务计数，并标明被拒绝的持久化记录；面板显示成员角色/阶段/错误，以及任务状态/owner/阻塞项/写作用域警告。两者跟随当前 Session 的 projection 变化；teammate 的 `agent/status` 更新会重绘运行计数。未启用 bundle 时，`/team` 打印启用路径（`/config` → 实验性能力 → 重启），而不是打开空面板。
 
@@ -20,7 +20,7 @@ Status: implemented
 
 ## 后果
 
-终端用户无需浏览器即可看到委派工作。界面刻意保持只读：打开 teammate 会话、peer 消息与任务修改仍属于 Web 与 Desktop 流程。当终端渲染的 `agentTeam` 字段变化时，需同步更新本地结构化视图；这个最小子集比依赖实验性类型或引入新的 TUI 扩展 seam 维护成本更低。
+终端用户无需浏览器即可查看并操作委派工作：可在 dock 中查看 teammate transcript、创建/认领/完成任务、发送 peer 消息。把 teammate 作为主会话打开仍属于 Web 与 Desktop 流程。team bundle 还会抑制 preset scope 的 subagent 行，由 Team 工具替换而不是被遮蔽。当终端渲染的 `agentTeam` 字段变化时，需同步更新本地结构化视图；这个最小子集比依赖实验性类型或引入新的 TUI 扩展 seam 维护成本更低。
 
 ## 考虑的备选方案
 

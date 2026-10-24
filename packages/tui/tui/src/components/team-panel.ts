@@ -1,7 +1,8 @@
 /**
- * Agent Teams dock: a read-only Members and Tasks view over the Lead Session's
- * `agentTeam` projection. It renders the roster and shared task board inside
- * the terminal's single bottom dock.
+ * Agent Teams dock: the roster and shared task board of the Lead Session's
+ * `agentTeam` projection. It presents the roster and shared task board inside
+ * the terminal's single bottom dock and adds small actions that do not require
+ * leaving the terminal.
  *
  * @module @deepseek-ai/dsh-tui/components/team-panel
  */
@@ -14,27 +15,43 @@ import { copy } from '../copy.ts'
 import { displayText } from '../display-text.ts'
 import type { Palette } from '../palette.ts'
 
-/** The two read-only Team tabs. */
+/** The two Team tabs. */
 type TeamTab = 'members' | 'tasks'
 
 /** Maximum rows one tab renders before scrolling. */
 const MAX_VISIBLE = 6
 
-/** A bottom-dock read-only Agent Teams panel. */
+/** Callbacks the Team panel dispatches. */
+export interface TeamPanelHandlers {
+  /** Close the panel and release the dock. */
+  close(): void
+  /** Open one teammate's read-only transcript. */
+  openMember(member: TeamMemberProjectionRow): void
+  /** Pre-fill the composer with a message to one teammate. */
+  messageMember(member: TeamMemberProjectionRow): void
+  /** Claim one ready task for the Lead. */
+  claimTask(task: TeamTaskRow): void
+  /** Complete one in-progress task. */
+  completeTask(task: TeamTaskRow): void
+  /** Pre-fill the composer with a task-creation command. */
+  createTask(): void
+}
+
+/** A bottom-dock Agent Teams panel. */
 export class TeamPanel implements Component {
   private readonly palette: Palette
-  private readonly onClose: () => void
+  private readonly handlers: TeamPanelHandlers
   private team: TeamProjection | undefined
   private tab: TeamTab = 'members'
-  private offset = 0
+  private index = 0
 
   /**
    * @param palette - terminal style table.
-   * @param onClose - releases the dock.
+   * @param handlers - panel actions.
    */
-  constructor(palette: Palette, onClose: () => void) {
+  constructor(palette: Palette, handlers: TeamPanelHandlers) {
     this.palette = palette
-    this.onClose = onClose
+    this.handlers = handlers
   }
 
   /** Whether a Team projection is presented. */
@@ -43,16 +60,12 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Replace the presented Team value, keeping the selected tab.
+   * Replace the presented Team value, keeping the selected tab and clamping the cursor.
    * @param team - current projection, or undefined when it disappeared.
    */
   setTeam(team: TeamProjection | undefined): void {
     this.team = team
-    if (team === undefined) {
-      this.offset = 0
-      return
-    }
-    this.offset = Math.min(this.offset, Math.max(0, this.rowCount() - MAX_VISIBLE))
+    this.index = Math.min(this.index, Math.max(0, this.rowCount() - 1))
   }
 
   /**
@@ -71,23 +84,52 @@ export class TeamPanel implements Component {
       return true
     }
     if (matchesKey(data, 'up')) {
-      this.offset = Math.max(0, this.offset - 1)
+      this.index = Math.max(0, this.index - 1)
       return true
     }
     if (matchesKey(data, 'down')) {
-      this.offset = Math.min(Math.max(0, this.rowCount() - MAX_VISIBLE), this.offset + 1)
+      this.index = Math.min(Math.max(0, this.rowCount() - 1), this.index + 1)
       return true
     }
     if (matchesKey(data, 'pageUp')) {
-      this.offset = Math.max(0, this.offset - MAX_VISIBLE)
+      this.index = Math.max(0, this.index - MAX_VISIBLE)
       return true
     }
     if (matchesKey(data, 'pageDown')) {
-      this.offset = Math.min(Math.max(0, this.rowCount() - MAX_VISIBLE), this.offset + MAX_VISIBLE)
+      this.index = Math.min(Math.max(0, this.rowCount() - 1), this.index + MAX_VISIBLE)
       return true
     }
+    if (this.tab === 'members') {
+      const member = this.team.members[this.index]
+      if (member !== undefined && matchesKey(data, 'enter')) {
+        this.handlers.openMember(member)
+        return true
+      }
+      if (member !== undefined && data === 'm') {
+        this.handlers.messageMember(member)
+        return true
+      }
+      if (data === 'n') {
+        this.handlers.createTask()
+        return true
+      }
+    } else {
+      const task = this.team.tasks[this.index]
+      if (task !== undefined && data === 'a') {
+        this.handlers.claimTask(task)
+        return true
+      }
+      if (task !== undefined && data === 'c') {
+        this.handlers.completeTask(task)
+        return true
+      }
+      if (data === 'n') {
+        this.handlers.createTask()
+        return true
+      }
+    }
     if (matchesKey(data, 'escape')) {
-      this.onClose()
+      this.handlers.close()
       return true
     }
     return false
@@ -105,14 +147,23 @@ export class TeamPanel implements Component {
     const team = this.team
     if (team === undefined) return lines
     if (team.failure !== undefined) lines.push(palette.warning(truncateToWidth(` ${copy.team.failure}: ${displayText(team.failure)}`, width)))
-    const rows = this.tab === 'members' ? this.memberRows(team) : this.taskRows(team)
+    const rows = this.tab === 'members'
+      ? team.members.map(member => ({ text: this.memberLine(member), selected: false }))
+      : team.tasks.map(task => ({ text: this.taskLine(task), selected: false }))
     if (rows.length === 0) {
       lines.push(palette.dim(truncateToWidth(`  ${this.tab === 'members' ? copy.team.emptyMembers : copy.team.emptyTasks}`, width)))
     } else {
       const visible = Math.min(MAX_VISIBLE, rows.length)
-      const start = Math.max(0, Math.min(this.offset, rows.length - visible))
+      const start = Math.max(0, Math.min(this.index - Math.floor(visible / 2), rows.length - visible))
       if (start > 0) lines.push(palette.dim(`  ↑ ${copy.moreRows(start)}`))
-      for (const row of rows.slice(start, start + visible)) lines.push(truncateToWidth(row, width))
+      for (let position = start; position < start + visible; position += 1) {
+        const row = rows[position]
+        /* v8 ignore next -- the window is clamped to the row count */
+        if (row === undefined) continue
+        const marker = position === this.index ? palette.accent('❯') : ' '
+        const text = position === this.index ? palette.inverse(row.text) : row.text
+        lines.push(truncateToWidth(` ${marker} ${text}`, width))
+      }
       const remaining = rows.length - (start + visible)
       if (remaining > 0) lines.push(palette.dim(`  ↓ ${copy.moreRows(remaining)}`))
     }
@@ -124,12 +175,12 @@ export class TeamPanel implements Component {
   invalidate(): void {}
 
   /**
-   * Switch the active tab and reset scrolling.
+   * Switch the active tab and reset the cursor.
    * @param tab - target tab.
    */
   private switchTab(tab: TeamTab): void {
     this.tab = tab
-    this.offset = 0
+    this.index = 0
   }
 
   /** @returns rows the active tab currently shows. */
@@ -148,27 +199,9 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Leader-first member rows.
-   * @param team - the Team projection.
-   * @returns one line renderer per member.
-   */
-  private memberRows(team: TeamProjection): string[] {
-    return team.members.map(member => this.memberLine(member))
-  }
-
-  /**
-   * Task rows in board order.
-   * @param team - the Team projection.
-   * @returns one line renderer per task.
-   */
-  private taskRows(team: TeamProjection): string[] {
-    return team.tasks.map(task => this.taskLine(task))
-  }
-
-  /**
    * Format one member row.
    * @param member - roster row.
-   * @returns the styled line.
+   * @returns the styled text.
    */
   private memberLine(member: TeamMemberProjectionRow): string {
     const palette = this.palette
@@ -177,13 +210,13 @@ export class TeamPanel implements Component {
     const role = member.role === 'lead' ? copy.team.lead : copy.team.teammate
     const phase = copy.team.phases[member.phase]
     const error = member.error === undefined ? '' : `  ${palette.warning(displayText(member.error))}`
-    return ` ${glyph} ${name}  ${palette.dim(`${role} · ${phase}`)}${error}`
+    return `${glyph} ${name}  ${palette.dim(`${role} · ${phase}`)}${error}`
   }
 
   /**
    * Format one task row.
    * @param task - task view.
-   * @returns the styled line.
+   * @returns the styled text.
    */
   private taskLine(task: TeamTaskRow): string {
     const palette = this.palette
@@ -197,7 +230,6 @@ export class TeamPanel implements Component {
     const owner = task.ownerName === undefined ? '' : `  @${displayText(task.ownerName)}`
     const blocked = task.blockedBy.length === 0 ? '' : `  ← ${task.blockedBy.join(', ')}`
     const warnings = task.writeScopeWarnings.length === 0 ? '' : `  !${String(task.writeScopeWarnings.length)}`
-    const subject = displayText(task.subject)
-    return ` ${palette.accent(status.glyph)} ${status.label}  ${displayText(task.id)}  ${subject}${owner}${blocked}${warnings}`
+    return `${palette.accent(status.glyph)} ${status.label}  ${displayText(task.id)}  ${displayText(task.subject)}${owner}${blocked}${warnings}`
   }
 }

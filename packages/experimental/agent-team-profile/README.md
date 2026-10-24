@@ -48,7 +48,7 @@ In an existing profile’s `package.json`, keep `@deepseek-ai/dsh-experimental-a
 
 The layer adds the Agent Teams domain and its scoped creation, roster, messaging, interruption, waiting, and task-board tools. Direct delegation uses `spawn_teammate`, which supports fresh and fork context. The `subagent` and `subagent_fork` tools and overlapping global child controls are disabled. Workflow retains the base profile’s `spawn` provider, while the underlying Subagent services and both providers remain available to teammates and workflow.
 
-In Web and Desktop conversations, the [Team UI](../client-ui-agent-team/README.md) displays the member roster and shared task board and opens teammate sessions. The terminal profile renders the same `agentTeam` projection: a compact strip above the composer plus a read-only `/team` dock with Members and Tasks tabs; it cannot open teammate sessions or edit tasks yet. The same bundle switch controls the tools and both surfaces. The Plugins page reads the bundle's [icon](icon.svg) from its `package.json.icon` declaration, including while the bundle is disabled.
+In Web and Desktop conversations, the [Team UI](../client-ui-agent-team/README.md) displays the member roster and shared task board and opens teammate sessions. Terminal presets also suppress their subagent control rows through this bundle, so the Team tools replace them instead of being shadowed. The terminal profile renders the same `agentTeam` projection: a compact strip above the composer plus a `/team` dock with Members and Tasks tabs, a read-only teammate transcript, and claim/complete/create task actions. The same bundle switch controls the tools and both surfaces. The Plugins page reads the bundle's [icon](icon.svg) from its `package.json.icon` declaration, including while the bundle is disabled.
 
 -----
 
@@ -105,7 +105,7 @@ The shared system prompt and tool schemas remain prefix-stable while the bundle 
 - **Workflow child tools** — the [Team tool visibility limitation](../tool-agent-team/README.md#known-limitations-and-deferred-work) also applies to workflow children.
 - **Shared checkout** — every teammate observes the same working directory; this bundle adds no worktree isolation or filesystem locking.
 - **Preset-scoped child controls** — Web and terminal presets can still mount continuable Subagent controls in their own scope; this top-level bundle does not replace those registrations.
-- **Terminal view is read-only** — the terminal shows the roster and task board but cannot navigate into a teammate Session, send peer messages, or mutate tasks.
+- **Terminal view is dock-scoped** — the terminal shows the roster and task board, opens a read-only teammate transcript, and supports claim/complete/create plus peer messages; it cannot make a teammate the main Session.
 - **Base profile required** — the patch depends on row ids and Subagent providers supplied by `dsh-base`; it is not a standalone profile.
 
 <a id="dev-note"></a>

@@ -136,6 +136,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Registry of YAML-declared presets and the revisions live Agents retain.',
     methods: [
       {
+        signature: 'suppressPresetRows(ids: readonly string[]): () => void',
+        description: 'Hide the named child rows from every preset mounted from now on. A bundle uses this to replace one capability family (subagent controls) without restating or editing the shipped preset declarations.',
+        parameters: [{ name: 'ids', description: 'child row ids removed from each preset composition, including nested groups.' }],
+        returns: 'disposer restoring the rows for later mounts.',
+      },
+      {
         signature: 'async register(definition: PresetDefinition): Promise<() => Promise<void>>',
         description: 'Register and eagerly load a definition; activation failure remains visible in the roster.',
         parameters: [{ name: 'definition', description: 'Parsed configuration supplied by the declaring plugin.' }],

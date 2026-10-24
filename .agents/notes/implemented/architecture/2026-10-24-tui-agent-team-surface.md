@@ -10,7 +10,7 @@ The experimental Agent Teams bundle shipped tools and a Web Client panel only. E
 
 ## Decision
 
-The terminal reads the Lead Session's `agentTeam` projection through a local read-only structural view (`src/team.ts`) and renders two built-in surfaces: a compact strip above the composer and a `/team` bottom dock with Members and Tasks tabs. Neither surface is a plugin contribution; the terminal owns them, hides them when the projection is absent, and keeps them read-only. The stable TUI package takes no dependency on the experimental Agent Teams package: the view mirrors only the fields it renders, so the Agent Teams client schema remains the authority.
+The terminal reads the Lead Session's `agentTeam` projection through a local structural view (`src/team.ts`) and renders two built-in surfaces: a compact strip above the composer and a `/team` bottom dock with Members and Tasks tabs. Neither surface is a plugin contribution; the terminal owns them and hides them when the projection is absent. Members open a read-only teammate transcript; Tasks expose claim, complete, and create; `/team task` and `/team message` reach the Team service from the composer. The stable TUI package takes no dependency on the experimental Agent Teams package: the view mirrors only the fields it renders, so the Agent Teams client schema remains the authority.
 
 The strip shows teammate, running, and task counts and names a rejected persisted record; the panel shows member role/phase/error and task status/owner/blockers/write-scope warnings. Both follow projection changes for the presented Session, and teammate `agent/status` updates repaint the running count. `/team` without the bundle prints the enable path (`/config` → Experimental capabilities → restart) instead of opening an empty panel.
 
@@ -20,7 +20,7 @@ The strip shows teammate, running, and task counts and names a rejected persiste
 
 ## Consequences
 
-A terminal user can now see delegated work without the browser. The surfaces stay intentionally read-only: opening a teammate Session, peer messaging, and task mutation remain Web and Desktop workflows. The local structural view must be updated when the `agentTeam` fields the terminal renders change; the minimal subset keeps that maintenance small compared with a stable-package dependency on experimental types or a new TUI extension seam.
+A terminal user can now see and act on delegated work without the browser: teammate transcripts are viewable in the dock, tasks can be created/claimed/completed, and peer messages can be sent. Making a teammate the main Session remains a Web and Desktop workflow. The team bundle additionally suppresses preset-scoped subagent rows, so Team tools replace them instead of being shadowed. The local structural view must be updated when the `agentTeam` fields the terminal renders change; the minimal subset keeps that maintenance small compared with a stable-package dependency on experimental types or a new TUI extension seam.
 
 ## Alternatives considered
 
