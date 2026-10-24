@@ -174,6 +174,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
+  terminalUi: 'optional contribution seam provided by the terminal plugin (not projected as a service row) — docs/subsystems/tui.md owns the contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
   tuiStartup: 'not a service: app-provided optional startup value (TuiStartupValues) read by dependent rows — packages/bundle/tui-app/README.md owns the startup contract',
   configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',

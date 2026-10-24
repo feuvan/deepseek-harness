@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-24-tui-contribution-seam.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-24-tui-contribution-seam.md
+/agent-note-terminal-ui-contribution-seam:
+  en: c17e89bb9e8e9ef5
+  zh: 6e949f4fc7c1a37c
+/agent-note-terminal-ui-contribution-seam/problem:
+  en: 501a44b5f9878f08
+  zh: abadd6ba72ef994a
+/agent-note-terminal-ui-contribution-seam/decision:
+  en: c38955cf32c31e61
+  zh: d0304b7837a2b679
+/agent-note-terminal-ui-contribution-seam/verification:
+  en: e438bd3d14924ee0
+  zh: 2cf04774e1ebff5b
+/agent-note-terminal-ui-contribution-seam/consequences:
+  en: 16b6dbb42f674719
+  zh: cd54e2cccfb2e0d5
+/agent-note-terminal-ui-contribution-seam/alternatives-considered:
+  en: 42728132a87ebfc3
+  zh: d5e0a0f45cb52633

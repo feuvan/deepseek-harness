@@ -14,9 +14,11 @@ import { Config, resolveConfig } from './config.ts'
 import { resolveLocale } from './locale.ts'
 import { setCopyLocale } from './copy.ts'
 import { TerminalApp } from './lifecycle.ts'
+import { TERMINAL_UI_SERVICE, type TerminalUi } from './contribution.ts'
 import { assertInteractiveTerminal } from './terminal.ts'
 
 export { Config } from './config.ts'
+export { TERMINAL_UI_SERVICE, type TerminalCommand, type TerminalDockComponent, type TerminalUi } from './contribution.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'terminal-ui'
@@ -52,6 +54,15 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('terminal-ui: the launcher must provide ctx.appExit before the tree mounts')
   }
   const app = new TerminalApp(ctx, resolved, exit)
+  const contribution: TerminalUi = {
+    registerStrip: component => app.registerStrip(component),
+    registerCommand: command => app.registerCommand(command),
+    openDock: (component, close) => { app.openDock(component, close) },
+    closeDock: () => { app.closeDock() },
+    setEditorText: (text) => { app.setEditorText(text) },
+    notice: (text) => { app.notice(text) },
+  }
+  ctx.provide(TERMINAL_UI_SERVICE, contribution)
   ctx.effect(() => () => { app.dispose() }, 'terminal-ui: terminal lifecycle')
   app.start()
 }

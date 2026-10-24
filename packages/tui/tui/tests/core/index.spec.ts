@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { TuiAltScreen, type TUI } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { apply, inject, name } from '../../src/index.ts'
+import { apply, inject, name, TERMINAL_UI_SERVICE } from '../../src/index.ts'
 import type { Config } from '../../src/config.ts'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { mountSessions } from '../support/fakes.ts'
@@ -212,6 +212,41 @@ describe('apply', () => {
 
     expect(terminal.stops()).toBe(1)
     expect(plugin.exit.codes).toEqual([])
+  })
+
+  it('provides the terminalUi seam bound to the application and removes it with the plugin', async () => {
+    const restoreStdin = stubTty(process.stdin, true)
+    const restoreStdout = stubTty(process.stdout, true)
+    onTestFinished(() => { restoreStdin(); restoreStdout() })
+    const plugin = await pluginContext()
+    const terminal = capturedTerminal()
+    terminalFactory.current = () => terminal.session
+
+    plugin.start()
+    await vi.waitFor(() => { expect(terminal.start).toHaveBeenCalled() })
+
+    const seam = plugin.ctx.get(TERMINAL_UI_SERVICE)
+    expect(seam).toBeDefined()
+    expect(plugin.ctx.get('terminalUi')).toBe(seam)
+    expect(Object.keys(seam ?? {}).sort()).toEqual([
+      'closeDock', 'notice', 'openDock', 'registerCommand', 'registerStrip', 'setEditorText',
+    ])
+    const component = { render: () => ['seam strip'], invalidate: () => {} }
+    const disposeStrip = seam?.registerStrip(component)
+    const disposeCommand = seam?.registerCommand({ name: 'seam', description: 'Seam command', run: () => {} })
+    expect(typeof disposeStrip).toBe('function')
+    expect(typeof disposeCommand).toBe('function')
+    seam?.openDock({ ...component, handleInput: () => {} }, () => {})
+    seam?.closeDock()
+    seam?.setEditorText('seam text')
+    seam?.notice('seam notice')
+    disposeStrip?.()
+    disposeCommand?.()
+
+    await plugin.ctx.fiber.dispose()
+
+    expect(terminal.stops()).toBe(1)
+    expect(plugin.ctx.get(TERMINAL_UI_SERVICE)).toBeUndefined()
   })
 
   it('disposes a waiting application without acquiring a terminal', async () => {

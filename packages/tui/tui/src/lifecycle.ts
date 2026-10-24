@@ -16,7 +16,7 @@ import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepsee
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScrollView, VStack, isKeyRelease, isViewportTUI, matchesKey, type MarkdownTheme, type TUI,
+  ScrollView, VStack, isKeyRelease, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -41,10 +41,12 @@ import { TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
+import { ContributedStrips } from './components/contributed-strips.ts'
 import { TeamPanel } from './components/team-panel.ts'
 import { TeamMemberPanel } from './components/team-member-panel.ts'
 import { TeamStrip } from './components/team-strip.ts'
 import { readTeamProjection, teamService, type TeamMemberProjectionRow, type TeamTaskRow } from './team.ts'
+import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
 import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
@@ -87,6 +89,9 @@ export class TerminalApp {
   private disposed = false
   private exiting = false
   private readonly createTerminal: () => TerminalSession
+  private readonly contributedStrips: Component[] = []
+  private readonly pendingCommands: TerminalCommand[] = []
+  private readonly contributedCommandDisposers = new Map<TerminalCommand, () => void>()
 
   /**
    * @param ctx - host context carrying every service the terminal consumes.
@@ -118,6 +123,86 @@ export class TerminalApp {
   /** Begin the asynchronous startup sequence. */
   start(): void {
     void this.run().catch((error: unknown) => { this.fail(error) })
+  }
+
+  /**
+   * Add one contributed strip above the composer.
+   * @param component - strip component; zero rendered lines stays hidden.
+   * @returns disposer removing it.
+   */
+  registerStrip(component: Component): () => void {
+    this.contributedStrips.push(component)
+    this.tui?.requestRender()
+    return () => {
+      const index = this.contributedStrips.indexOf(component)
+      if (index >= 0) this.contributedStrips.splice(index, 1)
+      this.tui?.requestRender()
+    }
+  }
+
+  /**
+   * Register one contributed slash command.
+   * @param command - command definition.
+   * @returns disposer removing it.
+   */
+  registerCommand(command: TerminalCommand): () => void {
+    const composer = this.composer
+    if (composer === undefined) {
+      if (this.pendingCommands.some(pending => pending.name === command.name)) {
+        throw new Error(`terminal-ui: command "/${command.name}" is already registered`)
+      }
+      this.pendingCommands.push(command)
+      return () => {
+        const index = this.pendingCommands.indexOf(command)
+        if (index >= 0) this.pendingCommands.splice(index, 1)
+        this.contributedCommandDisposers.get(command)?.()
+        this.contributedCommandDisposers.delete(command)
+      }
+    }
+    const dispose = composer.registerCommand(command)
+    this.contributedCommandDisposers.set(command, dispose)
+    return () => {
+      dispose()
+      this.contributedCommandDisposers.delete(command)
+    }
+  }
+
+  /**
+   * Present one contributed component as the dock.
+   * @param component - component owning dock input.
+   * @param close - releases the dock.
+   */
+  openDock(component: TerminalDockComponent, close: () => void): void {
+    this.setDockOverlay({
+      component,
+      handleInput: (data) => { component.handleInput(data); this.tui?.requestRender() },
+      close: () => {
+        close()
+        this.setDockOverlay(undefined)
+      },
+    })
+  }
+
+  /** Release the contribution-owned dock. */
+  closeDock(): void {
+    this.setDockOverlay(undefined)
+  }
+
+  /**
+   * Replace the composer text.
+   * @param text - new editor content.
+   */
+  setEditorText(text: string): void {
+    this.editor?.setText(text)
+    this.tui?.requestRender()
+  }
+
+  /**
+   * Append one terminal-only notice.
+   * @param text - notice text.
+   */
+  notice(text: string): void {
+    this.transcript?.notice(text)
   }
 
   /** Stop every registration and restore the terminal; safe to call more than once. */
@@ -297,7 +382,6 @@ export class TerminalApp {
         steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
-        team: (argument) => { void this.teamCommand(argument) },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
       },
@@ -314,7 +398,7 @@ export class TerminalApp {
       overscroll: 'chain',
     })
     const pending = new PendingStrip(this.palette, () => status.snapshot())
-    const teamStrip = new TeamStrip(this.palette, this.ctx, () => this.teamProjection())
+    this.contributedStrips.push(new TeamStrip(this.palette, this.ctx, () => this.teamProjection()))
     this.teamPanel = new TeamPanel(this.palette, {
       close: () => { this.closeTeamPanel() },
       openMember: (member) => { void this.openTeamMember(member) },
@@ -341,7 +425,15 @@ export class TerminalApp {
       submit: (line) => { editor.onSubmit?.(line) },
     })
     editor.onChange = () => { this.completion?.schedule() }
-    const lower = new VStack([teamStrip, pending, editor, bottom, footer])
+    composer.registerCommand({
+      name: 'team',
+      description: copy.commands.team,
+      run: (argument) => { void this.teamCommand(argument) },
+    })
+    for (const command of this.pendingCommands.splice(0)) {
+      this.contributedCommandDisposers.set(command, composer.registerCommand(command))
+    }
+    const lower = new VStack([new ContributedStrips(this.contributedStrips), pending, editor, bottom, footer])
     if (isViewportTUI(tui)) {
       tui.setLayoutRoot(new VStack([
         { component: banner, basis: 'auto' },

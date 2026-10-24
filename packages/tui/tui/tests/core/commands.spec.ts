@@ -26,7 +26,6 @@ interface ComposerHarness {
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
   readonly steerArgs: (string | undefined)[]
-  readonly teamArgs: (string | undefined)[]
   readonly presetArgs: (string | undefined)[]
   readonly cardArgs: (string | undefined)[]
   readonly configures: string[]
@@ -63,7 +62,6 @@ async function composerHarness(options: {
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
   const steerArgs: (string | undefined)[] = []
-  const teamArgs: (string | undefined)[] = []
   const presetArgs: (string | undefined)[] = []
   const cardArgs: (string | undefined)[] = []
   const configures: string[] = []
@@ -84,7 +82,6 @@ async function composerHarness(options: {
     steer: (argument) => { local.push('steer'); steerArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
-    team: (argument) => { local.push('team'); teamArgs.push(argument) },
     exit: record('exit'),
   }
   const composer = new Composer({
@@ -105,7 +102,6 @@ async function composerHarness(options: {
     permissionArgs,
     queueArgs,
     steerArgs,
-    teamArgs,
     presetArgs,
     cardArgs,
     configures,
@@ -130,7 +126,6 @@ describe('Composer.submit', () => {
     ['steer', 'steer'],
     ['config', 'config'],
     ['preset', 'preset'],
-    ['team', 'team'],
     ['exit', 'exit'],
     ['quit', 'exit'],
   ] as const)('runs the terminal-local /%s control', async (name, control) => {
@@ -384,7 +379,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'team', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -416,7 +411,6 @@ describe('Composer.helpLines', () => {
     expect(lines).toContain('  /preset             ' + copy.commands.preset)
     expect(lines).toContain('  /cards              ' + copy.commands.cards)
     expect(lines).toContain('  /steer              ' + copy.commands.steer)
-    expect(lines).toContain('  /team               ' + copy.commands.team)
     expect(lines.some(line => line.includes('/inspect'))).toBe(false)
   })
 
@@ -454,7 +448,7 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, team: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
@@ -728,17 +722,6 @@ describe('Composer copy and /queue', () => {
     expect(harness.local).toEqual(['cards', 'cards'])
   })
 
-  it('passes parsed /team arguments and the bare form', async () => {
-    const harness = await composerHarness()
-
-    harness.composer.submit('/team task Inspect the workspace')
-    harness.composer.submit('/team message Worker please look')
-    harness.composer.submit('/team')
-
-    expect(harness.teamArgs).toEqual(['task Inspect the workspace', 'message Worker please look', undefined])
-    expect(harness.local).toEqual(['team', 'team', 'team'])
-  })
-
   it('passes a parsed queue argument', async () => {
     const harness = await composerHarness()
 
@@ -762,12 +745,108 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, team: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
     })
 
     expect(composer.statusLines().map(line => line.trimEnd())).toContain('Provider   -')
+  })
+})
+
+
+describe('Composer contributed commands', () => {
+  it('runs a contributed command with the trimmed argument even without an Agent', async () => {
+    const harness = await composerHarness()
+    harness.ready(undefined)
+    const runs: (string | undefined)[] = []
+    harness.composer.registerCommand({
+      name: 'plug',
+      description: 'Plugin command',
+      run: (argument) => { runs.push(argument) },
+    })
+
+    harness.composer.submit('/plug   keep this ')
+
+    expect(runs).toEqual(['keep this'])
+    expect(harness.commands.executed).toEqual([])
+    expect(harness.notices).toEqual([])
+  })
+
+  it('lists contributed commands in completion and help with hints and choices', async () => {
+    const harness = await composerHarness()
+    harness.ready(undefined)
+    harness.composer.registerCommand({
+      name: 'plug',
+      description: 'Plugin command',
+      argumentHint: '<value>',
+      getArgumentCompletions: prefix => prefix === 'x' ? [{ value: 'x1', label: 'X1' }] : [],
+      run: () => {},
+    })
+
+    const listed = harness.composer.slashCommands().find(command => command.name === 'plug')
+    expect(listed).toMatchObject({ name: 'plug', description: 'Plugin command', argumentHint: '<value>' })
+    expect(listed?.getArgumentCompletions?.('x')).toEqual([{ value: 'x1', label: 'X1' }])
+    expect(listed?.getArgumentCompletions?.('zzz')).toEqual([])
+    expect(harness.composer.helpLines()).toContain('  /plug               Plugin command')
+  })
+
+  it('rejects duplicate local and contributed names and reports the documented error', async () => {
+    const harness = await composerHarness()
+    harness.composer.registerCommand({ name: 'plug', description: 'First', run: () => {} })
+
+    expect(() => harness.composer.registerCommand({ name: 'plug', description: 'Again', run: () => {} }))
+      .toThrow('terminal-ui: command "/plug" is already registered')
+    expect(() => harness.composer.registerCommand({ name: 'help', description: 'Local', run: () => {} }))
+      .toThrow('terminal-ui: command "/help" is already registered')
+  })
+
+  it('removes a contributed command through its disposer', async () => {
+    const harness = await composerHarness()
+    harness.ready(undefined)
+    const runs: string[] = []
+    const dispose = harness.composer.registerCommand({
+      name: 'plug',
+      description: 'Plugin command',
+      run: () => { runs.push('ran') },
+    })
+
+    dispose()
+    harness.composer.submit('/plug')
+
+    expect(runs).toEqual([])
+    expect(harness.composer.slashCommands().some(command => command.name === 'plug')).toBe(false)
+    expect(harness.composer.helpLines().some(line => line.includes('/plug'))).toBe(false)
+    // A removed contribution falls through to the Agent-command path.
+    expect(harness.commands.executed).toEqual([])
+    expect(harness.notices).toEqual(['The agent is not ready yet.'])
+  })
+
+  it('falls back to an empty completion list for a misbehaving contributed command', async () => {
+    const harness = await composerHarness()
+    harness.ready(undefined)
+    const command = {
+      name: 'plug',
+      description: 'Plugin command',
+      run: () => {},
+    }
+    harness.composer.registerCommand(command)
+    Reflect.set(command, 'getArgumentCompletions', () => undefined)
+    const listed = harness.composer.slashCommands().find(entry => entry.name === 'plug')
+
+    expect(listed?.getArgumentCompletions?.('x')).toEqual([])
+  })
+
+  it('keeps contributed commands in registration order behind local controls', async () => {
+    const harness = await composerHarness()
+    harness.ready(undefined)
+    harness.composer.registerCommand({ name: 'plug-a', description: 'A', run: () => {} })
+    harness.composer.registerCommand({ name: 'plug-b', description: 'B', run: () => {} })
+
+    const names = harness.composer.slashCommands().map(command => command.name)
+
+    expect(names.indexOf('plug-a')).toBeLessThan(names.indexOf('plug-b'))
+    expect(names.indexOf('quit')).toBeLessThan(names.indexOf('plug-a'))
   })
 })

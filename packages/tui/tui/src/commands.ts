@@ -12,6 +12,7 @@ import type { SlashCommand } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { REASONING_LEVELS } from './reasoning.ts'
 import type { BusyEnter } from './config.ts'
+import type { TerminalCommand } from './contribution.ts'
 import { CARD_MODES } from './cards.ts'
 
 /** Terminal-local controls the composer owns instead of dispatching to the agent. */
@@ -40,8 +41,6 @@ export interface LocalCommands {
   steer(argument: string | undefined): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
-  /** Show the Agent Team panel or run one of its command forms. */
-  team(argument: string | undefined): void | Promise<void>
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
   preset(argument: string | undefined): void | Promise<void>
   /** Close the terminal. */
@@ -94,6 +93,7 @@ interface LocalEntry {
 export class Composer {
   private readonly deps: ComposerDeps
   private readonly locals: Readonly<Record<string, LocalEntry>>
+  private readonly contributed = new Map<string, TerminalCommand>()
 
   /**
    * @param deps - application values and terminal-local controls.
@@ -114,10 +114,23 @@ export class Composer {
       steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
-      team: { description: copy.commands.team, run: (argument) => { void deps.local.team(argument) } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
       quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
     }
+  }
+
+  /**
+   * Register one dynamic slash command.
+   * @param command - command definition.
+   * @returns disposer removing the command.
+   * @throws when the name is already owned by a local or contributed command.
+   */
+  registerCommand(command: TerminalCommand): () => void {
+    if (this.locals[command.name] !== undefined || this.contributed.has(command.name)) {
+      throw new Error(`terminal-ui: command "/${command.name}" is already registered`)
+    }
+    this.contributed.set(command.name, command)
+    return () => { this.contributed.delete(command.name) }
   }
 
   /**
@@ -136,6 +149,11 @@ export class Composer {
       const local = this.locals[name]
       if (local !== undefined) {
         local.run(argument)
+        return
+      }
+      const contributed = this.contributed.get(name)
+      if (contributed !== undefined) {
+        void contributed.run(argument)
         return
       }
       const agent = this.deps.agent()
@@ -221,8 +239,16 @@ export class Composer {
       }
       return { name, description: entry.description, ...argument }
     })
+    const contributed = [...this.contributed.values()].map((command): SlashCommand => ({
+      name: command.name,
+      description: command.description,
+      ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
+      ...(command.getArgumentCompletions === undefined
+        ? {}
+        : { getArgumentCompletions: (prefix: string) => [...(command.getArgumentCompletions?.(prefix) ?? [])] }),
+    }))
     const agent = this.deps.agent()
-    if (agent === undefined) return local
+    if (agent === undefined) return [...local, ...contributed]
     const registered = this.deps.ctx.commands.list(agent)
       .filter(command => this.locals[command.name] === undefined)
       .map((command): SlashCommand => ({
@@ -230,7 +256,7 @@ export class Composer {
         description: command.description,
         ...(command.input === undefined ? {} : { argumentHint: command.input.hint }),
       }))
-    return [...local, ...registered]
+    return [...local, ...contributed, ...registered]
   }
 
   /**
@@ -287,6 +313,9 @@ export class Composer {
     ]
     for (const [name, entry] of Object.entries(this.locals)) {
       lines.push(`  /${name.padEnd(18, ' ')} ${entry.description}`)
+    }
+    for (const command of this.contributed.values()) {
+      lines.push(`  /${command.name.padEnd(18, ' ')} ${command.description}`)
     }
     const agent = this.deps.agent()
     if (agent !== undefined) {

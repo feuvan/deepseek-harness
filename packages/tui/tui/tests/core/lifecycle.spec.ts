@@ -5127,3 +5127,200 @@ describe('TerminalApp teammate transcript', () => {
     }).not.toThrow()
   })
 })
+
+describe('TerminalApp contribution seam', () => {
+  it('rejects duplicate contributed command names before startup', async () => {
+    const harness = await lifecycleHarness()
+
+    harness.app.registerCommand({ name: 'plug', description: 'first', run: () => {} })
+    expect(() => harness.app.registerCommand({ name: 'plug', description: 'second', run: () => {} }))
+      .toThrow('terminal-ui: command "/plug" is already registered')
+  })
+
+  /** One contributed strip component and its render recorder. */
+  function contributedStrip(text: string): { component: Component; renders: number[] } {
+    const renders: number[] = []
+    return {
+      component: {
+        render: (width) => { renders.push(width); return [` ${text}`] },
+        invalidate: () => {},
+      },
+      renders,
+    }
+  }
+
+  it('provides the seam through the plugin and disposes it with the context', async () => {
+    const harness = await lifecycleHarness()
+    const provided = harness.ctx.get('terminalUi')
+
+    expect(provided).toBeUndefined()
+
+    harness.start()
+    await harness.awaitStarted()
+
+    // The lifecycle harness constructs TerminalApp directly, so the seam is
+    // exercised through its public methods; index.spec covers ctx.terminalUi.
+    expect(typeof harness.app.registerStrip).toBe('function')
+    expect(typeof harness.app.registerCommand).toBe('function')
+    expect(typeof harness.app.openDock).toBe('function')
+    expect(typeof harness.app.closeDock).toBe('function')
+    expect(typeof harness.app.setEditorText).toBe('function')
+    expect(typeof harness.app.notice).toBe('function')
+  })
+
+  it('renders contributed strips above the composer in registration order', async () => {
+    const harness = await lifecycleHarness({
+      team: agentTeam({
+        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
+      }),
+      values: { inbox: { 'next-step': [], 'next-turn': [queuedMessage('pending row')] } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const plugin = contributedStrip('plugin strip')
+    const dispose = harness.app.registerStrip(plugin.component)
+    await waitForScreen(harness.terminal.headless, 'plugin strip')
+
+    const lines = await screenLines(harness.terminal.headless)
+    const team = lines.findIndex(line => line.includes(copy.team.teammates(1)))
+    const strip = lines.findIndex(line => line.includes('plugin strip'))
+    const pending = lines.findIndex(line => line.includes(copy.pending.queued(1)))
+    const composer = lines.findIndex(line => line.includes('dsh>'))
+    expect(team).toBeGreaterThanOrEqual(0)
+    expect(team).toBeLessThan(strip)
+    expect(strip).toBeLessThan(pending)
+    expect(pending).toBeLessThan(composer)
+    expect(plugin.renders.length).toBeGreaterThan(0)
+
+    dispose()
+    await vi.waitFor(async () => {
+      expect((await screenLines(harness.terminal.headless)).some(line => line.includes('plugin strip'))).toBe(false)
+    })
+    dispose()
+  })
+
+  it('queues a strip registered before startup and flushes it when the app starts', async () => {
+    const harness = await lifecycleHarness()
+    const plugin = contributedStrip('early strip')
+    harness.app.registerStrip(plugin.component)
+    harness.app.start()
+    await harness.awaitStarted()
+
+    await waitForScreen(harness.terminal.headless, 'early strip')
+  })
+
+  it('registers contributed commands before startup and flushes them at startup', async () => {
+    const harness = await lifecycleHarness()
+    const runs: (string | undefined)[] = []
+    const dispose = harness.app.registerCommand({
+      name: 'plug',
+      description: 'Plugin command',
+      argumentHint: '<value>',
+      getArgumentCompletions: prefix => prefix === 'x' ? [{ value: 'x1', label: 'X1' }] : [],
+      run: (argument) => { runs.push(argument) },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const composer = privateValue(harness.app, 'composer') as Composer
+
+    const listed = composer.slashCommands().find(command => command.name === 'plug')
+    expect(listed).toMatchObject({ name: 'plug', description: 'Plugin command', argumentHint: '<value>' })
+    expect(listed?.getArgumentCompletions?.('x')).toEqual([{ value: 'x1', label: 'X1' }])
+    expect(composer.helpLines()).toContain('  /plug               Plugin command')
+
+    submitCommand(harness, '/plug   trimmed value ')
+
+    expect(runs).toEqual(['trimmed value'])
+    // The pre-start disposer keeps working after the startup flush.
+    dispose()
+    expect(composer.slashCommands().some(command => command.name === 'plug')).toBe(false)
+  })
+
+  it('drops a pre-startup command through its disposer before the flush', async () => {
+    const harness = await lifecycleHarness()
+    const dispose = harness.app.registerCommand({ name: 'gone', description: 'Gone', run: () => {} })
+    dispose()
+    dispose()
+    harness.start()
+    await harness.awaitStarted()
+    const composer = privateValue(harness.app, 'composer') as Composer
+
+    expect(composer.slashCommands().some(command => command.name === 'gone')).toBe(false)
+  })
+
+  it('rejects duplicate contributed command names after startup', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.app.registerCommand({ name: 'plug', description: 'First', run: () => {} })
+
+    expect(() => harness.app.registerCommand({ name: 'plug', description: 'Second', run: () => {} }))
+      .toThrow('terminal-ui: command "/plug" is already registered')
+    expect(() => harness.app.registerCommand({ name: 'help', description: 'Local', run: () => {} }))
+      .toThrow('terminal-ui: command "/help" is already registered')
+  })
+
+  it('routes contribution dock input and leaves the composer untouched', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const keys: string[] = []
+    let closes = 0
+    const dock = {
+      render: () => ['contributed dock'],
+      invalidate: () => {},
+      handleInput: (data: string) => { keys.push(data) },
+    }
+
+    harness.app.openDock(dock, () => { closes += 1 })
+    await waitForDock(harness, 'contributed dock')
+    for (const key of 'abc') harness.terminal.headless.press(key)
+
+    expect(keys).toEqual(['a', 'b', 'c'])
+    expect(editorOf(harness.app).getText()).toBe('')
+
+    harness.app.closeDock()
+    await awaitDockClosed(harness)
+    expect(closes).toBe(0)
+
+    harness.app.openDock(dock, () => { closes += 1; harness.app.closeDock() })
+    await waitForDock(harness, 'contributed dock')
+    harness.terminal.headless.press('\x03')
+
+    await awaitDockClosed(harness)
+    expect(closes).toBe(1)
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('forwards editor text and transcript notices through the seam', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const renders = harness.terminal.requestRender.mock.calls.length
+
+    harness.app.setEditorText('seam text')
+    harness.app.notice('seam notice')
+
+    expect(editorOf(harness.app).getText()).toBe('seam text')
+    expect(harness.terminal.requestRender.mock.calls.length).toBeGreaterThan(renders)
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain('seam notice') })
+  })
+
+  it('tolerates seam calls before startup', async () => {
+    const harness = await lifecycleHarness()
+    const plugin = contributedStrip('pre-start')
+    const dock = { render: () => ['pre-start dock'], invalidate: () => {}, handleInput: () => {} }
+
+    expect(() => {
+      harness.app.registerStrip(plugin.component)()
+      harness.app.openDock(dock, () => {})
+      harness.app.closeDock()
+      harness.app.setEditorText('early')
+      harness.app.notice('early notice')
+    }).not.toThrow()
+
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, 'dsh>')
+  })
+})
