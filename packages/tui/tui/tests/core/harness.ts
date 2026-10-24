@@ -20,9 +20,6 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
-import type {
-  TeamMemberProjectionRow, TeamProjection, TeamTaskRow,
-} from '../../src/team.ts'
 import { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { createTerminalSession } from '../../src/terminal.ts'
@@ -58,49 +55,6 @@ export function messageText(message: { content: readonly { type: string; text?: 
  */
 export function queuedMessage(text: string): UserMessage {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
-}
-
-/**
- * Build one Team roster row.
- * @param overrides - row fields to replace.
- * @returns the roster row.
- */
-export function teamMember(overrides: Partial<TeamMemberProjectionRow> = {}): TeamMemberProjectionRow {
-  return {
-    id: SessionId('team-lead'),
-    name: 'Lead',
-    role: 'lead',
-    phase: 'active',
-    ...overrides,
-  }
-}
-
-/**
- * Build one Team task row.
- * @param overrides - task fields to replace.
- * @returns the task view.
- */
-export function teamTask(overrides: Partial<TeamTaskRow> = {}): TeamTaskRow {
-  return {
-    id: 'task-1',
-    revision: 1,
-    subject: 'Inspect the workspace',
-    status: 'pending',
-    blockedBy: [],
-    writeScopes: [],
-    ready: true,
-    writeScopeWarnings: [],
-    ...overrides,
-  }
-}
-
-/**
- * Build one Team projection.
- * @param overrides - projection fields to replace.
- * @returns the projection.
- */
-export function agentTeam(overrides: Partial<TeamProjection> = {}): TeamProjection {
-  return { members: [teamMember()], tasks: [], ...overrides }
 }
 
 /** Mutable Agent double options. */
@@ -186,10 +140,6 @@ export interface AgentsDouble {
   readonly service: { get(id: SessionId): Agent | { readonly status: AgentStatus } | undefined }
   /** Bind the Agent returned for its own session identity. */
   bind(agent: Agent): void
-  /** Bind one teammate Agent returned for its own session identity. */
-  bindTeammate(agent: Agent): void
-  /** Bind only the running status the Team strip reads for one teammate. */
-  bindTeammateStatus(id: string, status: AgentStatus): void
 }
 
 /**
@@ -198,17 +148,11 @@ export interface AgentsDouble {
  */
 export function agentsDouble(): AgentsDouble {
   let bound: Agent | undefined
-  const teammates = new Map<string, Agent | { readonly status: AgentStatus }>()
   return {
     service: {
-      get: (id: SessionId) => {
-        if (bound !== undefined && bound.session.id === id) return bound
-        return teammates.get(String(id))
-      },
+      get: (id: SessionId) => (bound !== undefined && bound.session.id === id ? bound : undefined),
     },
     bind(agent) { bound = agent },
-    bindTeammate(agent) { teammates.set(String(agent.session.id), agent) },
-    bindTeammateStatus(id, status) { teammates.set(id, { status }) },
   }
 }
 

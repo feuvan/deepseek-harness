@@ -10,8 +10,6 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
 import type { BusyEnter } from '../../src/config.ts'
-import type { TeamProjection } from '../../src/team.ts'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TerminalTranscript } from '../../src/transcript.ts'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
@@ -37,11 +35,11 @@ import { readClipboardImage } from '../../src/clipboard.ts'
 import { mountSessions } from '../support/fakes.ts'
 
 vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
-import { assistantMessage, commandRun, sessionTitle, toolCall, turnEnd, userMessage } from '../support/events.ts'
+import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
-  agentPresetsDouble, agentTeam, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
-  screenLines, sessionQueryDouble, teamMember, teamTask, terminalConfig,
+  agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
+  screenLines, sessionQueryDouble, terminalConfig,
   toolsDouble, userQuestionsDouble, waitForScreen,
   type AgentDouble, type AgentsDouble, type AppExitDouble, type CommandsDouble,
   type ObservationDouble, type ProjectionsDouble, type SessionQueryDouble,
@@ -112,10 +110,6 @@ interface LifecycleOptions {
   readonly busyEnter?: BusyEnter
   /** Messages already queued in the Agent inbox. */
   readonly queued?: readonly UserMessage[]
-  /** Agent Team projection values for the presented Session. */
-  readonly team?: TeamProjection
-  /** Teammate Agents the Agent registry resolves for their Session identities. */
-  readonly teammates?: readonly Agent[]
 }
 
 /**
@@ -126,8 +120,7 @@ interface LifecycleOptions {
 async function lifecycleHarness(options: LifecycleOptions = {}): Promise<LifecycleHarness> {
   const exit = appExitDouble()
   const agents = agentsDouble()
-  for (const teammate of options.teammates ?? []) agents.bindTeammate(teammate)
-  const projections = projectionsDouble(options.team === undefined ? options.values ?? {} : { ...options.values, agentTeam: options.team })
+  const projections = projectionsDouble(options.values ?? {})
   const query = sessionQueryDouble(options.read ?? (async () => observation([])))
   const commands = commandsDouble({
     ...(options.descriptors === undefined ? {} : { descriptors: options.descriptors }),
@@ -4447,687 +4440,6 @@ describe('TerminalApp /steer command', () => {
   })
 })
 
-describe('TerminalApp /team', () => {
-  it('reports the unavailable notice without a Team projection', async () => {
-    const harness = await lifecycleHarness()
-    harness.start()
-    await harness.awaitStarted()
-
-    await submitLine(harness, '/team')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain('Agent Teams is not composed in this profile') })
-    expect(bottomOf(harness.app).active).toBe(false)
-  })
-
-  it('opens the dock with the tab bar and roster, and closes on Escape', async () => {
-    const harness = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-
-    const dock = dockText(harness.app)
-    expect(dock).toContain(copy.team.title)
-    expect(dock).toContain(copy.team.membersTab)
-    expect(dock).toContain(copy.team.tasksTab)
-    expect(dock).toContain('★ Lead')
-    expect(dock).toContain('● Worker')
-    expect(dock).toContain(copy.team.hint)
-
-    harness.terminal.headless.press('\u001b')
-
-    await awaitDockClosed(harness)
-    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
-  })
-
-  it('switches to the task board and back with single keys', async () => {
-    const harness = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-        tasks: [
-          teamTask({ id: 'ready', subject: 'Ready work' }),
-          teamTask({ id: 'done', subject: 'Finished work', status: 'completed' }),
-        ],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    const panel = privateValue(harness.app, 'teamPanel') as { render(width: number): string[] }
-
-    harness.terminal.headless.press('\t')
-    expect(Reflect.get(panel, 'tab')).toBe('tasks')
-    expect(dockText(harness.app)).toContain('Ready work')
-    expect(dockText(harness.app)).toContain('Finished work')
-
-    harness.terminal.headless.press('\u001b[Z')
-    expect(Reflect.get(panel, 'tab')).toBe('members')
-    expect(dockText(harness.app)).toContain('★ Lead')
-  })
-
-  it('scrolls one row or one page per key', async () => {
-    const tasks = Array.from({ length: 9 }, (_, index) => teamTask({
-      id: `task-${String(index)}`,
-      subject: `Task ${String(index)}`,
-    }))
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    const panel = privateValue(harness.app, 'teamPanel') as { render(width: number): string[] }
-    harness.terminal.headless.press('\t')
-
-    harness.terminal.headless.press('\u001b[B')
-    expect(Reflect.get(panel, 'index')).toBe(1)
-    harness.terminal.headless.press('\u001b[6~')
-    expect(Reflect.get(panel, 'index')).toBe(7)
-    harness.terminal.headless.press('\u001b[5~')
-    expect(Reflect.get(panel, 'index')).toBe(1)
-  })
-
-  it('closes the panel through Ctrl+C', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-
-    harness.terminal.headless.press('\x03')
-
-    await awaitDockClosed(harness)
-    expect(harness.exit.codes).toEqual([])
-  })
-
-  it('refreshes an open panel on a live projection change for the presented Session', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask({ subject: 'Initial task' })] }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-
-    harness.projections.values.agentTeam = agentTeam({ tasks: [teamTask({ subject: 'Updated task' })] })
-    harness.projections.emit(harness.session)
-
-    await vi.waitFor(() => { expect(dockText(harness.app)).toContain('Updated task') })
-    expect(dockText(harness.app)).not.toContain('Initial task')
-  })
-
-  it('ignores projection changes for another Session', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask({ subject: 'Stable task' })] }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-
-    harness.projections.values.agentTeam = agentTeam({ tasks: [teamTask({ subject: 'Wrong Session task' })] })
-    harness.projections.emit(harness.ctx.sessions.create(SessionId('other-team-session')))
-
-    await Promise.resolve()
-    expect(dockText(harness.app)).toContain('Stable task')
-    expect(dockText(harness.app)).not.toContain('Wrong Session task')
-  })
-
-  it('closes the panel when the projection disappears', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-
-    delete harness.projections.values.agentTeam
-    harness.projections.emit(harness.session)
-
-    await awaitDockClosed(harness)
-    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
-  })
-
-  it('requests a render when a teammate changes status and ignores foreign Agents', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam() })
-    harness.start()
-    await harness.awaitStarted()
-    const renderCount = harness.terminal.requestRender.mock.calls.length
-
-    harness.ctx.emit('agent/status', { agent: harness.agent.agent, status: 'running' })
-    const ownCount = harness.terminal.requestRender.mock.calls.length
-    expect(ownCount).toBeGreaterThan(renderCount)
-
-    harness.ctx.emit('agent/status', {
-      agent: agentDouble({ session: harness.ctx.sessions.create(SessionId('foreign-team-member')) }).agent,
-      status: 'running',
-    })
-    expect(harness.terminal.requestRender.mock.calls.length).toBe(ownCount)
-
-    const teammateSession = harness.ctx.sessions.create(SessionId('teammate-1'))
-    harness.projections.values.agentTeam = agentTeam({
-      members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-    })
-    harness.ctx.emit('agent/status', { agent: agentDouble({ session: teammateSession }).agent, status: 'running' })
-    expect(harness.terminal.requestRender.mock.calls.length).toBeGreaterThan(ownCount)
-  })
-
-  it('shows the strip above the composer while a Team is visible and hides a lead-only one', async () => {
-    const visible = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-        tasks: [teamTask()],
-      }),
-    })
-    visible.start()
-    await visible.awaitStarted()
-    await waitForScreen(visible.terminal.headless, copy.team.teammates(1))
-
-    const lines = await screenLines(visible.terminal.headless)
-    const stripLine = lines.findIndex(line => line.includes(copy.team.teammates(1)))
-    const composerLine = lines.findIndex(line => line.includes('dsh>'))
-    expect(stripLine).toBeGreaterThanOrEqual(0)
-    expect(composerLine).toBeGreaterThan(stripLine)
-
-    const hidden = await lifecycleHarness({ team: agentTeam() })
-    hidden.start()
-    await hidden.awaitStarted()
-    expect((await screenLines(hidden.terminal.headless)).some(line => line.includes(copy.team.teammates(0)))).toBe(false)
-  })
-
-  it('lists /team in help and slash completion', async () => {
-    const harness = await lifecycleHarness()
-    harness.start()
-    await harness.awaitStarted()
-
-    await submitLine(harness, '/help')
-    await waitForDock(harness, copy.panel.help)
-    for (let page = 0; page < 3; page += 1) harness.terminal.headless.press('\u001b[6~')
-    expect(dockText(harness.app)).toContain(`/${'team'.padEnd(18, ' ')} ${copy.commands.team}`)
-    harness.terminal.headless.press('\x03')
-    await awaitDockClosed(harness)
-
-    for (const key of '/tea') harness.terminal.headless.press(key)
-    await waitForDock(harness, copy.completion.title)
-    expect(dockText(harness.app)).toContain(copy.commands.team)
-  })
-
-  it('ignores Team helpers before the terminal starts', async () => {
-    const harness = await lifecycleHarness()
-    const openTeamPanel = privateValue(harness.app, 'openTeamPanel') as () => void
-    const refreshTeamPanel = privateValue(harness.app, 'refreshTeamPanel') as () => void
-    const closeTeamPanel = privateValue(harness.app, 'closeTeamPanel') as () => void
-    const isTeamMember = privateValue(harness.app, 'isTeamMember') as (id: string) => boolean
-    const teamProjection = privateValue(harness.app, 'teamProjection') as () => unknown
-
-    expect(() => {
-      openTeamPanel.call(harness.app)
-      refreshTeamPanel.call(harness.app)
-      closeTeamPanel.call(harness.app)
-    }).not.toThrow()
-    expect(isTeamMember.call(harness.app, 'teammate-1')).toBe(false)
-    expect(teamProjection.call(harness.app)).toBeUndefined()
-  })
-
-  it('unsubscribes from the projection on dispose', async () => {
-    const harness = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    expect(privateValue(harness.app, 'teamStop')).toBeDefined()
-
-    harness.app.dispose()
-
-    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
-    expect(() => { harness.projections.emit(harness.session) }).not.toThrow()
-  })
-
-  it('renders the panel in Chinese', async () => {
-    setCopyLocale('zh')
-    const harness = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-        tasks: [teamTask({ subject: '任务一' })],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    expect(dockText(harness.app)).toContain(copy.team.membersTab)
-    harness.terminal.headless.press('\t')
-    expect(dockText(harness.app)).toContain(copy.team.tasksTab)
-    expect(dockText(harness.app)).toContain(copy.team.statuses.ready)
-  })
-})
-
-describe('TerminalApp /team actions', () => {
-  /** One Team service double and its recordings. */
-  interface TeamServiceDouble {
-    readonly service: Record<string, unknown>
-    readonly created: { readonly subject: string; readonly description: string }[]
-    readonly updates: { readonly taskId: string; readonly expectedRevision: number; readonly action: string }[]
-    readonly messages: { readonly target: string; readonly text: string }[]
-  }
-
-  /**
-   * Build a Team service double.
-   * @param failure - error every action rejects with.
-   * @returns the service and recordings.
-   */
-  function teamServiceDouble(failure?: unknown): TeamServiceDouble {
-    const created: { subject: string; description: string }[] = []
-    const updates: { taskId: string; expectedRevision: number; action: string }[] = []
-    const messages: { target: string; text: string }[] = []
-    const reject = async (): Promise<never> => { throw failure }
-    return {
-      service: {
-        createTask: async (_agent: unknown, request: { subject: string; description: string }) => {
-          if (failure !== undefined) return reject()
-          created.push(request)
-          return { id: 'task-new' }
-        },
-        updateTask: async (_agent: unknown, request: { taskId: string; expectedRevision: number; action: string }) => {
-          if (failure !== undefined) return reject()
-          updates.push(request)
-          return { id: request.taskId }
-        },
-        sendMessage: async (_agent: unknown, request: { target: string; content: readonly { type: 'text'; text: string }[] }) => {
-          if (failure !== undefined) return reject()
-          messages.push({ target: request.target, text: request.content[0]?.text ?? '' })
-          return {}
-        },
-      },
-      created,
-      updates,
-      messages,
-    }
-  }
-
-  it('creates a shared task from the command and reports its identity', async () => {
-    const service = teamServiceDouble()
-    const harness = await lifecycleHarness({ services: { agentTeams: service.service } })
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team task Inspect the workspace')
-
-    await vi.waitFor(() => {
-      expect(service.created).toEqual([{ subject: 'Inspect the workspace', description: 'Inspect the workspace' }])
-    })
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.taskCreated('task-new')) })
-  })
-
-  it('reports invalid /team argument forms as usage', async () => {
-    const harness = await lifecycleHarness()
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team task   ')
-    submitCommand(harness, '/team message worker')
-    submitCommand(harness, '/team unknown')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.usage) })
-  })
-
-  it('sends a teammate message through the command', async () => {
-    const service = teamServiceDouble()
-    const harness = await lifecycleHarness({ services: { agentTeams: service.service } })
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team message Worker please check the build')
-
-    await vi.waitFor(() => {
-      expect(service.messages).toEqual([{ target: 'Worker', text: 'please check the build' }])
-    })
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.messageSent('Worker')) })
-  })
-
-  it.each([
-    ['an Error', new Error('team rejected action')],
-    ['a non-Error', 'team rejected action'],
-  ])('reports a team action failure thrown as %s', async (_label, failure) => {
-    const service = teamServiceDouble(failure)
-    const harness = await lifecycleHarness({ services: { agentTeams: service.service } })
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team task anything')
-
-    await vi.waitFor(() => {
-      expect(harness.transcriptText()).toContain(copy.team.actionFailed('team rejected action'))
-    })
-  })
-
-  it.each([
-    ['an Error', new Error('message rejected')],
-    ['a non-Error', 'message rejected'],
-  ])('reports a teammate message failure thrown as %s', async (_label, failure) => {
-    const service = teamServiceDouble(failure)
-    const harness = await lifecycleHarness({ services: { agentTeams: service.service } })
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team message Worker hi')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.actionFailed('message rejected')) })
-  })
-
-  it('reports a non-Error task update failure', async () => {
-    const service = teamServiceDouble('stale revision')
-    const harness = await lifecycleHarness({
-      services: { agentTeams: service.service },
-      team: agentTeam({ tasks: [teamTask()] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-    harness.terminal.headless.press('a')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.actionFailed('stale revision')) })
-  })
-
-  it('reports a non-Error history read failure', async () => {
-    const harness = await lifecycleHarness({
-      read: async (sessionId) => {
-        if (sessionId === SessionId('teammate-1')) throw 'history unavailable'
-        return observation([])
-      },
-      team: agentTeam({ members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('\r')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.actionFailed('history unavailable')) })
-  })
-
-  it('reports the unavailable notice for task and message actions without a service', async () => {
-    const harness = await lifecycleHarness()
-    harness.start()
-    await harness.awaitStarted()
-
-    submitCommand(harness, '/team task anything')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain('Agent Teams is not composed') })
-
-    submitCommand(harness, '/team message Worker hi')
-    await vi.waitFor(() => {
-      const occurrences = harness.transcriptText().match(/Agent Teams is not composed/gu) ?? []
-      expect(occurrences.length).toBeGreaterThanOrEqual(2)
-    })
-  })
-
-  it('claims and completes tasks with the selected revision and refreshes the panel', async () => {
-    const service = teamServiceDouble()
-    const harness = await lifecycleHarness({
-      services: { agentTeams: service.service },
-      team: agentTeam({
-        tasks: [
-          teamTask({ id: 'first', revision: 3, subject: 'First task' }),
-          teamTask({ id: 'second', revision: 8, subject: 'Second task', status: 'in_progress' }),
-        ],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-
-    harness.terminal.headless.press('a')
-    await vi.waitFor(() => {
-      expect(service.updates).toEqual([{ taskId: 'first', expectedRevision: 3, action: 'claim' }])
-    })
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.taskClaimed('first')) })
-
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('c')
-    await vi.waitFor(() => {
-      expect(service.updates[1]).toEqual({ taskId: 'second', expectedRevision: 8, action: 'complete' })
-    })
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.taskCompleted('second')) })
-  })
-
-  it('reports a task update failure and an unavailable service', async () => {
-    const failing = teamServiceDouble(new Error('stale revision'))
-    const harness = await lifecycleHarness({
-      services: { agentTeams: failing.service },
-      team: agentTeam({ tasks: [teamTask()] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-    harness.terminal.headless.press('a')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.actionFailed('stale revision')) })
-
-    const bare = await lifecycleHarness({ team: agentTeam({ tasks: [teamTask()] }) })
-    bare.start()
-    await bare.awaitStarted()
-    await submitLine(bare, '/team')
-    await waitForDock(bare, copy.team.title)
-    bare.terminal.headless.press('\t')
-    bare.terminal.headless.press('a')
-
-    await vi.waitFor(() => { expect(bare.transcriptText()).toContain('Agent Teams is not composed') })
-  })
-
-  it('pre-fills composer prompts from the roster and task tabs', async () => {
-    const harness = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-        tasks: [teamTask()],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('m')
-    await awaitDockClosed(harness)
-    expect(editorOf(harness.app).getText()).toBe('/team message Worker ')
-    editorOf(harness.app).setText('')
-
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('n')
-    await awaitDockClosed(harness)
-    expect(editorOf(harness.app).getText()).toBe('/team task ')
-    editorOf(harness.app).setText('')
-
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\t')
-    harness.terminal.headless.press('n')
-    await awaitDockClosed(harness)
-    expect(editorOf(harness.app).getText()).toBe('/team task ')
-  })
-})
-
-describe('TerminalApp teammate transcript', () => {
-  /** One observation helper over a fixed event list. */
-  function transcriptObservation(events: readonly SessionEvent[]): { events: readonly SessionEvent[]; [Symbol.dispose](): void } {
-    return { events, [Symbol.dispose]: () => {} }
-  }
-
-  it('loads, formats, and live-appends a teammate transcript, then returns on Escape', async () => {
-    const events = [
-      userMessage(0, 'hello from the lead'),
-      assistantMessage(1, 1, 1, [{ type: 'text', text: 'assistant answer' }]),
-      assistantMessage(2, 1, 1, [{
-        type: 'image',
-        attachment: { attachmentId: AttachmentId('a1'), mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
-      }]),
-      toolCall(3, 1, 1, 'call-1', 'bash', '{}'),
-      { type: 'tool/call', seq: 4, time: 4, data: { name: 42 } } as never,
-      turnEnd(5, 1, { kind: 'blocked' }),
-      turnEnd(6, 1),
-      { type: 'turn/end', seq: 7, time: 7, data: {} } as never,
-      { type: 'turn/end', seq: 8, time: 8, data: { reason: {} } } as never,
-      { type: 'turn/end', seq: 9, time: 9, data: { reason: { kind: 42 } } } as never,
-      { type: 'command/run', seq: 10, time: 10, data: { name: 'status' } } as never,
-      { type: 'user/message', seq: 11, time: 11, data: {} } as never,
-      { type: 'user/message', seq: 12, time: 12, data: { content: [{ type: 'text' }] } } as never,
-      { type: 'user/message', seq: 13, time: 13, data: { content: [{ type: 'image' }] } } as never,
-      { type: 'user/message', seq: 14, time: 14, data: { content: [{ type: 'text', text: '   ' }] } } as never,
-      { type: 'assistant/message', seq: 15, time: 15, data: {} } as never,
-      { type: 'assistant/message', seq: 16, time: 16, data: { message: {} } } as never,
-      { type: 'assistant/message', seq: 17, time: 17, data: { message: { content: [{ type: 'text' }] } } } as never,
-      { type: 'assistant/message', seq: 18, time: 18, data: { message: { content: [{ type: 'image' }] } } } as never,
-      { type: 'assistant/message', seq: 19, time: 19, data: { message: { content: [{ type: 'text', text: '   ' }] } } } as never,
-    ]
-    const harness = await lifecycleHarness({
-      read: async sessionId => sessionId === SessionId('teammate-1')
-        ? transcriptObservation(events)
-        : observation([]),
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-      }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('\r')
-
-    await waitForDock(harness, copy.team.memberTitle('Worker'))
-    const loaded = dockText(harness.app)
-    expect(loaded).toContain(copy.team.memberUser('hello from the lead'))
-    expect(loaded).toContain(copy.team.memberAssistant('assistant answer'))
-    expect(loaded).toContain(copy.team.memberTool('bash'))
-    expect(loaded).toContain(copy.team.memberTurnEnd('blocked'))
-
-    const teammateSession = harness.ctx.sessions.create(SessionId('teammate-1'))
-    harness.ctx.emit('session/event', teammateSession, userMessage(9, 'live line'))
-    await vi.waitFor(() => { expect(dockText(harness.app)).toContain(copy.team.memberUser('live line')) })
-
-    harness.ctx.emit('session/event', harness.ctx.sessions.create(SessionId('someone-else')), userMessage(10, 'foreign line'))
-    harness.ctx.emit('session/event', teammateSession, commandRun(11, 'status'))
-    await Promise.resolve()
-    expect(dockText(harness.app)).not.toContain(copy.team.memberUser('foreign line'))
-
-    harness.terminal.headless.press('\u001b')
-    await waitForDock(harness, copy.team.title)
-    expect(privateValue(harness.app, 'teamMemberStop')).toBeUndefined()
-    // The source clears the transcript content; its getter stays true because
-    // the cleared title renders as "Teammate " (reported as a defect).
-    const memberPanel = privateValue(harness.app, 'teamMemberPanel') as object
-    expect(Reflect.get(memberPanel, 'lines')).toEqual([])
-    expect(dockText(harness.app)).not.toContain(copy.team.memberTitle('Worker'))
-  })
-
-  it('reports a failed history read and ignores an unavailable query service', async () => {
-    const harness = await lifecycleHarness({
-      read: async (sessionId) => {
-        if (sessionId === SessionId('teammate-1')) throw new Error('history unavailable')
-        return observation([])
-      },
-      team: agentTeam({ members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('\r')
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.actionFailed('history unavailable')) })
-    expect(bottomOf(harness.app).active).toBe(true)
-  })
-
-  it('unsubscribes the member and team listeners when the panel is closed or disposed', async () => {
-    const harness = await lifecycleHarness({
-      read: async () => transcriptObservation([]),
-      team: agentTeam({ members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    harness.terminal.headless.press('\u001b[B')
-    harness.terminal.headless.press('\r')
-    await waitForDock(harness, copy.team.memberTitle('Worker'))
-    expect(privateValue(harness.app, 'teamMemberStop')).toBeDefined()
-
-    harness.terminal.headless.press('\x03')
-
-    await waitForDock(harness, copy.team.title)
-    expect(privateValue(harness.app, 'teamMemberStop')).toBeUndefined()
-
-    harness.terminal.headless.press('\x03')
-    await awaitDockClosed(harness)
-    expect(privateValue(harness.app, 'teamStop')).toBeUndefined()
-
-    const disposed = await lifecycleHarness({
-      read: async () => transcriptObservation([]),
-      team: agentTeam({ members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })] }),
-    })
-    disposed.start()
-    await disposed.awaitStarted()
-    await submitLine(disposed, '/team')
-    await waitForDock(disposed, copy.team.title)
-    disposed.terminal.headless.press('\u001b[B')
-    disposed.terminal.headless.press('\r')
-    await waitForDock(disposed, copy.team.memberTitle('Worker'))
-
-    disposed.app.dispose()
-
-    expect(privateValue(disposed.app, 'teamMemberStop')).toBeUndefined()
-    expect(privateValue(disposed.app, 'teamStop')).toBeUndefined()
-  })
-
-  it('reports unavailable teammate history when the query service is missing', async () => {
-    const harness = await lifecycleHarness({
-      team: agentTeam({ members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })] }),
-    })
-    harness.start()
-    await harness.awaitStarted()
-    await submitLine(harness, '/team')
-    await waitForDock(harness, copy.team.title)
-    const original = Reflect.get(harness.app, 'ctx') as { get(name: string): unknown }
-    Reflect.set(harness.app, 'ctx', {
-      get: (name: string) => name === 'sessionQuery' ? undefined : original.get(name),
-    })
-    const openTeamMember = privateValue(harness.app, 'openTeamMember') as (member: { id: string; name: string }) => Promise<void>
-
-    await openTeamMember.call(harness.app, { id: 'teammate-1', name: 'Worker' })
-    Reflect.set(harness.app, 'ctx', original)
-
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.team.historyUnavailable) })
-    expect(dockText(harness.app)).toContain(copy.team.title)
-  })
-
-  it('ignores teammate helpers without a query or panel', async () => {
-    const harness = await lifecycleHarness()
-    const openTeamMember = privateValue(harness.app, 'openTeamMember') as (member: { id: string; name: string }) => Promise<void>
-    const back = privateValue(harness.app, 'backToTeamPanel') as () => void
-    const promptTask = privateValue(harness.app, 'promptTeamTask') as () => void
-    const promptMessage = privateValue(harness.app, 'promptTeamMessage') as (member: { name: string }) => void
-
-    await expect(openTeamMember.call(harness.app, { id: 'teammate-1', name: 'Worker' })).resolves.toBeUndefined()
-    expect(() => {
-      back.call(harness.app)
-      promptTask.call(harness.app)
-      promptMessage.call(harness.app, { name: 'Worker' })
-    }).not.toThrow()
-  })
-})
-
 describe('TerminalApp contribution seam', () => {
   it('rejects duplicate contributed command names before startup', async () => {
     const harness = await lifecycleHarness()
@@ -5166,37 +4478,40 @@ describe('TerminalApp contribution seam', () => {
     expect(typeof harness.app.closeDock).toBe('function')
     expect(typeof harness.app.setEditorText).toBe('function')
     expect(typeof harness.app.notice).toBe('function')
+    expect(typeof harness.app.paletteTable).toBe('object')
+    expect(harness.app.currentAgent()).toBeDefined()
+    expect(() => { harness.app.requestRender() }).not.toThrow()
   })
 
-  it('renders contributed strips above the composer in registration order', async () => {
+  it('renders contributed strips above the pending strip and composer in registration order', async () => {
     const harness = await lifecycleHarness({
-      team: agentTeam({
-        members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
-      }),
       values: { inbox: { 'next-step': [], 'next-turn': [queuedMessage('pending row')] } },
     })
     harness.start()
     await harness.awaitStarted()
-    const plugin = contributedStrip('plugin strip')
-    const dispose = harness.app.registerStrip(plugin.component)
-    await waitForScreen(harness.terminal.headless, 'plugin strip')
+    const first = contributedStrip('first strip')
+    const second = contributedStrip('second strip')
+    const disposeFirst = harness.app.registerStrip(first.component)
+    const disposeSecond = harness.app.registerStrip(second.component)
+    await waitForScreen(harness.terminal.headless, 'second strip')
 
     const lines = await screenLines(harness.terminal.headless)
-    const team = lines.findIndex(line => line.includes(copy.team.teammates(1)))
-    const strip = lines.findIndex(line => line.includes('plugin strip'))
+    const firstLine = lines.findIndex(line => line.includes('first strip'))
+    const secondLine = lines.findIndex(line => line.includes('second strip'))
     const pending = lines.findIndex(line => line.includes(copy.pending.queued(1)))
     const composer = lines.findIndex(line => line.includes('dsh>'))
-    expect(team).toBeGreaterThanOrEqual(0)
-    expect(team).toBeLessThan(strip)
-    expect(strip).toBeLessThan(pending)
+    expect(firstLine).toBeGreaterThanOrEqual(0)
+    expect(firstLine).toBeLessThan(secondLine)
+    expect(secondLine).toBeLessThan(pending)
     expect(pending).toBeLessThan(composer)
-    expect(plugin.renders.length).toBeGreaterThan(0)
 
-    dispose()
+    disposeFirst()
+    disposeSecond()
     await vi.waitFor(async () => {
-      expect((await screenLines(harness.terminal.headless)).some(line => line.includes('plugin strip'))).toBe(false)
+      expect((await screenLines(harness.terminal.headless)).some(line => line.includes('first strip'))).toBe(false)
     })
-    dispose()
+    disposeFirst()
+    disposeSecond()
   })
 
   it('queues a strip registered before startup and flushes it when the app starts', async () => {

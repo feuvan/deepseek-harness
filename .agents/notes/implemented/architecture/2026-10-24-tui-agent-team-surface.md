@@ -10,13 +10,13 @@ The experimental Agent Teams bundle shipped tools and a Web Client panel only. E
 
 ## Decision
 
-The terminal reads the Lead Session's `agentTeam` projection through a local structural view (`src/team.ts`) and renders two built-in surfaces: a compact strip above the composer and a `/team` bottom dock with Members and Tasks tabs. Neither surface is a plugin contribution; the terminal owns them and hides them when the projection is absent. Members open a read-only teammate transcript; Tasks expose claim, complete, and create; `/team task` and `/team message` reach the Team service from the composer. The stable TUI package takes no dependency on the experimental Agent Teams package: the view mirrors only the fields it renders, so the Agent Teams client schema remains the authority.
+An experimental plugin, `@deepseek-ai/dsh-experimental-tui-agent-team`, reads the Lead Session's `agentTeam` projection through the terminal contribution seam and registers a compact strip, a `/team` bottom dock with Members and Tasks tabs, and a read-only teammate transcript. The stable terminal owns the seam and hides the surfaces when the projection is absent; the Team code lives only in the experimental package. Members open a read-only teammate transcript; Tasks expose claim, complete, and create; `/team task` and `/team message` reach the Team service from the composer. The stable TUI package takes no dependency on the experimental Agent Teams package: the view mirrors only the fields it renders, so the Agent Teams client schema remains the authority.
 
 The strip shows teammate, running, and task counts and names a rejected persisted record; the panel shows member role/phase/error and task status/owner/blockers/write-scope warnings. Both follow projection changes for the presented Session, and teammate `agent/status` updates repaint the running count. `/team` without the bundle prints the enable path (`/config` → Experimental capabilities → restart) instead of opening an empty panel.
 
 ## Verification
 
-`packages/tui/tui/tests` covers the projection reader, visibility gate, summary counts, strip and panel rendering in both locales, scrolling and tab keys, live projection updates, teammate-status repaint, the unavailable path, help/completion, and copy parity. A manual PTY run with the bundle enabled in a temporary TUI profile showed `/team` presenting the Lead roster; the enabled bundle still leaves preset-scoped subagent tools in place, which the package README records.
+`packages/experimental/tui-agent-team/tests` covers the projection reader, visibility gate, summary counts, strip and panel rendering in both locales, scrolling and tab keys, live projection updates, teammate-status repaint, the unavailable path, help/completion, and copy parity. A manual PTY run with the bundle enabled in a temporary TUI profile showed `/team` presenting the Lead roster; the enabled bundle still leaves preset-scoped subagent tools in place, which the package README records.
 
 ## Consequences
 
@@ -24,6 +24,6 @@ A terminal user can now see and act on delegated work without the browser: teamm
 
 ## Alternatives considered
 
-- **Depend on the experimental package's client types.** Rejected: the TUI typecheck then resolves the package's built declarations, which moved persistence-catalog sources from `src` to `lib` and coupled a stable package to an experimental build.
+- **Depend on the experimental package's client types.** Rejected: the TUI typecheck then resolves the package's built declarations, which moved persistence-catalog sources from `src` to `lib` and coupled a stable package to an experimental build. The final design instead moved the entire surface into the experimental plugin and kept only the structural seam in the stable package.
 - **Add a generic TUI panel/strip contribution service and ship the Team UI as an experimental plugin.** Rejected for this increment: it is a new UI architecture, while the terminal already owns the dock and the requested visibility is read-only.
 - **Render from Team tool output instead of the projection.** Rejected: tool output is not live and misses roster/task changes the Lead never calls a tool for.

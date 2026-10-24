@@ -19,8 +19,6 @@ import {
   ScrollView, VStack, isKeyRelease, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { SessionId } from '@deepseek-ai/dsh-session'
 import { copy } from './copy.ts'
 import { Composer } from './commands.ts'
 import { Banner } from './components/banner.ts'
@@ -42,10 +40,6 @@ import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
 import { ContributedStrips } from './components/contributed-strips.ts'
-import { TeamPanel } from './components/team-panel.ts'
-import { TeamMemberPanel } from './components/team-member-panel.ts'
-import { TeamStrip } from './components/team-strip.ts'
-import { readTeamProjection, teamService, type TeamMemberProjectionRow, type TeamTaskRow } from './team.ts'
 import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
@@ -72,10 +66,6 @@ export class TerminalApp {
   private bottom: BottomPanel | undefined
   private bottomList: BottomList | undefined
   private queuePanel: QueuePanel | undefined
-  private teamPanel: TeamPanel | undefined
-  private teamStop: (() => void) | undefined
-  private teamMemberPanel: TeamMemberPanel | undefined
-  private teamMemberStop: (() => void) | undefined
   private completion: CompletionController | undefined
   private configPanel: ConfigPanel | undefined
   private dockOverlay: DockSurface | undefined
@@ -205,6 +195,27 @@ export class TerminalApp {
     this.transcript?.notice(text)
   }
 
+  /**
+   * The terminal style table shared with contributed surfaces.
+   * @returns the active palette.
+   */
+  get paletteTable(): Palette {
+    return this.palette
+  }
+
+  /**
+   * The presented root Agent.
+   * @returns the Agent, or undefined before it exists.
+   */
+  currentAgent(): Agent | undefined {
+    return this.agent
+  }
+
+  /** Ask the renderer for a frame. */
+  requestRender(): void {
+    this.tui?.requestRender()
+  }
+
   /** Stop every registration and restore the terminal; safe to call more than once. */
   dispose(): void {
     if (this.disposed) return
@@ -224,10 +235,6 @@ export class TerminalApp {
       }
     }
     this.status?.dispose()
-    this.teamStop?.()
-    this.teamStop = undefined
-    this.teamMemberStop?.()
-    this.teamMemberStop = undefined
     try {
       this.terminal?.terminal.setProgramStatus({ state: 'clear', app: 'dsh' })
     } catch (error: unknown) {
@@ -398,16 +405,6 @@ export class TerminalApp {
       overscroll: 'chain',
     })
     const pending = new PendingStrip(this.palette, () => status.snapshot())
-    this.contributedStrips.push(new TeamStrip(this.palette, this.ctx, () => this.teamProjection()))
-    this.teamPanel = new TeamPanel(this.palette, {
-      close: () => { this.closeTeamPanel() },
-      openMember: (member) => { void this.openTeamMember(member) },
-      messageMember: (member) => { this.promptTeamMessage(member) },
-      claimTask: (task) => { void this.updateTeamTask(task, 'claim') },
-      completeTask: (task) => { void this.updateTeamTask(task, 'complete') },
-      createTask: () => { this.promptTeamTask() },
-    })
-    this.teamMemberPanel = new TeamMemberPanel(this.palette, () => { this.backToTeamPanel() })
     const bottom = new BottomPanel()
     this.bottom = bottom
     this.bottomList = new BottomList(this.palette, () => { this.syncDock(); tui.requestRender() })
@@ -425,11 +422,6 @@ export class TerminalApp {
       submit: (line) => { editor.onSubmit?.(line) },
     })
     editor.onChange = () => { this.completion?.schedule() }
-    composer.registerCommand({
-      name: 'team',
-      description: copy.commands.team,
-      run: (argument) => { void this.teamCommand(argument) },
-    })
     for (const command of this.pendingCommands.splice(0)) {
       this.contributedCommandDisposers.set(command, composer.registerCommand(command))
     }
@@ -519,10 +511,7 @@ export class TerminalApp {
       this.transcript?.live(frame)
     }))
     this.disposers.push(this.ctx.on('agent/status', ({ agent: subject }) => {
-      if (subject !== this.agent) {
-        if (this.isTeamMember(subject.session.id)) this.tui?.requestRender()
-        return
-      }
+      if (subject !== this.agent) return
       this.editor?.setHint(this.palette.dim(subject.status === 'running' ? copy.composer.running : copy.composer.idle))
       this.updateActivity()
       this.tui?.requestRender()
@@ -849,230 +838,6 @@ export class TerminalApp {
     }
     this.transcript?.notice(copy.queue.steeredAll(messages.length))
     this.refreshQueuePanel()
-  }
-
-  /** @returns the presented Session's Agent Team projection, when composed. */
-  private teamProjection() {
-    return readTeamProjection(this.ctx, this.agent)
-  }
-
-  /**
-   * Whether one live Agent belongs to the presented Team roster.
-   * @param id - candidate Session identity.
-   * @returns whether the roster names this teammate.
-   */
-  private isTeamMember(id: string): boolean {
-    const team = this.teamProjection()
-    return team?.members.some(member => member.id === id && member.role === 'teammate') === true
-  }
-
-  /**
-   * Handle `/team` and its argument forms.
-   * @param argument - panel (absent), `task <subject>`, or `message <member> <text>`.
-   */
-  private async teamCommand(argument: string | undefined): Promise<void> {
-    const text = argument?.trim() ?? ''
-    if (text === '') {
-      this.openTeamPanel()
-      return
-    }
-    const [verb, ...rest] = text.split(/\s+/u)
-    if (verb === 'task') {
-      const subject = rest.join(' ').trim()
-      if (subject === '') {
-        this.transcript?.notice(copy.team.usage)
-        return
-      }
-      await this.createTeamTask(subject)
-      return
-    }
-    if (verb === 'message') {
-      const target = rest.shift()
-      const message = rest.join(' ').trim()
-      if (target === undefined || message === '') {
-        this.transcript?.notice(copy.team.usage)
-        return
-      }
-      await this.sendTeamMessage(target, message)
-      return
-    }
-    this.transcript?.notice(copy.team.usage)
-  }
-
-  /**
-   * Create one shared task through the composed Team service.
-   * @param subject - task subject and description.
-   */
-  private async createTeamTask(subject: string): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent
-    if (service === undefined || agent === undefined) {
-      this.transcript?.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      const task = await service.createTask(agent, { subject, description: subject })
-      this.transcript?.notice(copy.team.taskCreated(task.id))
-      this.refreshTeamPanel()
-    } catch (error: unknown) {
-      this.transcript?.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /**
-   * Send one text message to a teammate through the composed Team service.
-   * @param target - teammate name.
-   * @param text - message text.
-   */
-  private async sendTeamMessage(target: string, text: string): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent
-    if (service === undefined || agent === undefined) {
-      this.transcript?.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      await service.sendMessage(agent, {
-        target,
-        content: [{ type: 'text', text }],
-        signal: new AbortController().signal,
-      })
-      this.transcript?.notice(copy.team.messageSent(target))
-    } catch (error: unknown) {
-      this.transcript?.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /**
-   * Apply one task transition through the composed Team service.
-   * @param task - selected task with its projection revision.
-   * @param action - claim or complete.
-   */
-  private async updateTeamTask(task: TeamTaskRow, action: 'claim' | 'complete'): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent
-    if (service === undefined || agent === undefined) {
-      this.transcript?.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      await service.updateTask(agent, { taskId: task.id, expectedRevision: task.revision, action })
-      this.transcript?.notice(action === 'claim' ? copy.team.taskClaimed(task.id) : copy.team.taskCompleted(task.id))
-      this.refreshTeamPanel()
-    } catch (error: unknown) {
-      this.transcript?.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /**
-   * Load one teammate Session into the read-only transcript panel.
-   * @param member - selected roster row.
-   */
-  private async openTeamMember(member: TeamMemberProjectionRow): Promise<void> {
-    const panel = this.teamMemberPanel
-    const query = this.ctx.get('sessionQuery')
-    if (panel === undefined) return
-    if (query === undefined) {
-      this.transcript?.notice(copy.team.historyUnavailable)
-      return
-    }
-    const sessionId = brandString<SessionId>(member.id)
-    try {
-      using observation = await query.observeSession(sessionId, { projectionMode: 'all' })
-      const lines: string[] = []
-      for (const event of observation.events) {
-        const line = formatTeamEvent(event)
-        if (line !== undefined) lines.push(line)
-      }
-      panel.setTranscript(member.name, lines)
-      this.teamMemberStop?.()
-      this.teamMemberStop = this.ctx.on('session/event', (session, event) => {
-        if (session.id !== sessionId) return
-        const line = formatTeamEvent(event)
-        if (line === undefined) return
-        panel.append(line)
-        this.tui?.requestRender()
-      })
-      this.setDockOverlay({
-        component: panel,
-        handleInput: (data) => { panel.handleInput(data); this.tui?.requestRender() },
-        close: () => { this.backToTeamPanel() },
-      })
-    } catch (error: unknown) {
-      this.transcript?.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /** Return from the teammate transcript to the roster panel. */
-  private backToTeamPanel(): void {
-    this.teamMemberStop?.()
-    this.teamMemberStop = undefined
-    this.teamMemberPanel?.setTranscript('', [])
-    this.openTeamPanel()
-  }
-
-  /** Pre-fill the composer with a task-creation command. */
-  private promptTeamTask(): void {
-    this.closeTeamPanel()
-    this.editor?.setText('/team task ')
-    this.tui?.requestRender()
-  }
-
-  /**
-   * Pre-fill the composer with a teammate-message command.
-   * @param member - selected teammate.
-   */
-  private promptTeamMessage(member: TeamMemberProjectionRow): void {
-    this.closeTeamPanel()
-    this.editor?.setText(`/team message ${member.name} `)
-    this.tui?.requestRender()
-  }
-
-  /** Present the Agent Team roster and task board in the dock. */
-  private openTeamPanel(): void {
-    const panel = this.teamPanel
-    const team = this.teamProjection()
-    if (panel === undefined) return
-    if (team === undefined) {
-      this.transcript?.notice(copy.team.unavailable)
-      return
-    }
-    panel.setTeam(team)
-    this.teamStop?.()
-    const projections = this.ctx.get('sessionProjections')
-    this.teamStop = projections?.onChanged((session) => {
-      if (session === this.agent?.session) this.refreshTeamPanel()
-    })
-    this.setDockOverlay({
-      component: panel,
-      handleInput: (data) => { panel.handleInput(data); this.tui?.requestRender() },
-      close: () => { this.closeTeamPanel() },
-    })
-  }
-
-  /** Refresh the open Team panel from the projection, closing it when it disappears. */
-  private refreshTeamPanel(): void {
-    const panel = this.teamPanel
-    if (panel === undefined) return
-    const team = this.teamProjection()
-    if (team === undefined) {
-      this.closeTeamPanel()
-      return
-    }
-    panel.setTeam(team)
-    this.tui?.requestRender()
-  }
-
-  /** Release the Team dock and its projection subscription. */
-  private closeTeamPanel(): void {
-    this.teamStop?.()
-    this.teamStop = undefined
-    this.teamMemberStop?.()
-    this.teamMemberStop = undefined
-    this.teamPanel?.setTeam(undefined)
-    this.teamMemberPanel?.setTranscript('', [])
-    if (this.teamPanel === undefined) return
-    this.setDockOverlay(undefined)
   }
 
   /** @returns the surface that currently owns dock input, if any. */
@@ -1834,31 +1599,4 @@ function initialSelection(agent: Agent): ModelSelection {
     model,
     ...(agent.options.reasoningEffort === undefined ? {} : { reasoningEffort: agent.options.reasoningEffort }),
   }
-}
-
-/**
- * Format one teammate Session event as one transcript line.
- * @param event - durable event from the teammate Session.
- * @returns the line, or undefined for events the viewer does not show.
- */
-function formatTeamEvent(event: SessionEvent): string | undefined {
-  if (event.type === 'user/message') {
-    const content = (event.data as { content?: readonly { type: string; text?: string }[] }).content ?? []
-    const text = content.flatMap(block => block.type === 'text' ? [block.text ?? ''] : []).join(' ').trim()
-    return text === '' ? undefined : copy.team.memberUser(text)
-  }
-  if (event.type === 'assistant/message') {
-    const content = (event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? []
-    const text = content.flatMap(block => block.type === 'text' ? [block.text ?? ''] : []).join(' ').trim()
-    return text === '' ? undefined : copy.team.memberAssistant(text)
-  }
-  if (event.type === 'tool/call') {
-    const name = (event.data as { name?: unknown }).name
-    return typeof name === 'string' ? copy.team.memberTool(name) : undefined
-  }
-  if (event.type === 'turn/end') {
-    const kind = (event.data as { reason?: { kind?: unknown } }).reason?.kind
-    return typeof kind === 'string' && kind !== 'completed' ? copy.team.memberTurnEnd(kind) : undefined
-  }
-  return undefined
 }

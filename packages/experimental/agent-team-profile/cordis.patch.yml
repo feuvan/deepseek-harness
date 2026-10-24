@@ -36,3 +36,8 @@
     # preset composition (Web and terminal).
     - id: agent-team-preset-overlay
       name: '@deepseek-ai/dsh-experimental-agent-team-profile'
+
+    # Terminal surfaces install through ctx.terminalUi; the row is inert in
+    # compositions without the terminal (Web) because the seam never exists.
+    - id: tui-agent-team
+      name: '@deepseek-ai/dsh-experimental-tui-agent-team'

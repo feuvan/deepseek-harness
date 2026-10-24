@@ -48,7 +48,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile
 
 本层会添加 Agent Teams domain，以及 Team-scoped 创建、roster、消息、interrupt、等待与任务板工具。直接委派使用支持 fresh 和 fork 上下文的 `spawn_teammate`。`subagent`、`subagent_fork` 工具和名称重叠的全局 child control 均被禁用。Workflow 保留 base profile 的 `spawn` 提供方，底层 Subagent 服务和两个提供方仍供 teammate 与 workflow 使用。
 
-在 Web 和 Desktop 会话中，[Team UI](../client-ui-agent-team/README.zh.md) 显示成员列表与共享任务看板，并可打开成员会话。同一个组合包开关控制工具与浏览器 UI。插件页通过组合包的 `package.json.icon` 声明读取其[图标](icon.svg)，组合包禁用时也会显示。
+在 Web 和 Desktop 会话中，[Team UI](../client-ui-agent-team/README.zh.md) 显示成员 roster 与共享任务板，并可打开 teammate 会话。终端 preset 也会通过本 bundle 抑制自己的 subagent 控制行，从而由 Team 工具替换而不是被遮蔽。终端 profile 通过 [`@deepseek-ai/dsh-experimental-tui-agent-team`](../tui-agent-team/README.zh.md) 渲染同一个 `agentTeam` projection：编辑器上方的紧凑状态行，以及 `/team` dock（Members / Tasks tab、只读 teammate transcript、认领/完成/创建任务动作）。在没有终端贡献 seam 的界面上该行是惰性的。同一个 bundle 开关控制工具与这两个界面。插件页通过组合包的 `package.json.icon` 声明读取其[图标](icon.svg)，组合包禁用时也会显示。
 
 -----
 

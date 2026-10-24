@@ -47,7 +47,8 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
-  setCopyLocale(resolveLocale(resolved.locale))
+  const locale = resolveLocale(resolved.locale)
+  setCopyLocale(locale)
   assertInteractiveTerminal(process.stdin.isTTY, process.stdout.isTTY)
   const exit = ctx.get('appExit')
   if (exit === undefined) {
@@ -55,6 +56,10 @@ export function apply(ctx: Context, config: Config): void {
   }
   const app = new TerminalApp(ctx, resolved, exit)
   const contribution: TerminalUi = {
+    palette: app.paletteTable,
+    locale,
+    agent: () => app.currentAgent(),
+    requestRender: () => { app.requestRender() },
     registerStrip: component => app.registerStrip(component),
     registerCommand: command => app.registerCommand(command),
     openDock: (component, close) => { app.openDock(component, close) },

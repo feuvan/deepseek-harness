@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { TeamPanel, type TeamPanelHandlers } from '../../src/components/team-panel.ts'
-import { copy, setCopyLocale } from '../../src/copy.ts'
-import { createPalette } from '../../src/palette.ts'
-import { agentTeam, teamMember, teamTask } from '../core/harness.ts'
-import { visibleLines } from '../support/terminal.ts'
+import { TeamPanel, type TeamPanelHandlers } from '../src/components/team-panel.ts'
+import { copy, setCopyLocale } from '../src/copy.ts'
+import { paletteDouble, teamMember, teamProjection, teamTask } from './harness.ts'
 
 /** Keys the Team panel binds. */
 const KEY = {
@@ -41,7 +39,7 @@ interface PanelHarness {
  * @param team - initial projection.
  * @returns the panel and its recordings.
  */
-function panelHarness(team: Parameters<TeamPanel['setTeam']>[0] = agentTeam()): PanelHarness {
+function panelHarness(team: Parameters<TeamPanel['setTeam']>[0] = teamProjection()): PanelHarness {
   const state = {
     opens: [] as { name: string }[],
     messages: [] as { name: string }[],
@@ -58,7 +56,7 @@ function panelHarness(team: Parameters<TeamPanel['setTeam']>[0] = agentTeam()): 
     completeTask: (task) => { state.completes.push({ id: task.id, revision: task.revision }) },
     createTask: () => { state.creates += 1 },
   }
-  const panel = new TeamPanel(createPalette(false), handlers)
+  const panel = new TeamPanel(paletteDouble().palette, handlers)
   Reflect.set(panel, 'team', team)
   return {
     panel,
@@ -73,7 +71,7 @@ function panelHarness(team: Parameters<TeamPanel['setTeam']>[0] = agentTeam()): 
 
 /** @returns the panel's rendered lines. */
 function rendered(panel: TeamPanel, width = 140): string[] {
-  return visibleLines(panel.render(width))
+  return (panel.render(width))
 }
 
 /** @returns whether some line contains the needle. */
@@ -100,7 +98,7 @@ describe('TeamPanel', () => {
   })
 
   it('renders leader-first member rows with a selection marker, roles, phases, and errors', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [
         teamMember(),
         teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate', phase: 'provisioning' }),
@@ -118,7 +116,7 @@ describe('TeamPanel', () => {
   })
 
   it('moves the selection marker one row per arrow key and clamps at both ends', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate' })],
     }))
 
@@ -138,7 +136,7 @@ describe('TeamPanel', () => {
       id: `task-${String(index)}`,
       subject: `Subject ${String(index)}`,
     }))
-    const harness = panelHarness(agentTeam({ tasks }))
+    const harness = panelHarness(teamProjection({ tasks }))
     harness.panel.handleInput(KEY.tab)
 
     expect(hasLine(rendered(harness.panel), `  ↓ ${copy.moreRows(3)}`)).toBe(true)
@@ -154,7 +152,7 @@ describe('TeamPanel', () => {
   })
 
   it('renders every task status with owner, blockers, and write-scope warnings', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       tasks: [
         teamTask({ id: 'ready', subject: 'Ready subject', revision: 4 }),
         teamTask({ id: 'blocked', subject: 'Blocked subject', ready: false, blockedBy: ['other'] }),
@@ -175,7 +173,7 @@ describe('TeamPanel', () => {
   })
 
   it('switches tabs with Tab/Right and Shift+Tab/Left and resets the cursor', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate' })],
       tasks: [teamTask({ subject: 'Only task' })],
     }))
@@ -195,19 +193,19 @@ describe('TeamPanel', () => {
   })
 
   it('clamps the cursor when the projection shrinks', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate' })],
     }))
     harness.panel.handleInput(KEY.down)
 
-    harness.panel.setTeam(agentTeam())
+    harness.panel.setTeam(teamProjection())
 
     expect(Reflect.get(harness.panel, 'index')).toBe(0)
     expect(hasLine(rendered(harness.panel), '❯ ★ Lead')).toBe(true)
   })
 
   it('dispatches member actions with the selected member', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate' })],
     }))
     harness.panel.handleInput(KEY.down)
@@ -222,7 +220,7 @@ describe('TeamPanel', () => {
   })
 
   it('dispatches task actions with the expected revision', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       tasks: [
         teamTask({ id: 'first', revision: 7 }),
         teamTask({ id: 'second', revision: 9, status: 'in_progress' }),
@@ -243,7 +241,7 @@ describe('TeamPanel', () => {
   })
 
   it('creates a task from an empty tab and ignores row actions', () => {
-    const harness = panelHarness(agentTeam({ members: [] }))
+    const harness = panelHarness(teamProjection({ members: [] }))
 
     expect(harness.panel.handleInput(KEY.enter)).toBe(false)
     expect(harness.panel.handleInput('m')).toBe(false)
@@ -258,7 +256,7 @@ describe('TeamPanel', () => {
   })
 
   it('renders empty tabs, the failure line, and closes on Escape', () => {
-    const harness = panelHarness(agentTeam({ members: [], failure: 'rejected record' }))
+    const harness = panelHarness(teamProjection({ members: [], failure: 'rejected record' }))
 
     const members = rendered(harness.panel)
     expect(members[2]).toContain(copy.team.failure)
@@ -283,7 +281,7 @@ describe('TeamPanel', () => {
 
   it('renders the Chinese labels', () => {
     setCopyLocale('zh')
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'Worker', role: 'teammate' })],
     }))
 
@@ -295,7 +293,7 @@ describe('TeamPanel', () => {
   })
 
   it('truncates every line to the panel width', () => {
-    const harness = panelHarness(agentTeam({
+    const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({
         id: SessionId('t1'), name: 'A very long teammate name that will not fit', role: 'teammate', error: 'long failure text that will also not fit',
       })],

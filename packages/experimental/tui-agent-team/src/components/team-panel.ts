@@ -13,7 +13,7 @@ import type {
 } from '../team.ts'
 import { copy } from '../copy.ts'
 import { displayText } from '../display-text.ts'
-import type { Palette } from '../palette.ts'
+import type { Palette } from '../types.ts'
 
 /** The two Team tabs. */
 type TeamTab = 'members' | 'tasks'

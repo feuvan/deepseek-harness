@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import type { TeamProjection } from '../../src/team.ts'
+import type { TeamProjection } from '../src/team.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { TeamStrip } from '../../src/components/team-strip.ts'
-import { copy, setCopyLocale } from '../../src/copy.ts'
-import { createPalette } from '../../src/palette.ts'
-import { agentTeam, agentsDouble, freshContext, teamMember, teamTask } from '../core/harness.ts'
-import { visibleLines } from '../support/terminal.ts'
+import { TeamStrip } from '../src/components/team-strip.ts'
+import { copy, setCopyLocale } from '../src/copy.ts'
+import { controllerHarness, paletteDouble, teamMember, teamProjection, teamTask } from './harness.ts'
 
 afterEach(() => {
   setCopyLocale('en')
@@ -24,11 +22,12 @@ function stripHarness(
   running = false,
 ): { strip: TeamStrip; set: (next: TeamProjection | undefined) => void } {
   let current = projection
-  const registry = agentsDouble()
-  const ctx = freshContext({ agents: registry.service })
-  if (running) registry.bindTeammateStatus('teammate-1', 'running')
+  const harness = controllerHarness()
+  if (running) harness.services.agentStatuses.set('teammate-1', 'running')
+  const { palette } = paletteDouble()
+  void color
   return {
-    strip: new TeamStrip(createPalette(color), ctx, () => current),
+    strip: new TeamStrip(palette, harness.ctx, () => current),
     set: (next) => { current = next },
   }
 }
@@ -39,11 +38,11 @@ describe('TeamStrip', () => {
   })
 
   it('renders nothing for a lead-only team', () => {
-    expect(stripHarness(agentTeam()).strip.render(120)).toEqual([])
+    expect(stripHarness(teamProjection()).strip.render(120)).toEqual([])
   })
 
   it('renders teammate, running, task, and bucket counts', () => {
-    const team = agentTeam({
+    const team = teamProjection({
       members: [
         teamMember(),
         teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' }),
@@ -58,7 +57,7 @@ describe('TeamStrip', () => {
     })
     const { strip } = stripHarness(team, false, true)
 
-    const [line] = visibleLines(strip.render(200))
+    const [line] = (strip.render(200))
     expect(line).toBe(
       ` ${copy.team.teammates(2)} · ${copy.team.running(1)} · ${copy.team.tasks(4)} · `
       + `(${copy.team.ready(1)} · ${copy.team.inProgress(1)} · ${copy.team.blocked(1)} · ${copy.team.completed(1)})`,
@@ -66,49 +65,51 @@ describe('TeamStrip', () => {
   })
 
   it('omits zero-count segments', () => {
-    const team = agentTeam({
+    const team = teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
     })
     const { strip } = stripHarness(team)
 
-    expect(visibleLines(strip.render(120))[0]).toBe(` ${copy.team.teammates(1)}`)
+    expect((strip.render(120))[0]).toBe(` ${copy.team.teammates(1)}`)
   })
 
   it('omits zero buckets inside a non-empty task list', () => {
-    const team = agentTeam({
+    const team = teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
       tasks: [teamTask({ id: 'blocked', ready: false })],
     })
     const { strip } = stripHarness(team)
 
-    const [line] = visibleLines(strip.render(200))
+    const [line] = (strip.render(200))
     expect(line).toBe(` ${copy.team.teammates(1)} · ${copy.team.tasks(1)} · (${copy.team.blocked(1)})`)
   })
 
   it('appends the failure with warning tone', () => {
-    const team = agentTeam({ failure: 'bad record' })
-    const { strip } = stripHarness(team, true)
+    const team = teamProjection({ failure: 'bad record' })
+    const palette = paletteDouble()
+    const harness = controllerHarness()
+    const strip = new TeamStrip(palette.palette, harness.ctx, () => team)
 
     const [line] = strip.render(200)
     expect(line).toContain(copy.team.failure)
     expect(line).toContain('bad record')
-    expect(line).toContain('\u001b[33m')
+    expect(palette.calls).toContain('warning')
   })
 
   it('updates with the projection and hides again', () => {
     const { strip, set } = stripHarness(undefined)
-    set(agentTeam({
+    set(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
     }))
 
-    expect(visibleLines(strip.render(120))[0]).toContain(copy.team.teammates(1))
+    expect((strip.render(120))[0]).toContain(copy.team.teammates(1))
 
-    set(agentTeam())
+    set(teamProjection())
     expect(strip.render(120)).toEqual([])
   })
 
   it('truncates to the available width', () => {
-    const team = agentTeam({
+    const team = teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
       tasks: [teamTask(), teamTask({ id: 'done', status: 'completed' })],
     })
@@ -119,15 +120,15 @@ describe('TeamStrip', () => {
 
   it('renders the Chinese labels', () => {
     setCopyLocale('zh')
-    const { strip } = stripHarness(agentTeam({
+    const { strip } = stripHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('teammate-1'), name: 'Worker', role: 'teammate' })],
     }))
 
-    expect(visibleLines(strip.render(120))[0]).toBe(` ${copy.team.teammates(1)}`)
+    expect((strip.render(120))[0]).toBe(` ${copy.team.teammates(1)}`)
   })
 
   it('has no cached state to invalidate', () => {
-    const { strip } = stripHarness(agentTeam())
+    const { strip } = stripHarness(teamProjection())
 
     expect(() => { strip.invalidate() }).not.toThrow()
   })

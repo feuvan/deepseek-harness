@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { TeamMemberPanel } from '../../src/components/team-member-panel.ts'
-import { copy, setCopyLocale } from '../../src/copy.ts'
-import { createPalette } from '../../src/palette.ts'
-import { visibleLines } from '../support/terminal.ts'
+import { TeamMemberPanel } from '../src/components/team-member-panel.ts'
+import { copy, setCopyLocale } from '../src/copy.ts'
+import { paletteDouble } from './harness.ts'
 
 /** Keys the teammate transcript binds. */
 const KEY = {
@@ -30,14 +29,14 @@ interface MemberHarness {
 function memberHarness(): MemberHarness {
   let closes = 0
   return {
-    panel: new TeamMemberPanel(createPalette(false), () => { closes += 1 }),
+    panel: new TeamMemberPanel(paletteDouble().palette, () => { closes += 1 }),
     get closes() { return closes },
   }
 }
 
 /** @returns the panel's rendered lines. */
 function rendered(panel: TeamMemberPanel, width = 120): string[] {
-  return visibleLines(panel.render(width))
+  return (panel.render(width))
 }
 
 /** @returns numbered transcript lines. */

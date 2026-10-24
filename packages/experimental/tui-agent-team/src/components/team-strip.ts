@@ -8,7 +8,7 @@
 
 import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { copy } from '../copy.ts'
-import type { Palette } from '../palette.ts'
+import type { Palette } from '../types.ts'
 import { summarizeTeam, teamVisible, type TeamProjection, type TeamSummary } from '../team.ts'
 import type { Context } from '@deepseek-ai/cordis'
 

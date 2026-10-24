@@ -10,7 +10,7 @@
 import { matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { copy } from '../copy.ts'
 import { displayText } from '../display-text.ts'
-import type { Palette } from '../palette.ts'
+import type { Palette } from '../types.ts'
 
 /** Maximum transcript rows shown at once. */
 const MAX_VISIBLE = 10

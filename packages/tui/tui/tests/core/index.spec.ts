@@ -229,8 +229,14 @@ describe('apply', () => {
     expect(seam).toBeDefined()
     expect(plugin.ctx.get('terminalUi')).toBe(seam)
     expect(Object.keys(seam ?? {}).sort()).toEqual([
-      'closeDock', 'notice', 'openDock', 'registerCommand', 'registerStrip', 'setEditorText',
+      'agent', 'closeDock', 'locale', 'notice', 'openDock', 'palette', 'registerCommand',
+      'registerStrip', 'requestRender', 'setEditorText',
     ])
+    expect(seam?.locale).toBe('en')
+    expect(typeof seam?.palette.dim).toBe('function')
+    expect(typeof seam?.agent).toBe('function')
+    expect(seam?.agent()).toBeDefined()
+    seam?.requestRender()
     const component = { render: () => ['seam strip'], invalidate: () => {} }
     const disposeStrip = seam?.registerStrip(component)
     const disposeCommand = seam?.registerCommand({ name: 'seam', description: 'Seam command', run: () => {} })

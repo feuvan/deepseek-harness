@@ -11,8 +11,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 
 /**
  * Structural subset of the Agent Teams client projection vocabulary. The
@@ -129,7 +129,7 @@ export function summarizeTeam(ctx: Context, team: TeamProjection): TeamSummary {
   for (const member of team.members) {
     if (member.role !== 'teammate') continue
     teammates += 1
-    if (ctx.get('agents')?.get(brandString<SessionId>(member.id))?.status === 'running') running += 1
+    if (ctx.get('agents')?.get(SessionId(member.id))?.status === 'running') running += 1
   }
   for (const task of team.tasks) {
     if (task.status === 'completed') completed += 1

@@ -46,6 +46,7 @@ describe('Agent Teams profile bundle', () => {
       '@deepseek-ai/dsh-experimental-agent-team': 'workspace:*',
       '@deepseek-ai/dsh-experimental-client-ui-agent-team': 'workspace:*',
       '@deepseek-ai/dsh-experimental-tool-agent-team': 'workspace:*',
+      '@deepseek-ai/dsh-experimental-tui-agent-team': 'workspace:*',
     })
     expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-agent-preset-registry')
     expect(manifest.devDependencies).toHaveProperty('@deepseek-ai/dsh-agent-preset-registry')
@@ -75,6 +76,9 @@ describe('Agent Teams profile bundle', () => {
     const inserted = parsed.flatMap(patch => patch.insert ?? [])
     expect(inserted.find(entry => entry.id === 'agent-team-preset-overlay')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-agent-team-profile',
+    })
+    expect(inserted.find(entry => entry.id === 'tui-agent-team')).toMatchObject({
+      name: '@deepseek-ai/dsh-experimental-tui-agent-team',
     })
     expect(name).toBe('agent-team-preset-overlay')
   })

@@ -1,0 +1,109 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { copy, setCopyLocale } from '../src/copy.ts'
+
+afterEach(() => {
+  setCopyLocale('en')
+})
+
+/** Collect every leaf path and leaf type of one copy tree. */
+function leaves(value: Record<string, unknown>, prefix = ''): [path: string, type: string][] {
+  const out: [string, string][] = []
+  for (const [key, entry] of Object.entries(value)) {
+    const path = prefix === '' ? key : `${prefix}.${key}`
+    if (typeof entry === 'object' && entry !== null) out.push(...leaves(entry as Record<string, unknown>, path))
+    else out.push([path, typeof entry])
+  }
+  return out
+}
+
+describe('moreRows', () => {
+  it('pluralizes one row and many rows in English', () => {
+    expect(copy.moreRows(1)).toBe('1 more row')
+    expect(copy.moreRows(3)).toBe('3 more rows')
+  })
+
+  it('localizes the row indicator', () => {
+    setCopyLocale('zh')
+    expect(copy.moreRows(2)).toBe('另外 2 行')
+  })
+})
+
+describe('team copy', () => {
+  it('formats the English labels, statuses, and notices', () => {
+    expect(copy.team.title).toBe('Agent Team')
+    expect(copy.team.membersTab).toBe('Members')
+    expect(copy.team.tasksTab).toBe('Tasks')
+    expect(copy.team.hint).toContain('Enter open')
+    expect(copy.team.memberHint).toBe('↑/↓ scroll · Esc back to the Team panel')
+    expect(copy.team.memberTitle('Worker')).toBe('Teammate Worker')
+    expect(copy.team.memberUser('hi')).toBe('› hi')
+    expect(copy.team.memberAssistant('ok')).toBe('  ok')
+    expect(copy.team.memberTool('bash')).toBe('  ⚙ bash')
+    expect(copy.team.memberTurnEnd('blocked')).toBe('  · blocked')
+    expect(copy.team.memberEmpty).toBe('No recorded events yet.')
+    expect(copy.team.unavailable).toContain('dsh-experimental-agent-team-profile')
+    expect(copy.team.failure).toBe('team record rejected')
+    expect(copy.team.emptyMembers).toBe('No teammates yet.')
+    expect(copy.team.emptyTasks).toBe('No shared tasks yet.')
+    expect(copy.team.lead).toBe('lead')
+    expect(copy.team.teammate).toBe('teammate')
+    expect(copy.team.phases).toEqual({ provisioning: 'provisioning', active: 'active', failed: 'failed' })
+    expect(copy.team.statuses).toEqual({ ready: 'ready', blocked: 'blocked', inProgress: 'in progress', completed: 'done' })
+    expect(copy.team.teammates(2)).toBe('2 teammate(s)')
+    expect(copy.team.running(1)).toBe('1 running')
+    expect(copy.team.tasks(3)).toBe('tasks 3')
+    expect(copy.team.ready(1)).toBe('1 ready')
+    expect(copy.team.blocked(1)).toBe('1 blocked')
+    expect(copy.team.inProgress(1)).toBe('1 in progress')
+    expect(copy.team.completed(1)).toBe('1 done')
+    expect(copy.team.usage).toBe('Usage: /team [task <subject> | message <member> <text>]')
+    expect(copy.team.taskCreated('t1')).toBe('Created shared task t1')
+    expect(copy.team.taskClaimed('t1')).toBe('Claimed task t1')
+    expect(copy.team.taskCompleted('t1')).toBe('Completed task t1')
+    expect(copy.team.messageSent('Worker')).toBe('Message sent to Worker')
+    expect(copy.team.historyUnavailable).toBe('Teammate history is unavailable in this composition.')
+    expect(copy.team.actionFailed('nope')).toBe('Team action failed: nope')
+  })
+
+  it('formats the Chinese labels and notices', () => {
+    setCopyLocale('zh')
+    expect(copy.team.title).toBe('Agent Team')
+    expect(copy.team.membersTab).toBe('成员')
+    expect(copy.team.tasksTab).toBe('任务')
+    expect(copy.team.hint).toContain('Enter 打开')
+    expect(copy.team.memberHint).toBe('↑/↓ 滚动 · Esc 返回 Team 面板')
+    expect(copy.team.memberTitle('Worker')).toBe('Teammate Worker')
+    expect(copy.team.memberUser('hi')).toBe('› hi')
+    expect(copy.team.memberAssistant('ok')).toBe('  ok')
+    expect(copy.team.memberTool('bash')).toBe('  ⚙ bash')
+    expect(copy.team.memberTurnEnd('blocked')).toBe('  · blocked')
+    expect(copy.team.memberEmpty).toBe('还没有记录事件。')
+    expect(copy.team.unavailable).toContain('dsh-experimental-agent-team-profile')
+    expect(copy.team.failure).toBe('team 记录被拒绝')
+    expect(copy.team.emptyMembers).toBe('还没有 teammate。')
+    expect(copy.team.emptyTasks).toBe('还没有共享任务。')
+    expect(copy.team.phases).toEqual({ provisioning: '准备中', active: '活动中', failed: '失败' })
+    expect(copy.team.statuses).toEqual({ ready: '就绪', blocked: '被阻塞', inProgress: '进行中', completed: '完成' })
+    expect(copy.team.teammates(2)).toBe('2 名 teammate')
+    expect(copy.team.running(1)).toBe('1 运行中')
+    expect(copy.team.tasks(3)).toBe('任务 3')
+    expect(copy.team.ready(1)).toBe('1 就绪')
+    expect(copy.team.blocked(1)).toBe('1 阻塞')
+    expect(copy.team.inProgress(1)).toBe('1 进行中')
+    expect(copy.team.completed(1)).toBe('1 完成')
+    expect(copy.team.usage).toContain('用法')
+    expect(copy.team.taskCreated('t1')).toBe('已创建共享任务 t1')
+    expect(copy.team.taskClaimed('t1')).toBe('已认领任务 t1')
+    expect(copy.team.taskCompleted('t1')).toBe('已完成任务 t1')
+    expect(copy.team.messageSent('Worker')).toBe('已向 Worker 发送消息')
+    expect(copy.team.historyUnavailable).toBe('当前组合无法读取 teammate 历史。')
+    expect(copy.team.actionFailed('nope')).toBe('Team 操作失败：nope')
+  })
+
+  it('keeps identical key paths and leaf types across locales', () => {
+    const english = leaves(copy).sort(([a], [b]) => a.localeCompare(b))
+    setCopyLocale('zh')
+    const chinese = leaves(copy).sort(([a], [b]) => a.localeCompare(b))
+    expect(chinese).toEqual(english)
+  })
+})

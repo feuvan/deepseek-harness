@@ -9,6 +9,8 @@
  */
 
 import type { Component } from '@earendil-works/pi-tui'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Palette } from './palette.ts'
 
 /** Stable Cordis service name for the terminal contribution seam. */
 export const TERMINAL_UI_SERVICE = 'terminalUi'
@@ -39,6 +41,14 @@ export interface TerminalDockComponent extends Component {
 
 /** The service plugins consume to extend the terminal interface. */
 export interface TerminalUi {
+  /** Terminal style table shared by built-in and contributed surfaces. */
+  readonly palette: Palette
+  /** Resolved interface locale, fixed for this launch. */
+  readonly locale: 'en' | 'zh'
+  /** @returns the presented root Agent, or undefined before it exists. */
+  agent(): Agent | undefined
+  /** Ask the renderer for a frame after a contribution changes state. */
+  requestRender(): void
   /**
    * Add one component line above the composer.
    * @param component - strip component; render zero lines to stay hidden.

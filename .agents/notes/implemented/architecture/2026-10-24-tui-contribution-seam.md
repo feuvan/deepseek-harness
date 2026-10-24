@@ -20,7 +20,7 @@ The seam intentionally exposes only presentations and text helpers (`setEditorTe
 
 ## Consequences
 
-Plugins can extend the terminal without depending on terminal internals. The API is deliberately narrow; richer surfaces need additional seam methods and a design review. The built-in Team panel remains in the stable package for now because moving it into an experimental plugin would add a package and migration for a presentation that already works through the seam.
+Plugins can extend the terminal without depending on terminal internals. The API is deliberately narrow; richer surfaces need additional seam methods and a design review. The Team surface has since moved into `@deepseek-ai/dsh-experimental-tui-agent-team`, which installs through the seam; the stable package keeps no Team code.
 
 ## Alternatives considered
 

@@ -205,78 +205,6 @@ const en = {
     failed: (path: string, message: string): string => `Image mention "${path}" could not be attached: ${message}`,
   },
   /** Pending-input strip shown while a turn runs. */
-  /** Agent Teams compact strip and dock panel. */
-  team: {
-    /** Panel heading. */
-    title: 'Agent Team',
-    /** Members tab label. */
-    membersTab: 'Members',
-    /** Tasks tab label. */
-    tasksTab: 'Tasks',
-    /** Panel key hint. */
-    hint: 'Tab/←/→ switch · ↑/↓ move · Enter open · m message · a claim · c complete · n new task · Esc close',
-    /** Teammate transcript hint. */
-    memberHint: '↑/↓ scroll · Esc back to the Team panel',
-    /** Teammate transcript heading prefix. */
-    memberTitle: (name: string): string => `Teammate ${name}`,
-    /** One teammate user message. */
-    memberUser: (text: string): string => `› ${text}`,
-    /** One teammate assistant message. */
-    memberAssistant: (text: string): string => `  ${text}`,
-    /** One teammate tool call. */
-    memberTool: (name: string): string => `  ⚙ ${name}`,
-    /** One teammate turn end that is not completion. */
-    memberTurnEnd: (reason: string): string => `  · ${reason}`,
-    /** Empty teammate transcript. */
-    memberEmpty: 'No recorded events yet.',
-    /** Command usage when a /team argument is invalid. */
-    usage: 'Usage: /team [task <subject> | message <member> <text>]',
-    /** Notice after creating a shared task. */
-    taskCreated: (id: string): string => `Created shared task ${id}`,
-    /** Notice after claiming a task. */
-    taskClaimed: (id: string): string => `Claimed task ${id}`,
-    /** Notice after completing a task. */
-    taskCompleted: (id: string): string => `Completed task ${id}`,
-    /** Notice after sending a teammate message. */
-    messageSent: (name: string): string => `Message sent to ${name}`,
-    /** Teammate history cannot be read in this composition. */
-    historyUnavailable: 'Teammate history is unavailable in this composition.',
-    /** A Team action failed. */
-    actionFailed: (message: string): string => `Team action failed: ${message}`,
-    /** Notice when the composition mounts no Team service. */
-    unavailable: 'Agent Teams is not composed in this profile. Enable dsh-experimental-agent-team-profile under /config → Experimental capabilities, then restart the terminal.',
-    /** Failure marker prefix. */
-    failure: 'team record rejected',
-    /** Empty members tab. */
-    emptyMembers: 'No teammates yet.',
-    /** Empty tasks tab. */
-    emptyTasks: 'No shared tasks yet.',
-    /** Lead role label. */
-    lead: 'lead',
-    /** Teammate role label. */
-    teammate: 'teammate',
-    /** Member phase labels. */
-    phases: {
-      provisioning: 'provisioning',
-      active: 'active',
-      failed: 'failed',
-    },
-    /** Task status labels. */
-    statuses: {
-      ready: 'ready',
-      blocked: 'blocked',
-      inProgress: 'in progress',
-      completed: 'done',
-    },
-    /** Compact strip segments. */
-    teammates: (count: number): string => `${String(count)} teammate(s)`,
-    running: (count: number): string => `${String(count)} running`,
-    tasks: (count: number): string => `tasks ${String(count)}`,
-    ready: (count: number): string => `${String(count)} ready`,
-    blocked: (count: number): string => `${String(count)} blocked`,
-    inProgress: (count: number): string => `${String(count)} in progress`,
-    completed: (count: number): string => `${String(count)} done`,
-  },
   /** Queued-message dock and delivery notices. */
   queue: {
     /** Panel heading. */
@@ -339,7 +267,6 @@ const en = {
     steer: 'Steer a message into the running turn, or steer all queued messages',
     config: 'Show and change the configuration',
     preset: 'Show or switch the agent preset',
-    team: 'Show the Agent Team roster and task board',
     /** The Agent is not live yet. */
     agentNotReady: 'The agent is not ready yet.',
     /** The Agent was disposed while the terminal was open. */
@@ -604,65 +531,6 @@ export const chinese: Copy = {
     tooMany: limit => `一条消息最多附加 ${String(limit)} 张图片。`,
     failed: (path, message) => `图片 "${path}" 附加失败：${message}`,
   },
-  /** Agent Teams 紧凑状态行与 dock 面板。 */
-  team: {
-    title: 'Agent Team',
-    membersTab: '成员',
-    tasksTab: '任务',
-    hint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开 · m 消息 · a 认领 · c 完成 · n 新建任务 · Esc 关闭',
-    /** teammate transcript 提示。 */
-    memberHint: '↑/↓ 滚动 · Esc 返回 Team 面板',
-    /** teammate transcript 标题前缀。 */
-    memberTitle: (name: string): string => `Teammate ${name}`,
-    /** teammate 用户消息。 */
-    memberUser: (text: string): string => `› ${text}`,
-    /** teammate 助手消息。 */
-    memberAssistant: (text: string): string => `  ${text}`,
-    /** teammate 工具调用。 */
-    memberTool: (name: string): string => `  ⚙ ${name}`,
-    /** teammate 非正常结束原因。 */
-    memberTurnEnd: (reason: string): string => `  · ${reason}`,
-    /** 空的 teammate transcript。 */
-    memberEmpty: '还没有记录事件。',
-    /** /team 参数无效时的用法。 */
-    usage: '用法：/team [task <subject> | message <member> <text>]',
-    /** 创建共享任务后的提示。 */
-    taskCreated: (id: string): string => `已创建共享任务 ${id}`,
-    /** 认领任务后的提示。 */
-    taskClaimed: (id: string): string => `已认领任务 ${id}`,
-    /** 完成任务后的提示。 */
-    taskCompleted: (id: string): string => `已完成任务 ${id}`,
-    /** 发送 teammate 消息后的提示。 */
-    messageSent: (name: string): string => `已向 ${name} 发送消息`,
-    /** 当前组合无法读取 teammate 历史。 */
-    historyUnavailable: '当前组合无法读取 teammate 历史。',
-    /** Team 动作失败的提示。 */
-    actionFailed: (message: string): string => `Team 操作失败：${message}`,
-    unavailable: '当前 profile 没有组装 Agent Teams。请在 /config → 实验性能力中启用 dsh-experimental-agent-team-profile，然后重启终端。',
-    failure: 'team 记录被拒绝',
-    emptyMembers: '还没有 teammate。',
-    emptyTasks: '还没有共享任务。',
-    lead: 'lead',
-    teammate: 'teammate',
-    phases: {
-      provisioning: '准备中',
-      active: '活动中',
-      failed: '失败',
-    },
-    statuses: {
-      ready: '就绪',
-      blocked: '被阻塞',
-      inProgress: '进行中',
-      completed: '完成',
-    },
-    teammates: (count: number): string => `${String(count)} 名 teammate`,
-    running: (count: number): string => `${String(count)} 运行中`,
-    tasks: (count: number): string => `任务 ${String(count)}`,
-    ready: (count: number): string => `${String(count)} 就绪`,
-    blocked: (count: number): string => `${String(count)} 阻塞`,
-    inProgress: (count: number): string => `${String(count)} 进行中`,
-    completed: (count: number): string => `${String(count)} 完成`,
-  },
   /** 排队消息面板与投递提示。 */
   queue: {
     title: '排队消息',
@@ -704,7 +572,6 @@ export const chinese: Copy = {
     steer: '把消息插话到运行中的轮次；不带参数时插话全部排队消息',
     config: '显示并修改配置',
     preset: '显示或切换 agent preset',
-    team: '显示 Agent Team 成员与任务板',
     agentNotReady: 'Agent 尚未就绪。',
     disposed: 'Agent 已被释放；正在关闭终端。',
     unknown: name => `未知命令：/${name}。输入 /help 查看可用命令。`,
