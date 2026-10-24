@@ -35,7 +35,7 @@ The banner names the model and the Session. The transcript above the composer sh
 | Enter | Send a prompt; while a turn runs, steer it at its next step |
 | Alt+Enter or Ctrl+J | Insert a newline |
 | Ctrl+C | Close the open panel, cancel a running turn, or exit when idle |
-| Ctrl+O | Cycle collapsed, expanded, and hidden tool cards |
+| Ctrl+O | Cycle tool-card visibility (collapsed → expanded → hidden) |
 | Ctrl+R | Cycle reasoning visibility (compact → standard → detailed → verbose) |
 | Ctrl+L | Repaint the screen |
 | Esc | Interrupt a running turn when the composer is empty |
@@ -86,6 +86,10 @@ Ctrl+V attaches an image from your system clipboard to the next prompt, provided
 ### Reasoning visibility
 
 Reasoning blocks render at one of four visibility levels, matching the Desktop work-details modes: `compact` (a one-line preview), `standard` (a short preview), `detailed` (a longer preview), and `verbose` (the complete block). Ctrl+R cycles the levels, `/reasoning <level>` sets one directly (the localized names work too), and the footer shows the active level after the model and effort.
+
+### Tool cards
+
+Tool-card bodies render in one of three visibility modes: `collapsed` (a preview bounded by `previewLines`), `expanded` (the complete body), and `hidden` (no tool cards). Ctrl+O or `/cards` cycles the modes, `/cards <mode>` sets one directly (the localized names work too), and Tab completes the mode argument. Every change prints a `Tool cards: <mode>` notice, `/status` shows the active mode, and the Terminal display tab of `/config` cycles it through the same action.
 
 ### Configuration
 

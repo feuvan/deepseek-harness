@@ -544,12 +544,37 @@ describe('Transcript clear, cards, reasoning, and notices', () => {
   it('cycles the card mode back to collapsed', () => {
     const { transcript, requestRender } = transcriptHarness()
 
+    expect(transcript.cardsMode()).toBe('collapsed')
     transcript.toggleCards()
+    expect(transcript.cardsMode()).toBe('expanded')
     transcript.toggleCards()
+    expect(transcript.cardsMode()).toBe('hidden')
     transcript.toggleCards()
 
+    expect(transcript.cardsMode()).toBe('collapsed')
     expect(requestRender).toHaveBeenCalledTimes(3)
     expect(transcript.renderedBlocks()).toEqual([])
+  })
+
+  it('sets an explicit card mode and repaints every block', () => {
+    const tool = testTool('run', {
+      presentCall: () => ({ card: 'terminal', title: 'run the thing' }),
+      presentResult: () => ({ card: 'terminal', output: 'a\nb\nc' }),
+    })
+    const { transcript, requestRender } = transcriptHarness({ findTool: () => tool, previewLines: 1 })
+    transcript.append(toolCall(0, 1, 1, 'call-1', 'run', '{}'))
+    transcript.append(toolResult(1, 1, 1, 'call-1', [{ type: 'text', text: 'raw' }]))
+    requestRender.mockClear()
+
+    transcript.setCardsMode('hidden')
+    expect(transcript.cardsMode()).toBe('hidden')
+    expect(transcript.component.render(80)).toEqual([])
+    expect(requestRender).toHaveBeenCalledOnce()
+
+    transcript.setCardsMode('expanded')
+    expect(transcript.cardsMode()).toBe('expanded')
+    expect(renderedText(transcript)).toContain('c')
+    expect(requestRender).toHaveBeenCalledTimes(2)
   })
 
   it('defaults to the standard level and re-renders existing blocks on a level change', () => {

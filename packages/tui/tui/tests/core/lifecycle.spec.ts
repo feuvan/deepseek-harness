@@ -14,7 +14,7 @@ import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
 import type { Composer } from '../../src/commands.ts'
 import type { Footer } from '../../src/components/footer.ts'
-import { copy, setCopyLocale } from '../../src/copy.ts'
+import { chinese, copy, setCopyLocale } from '../../src/copy.ts'
 import type { ComposerDeps } from '../../src/commands.ts'
 import type { PromptEditor } from '../../src/components/editor.ts'
 import type { BottomPanel, DockSurface } from '../../src/components/bottom.ts'
@@ -195,6 +195,16 @@ async function submitLine(harness: LifecycleHarness, line: string): Promise<void
   for (const character of line) harness.terminal.headless.press(character)
   harness.terminal.headless.press('\r')
   await Promise.resolve()
+}
+
+/**
+ * Submit one line through the composer without the editor completion window.
+ * @param harness - the application harness.
+ * @param line - exact command line.
+ */
+function submitCommand(harness: LifecycleHarness, line: string): void {
+  const composer = privateValue(harness.app, 'composer') as { submit(text: string): void }
+  composer.submit(line)
 }
 
 /**
@@ -661,8 +671,13 @@ describe('TerminalApp input handling', () => {
     expect(transcript.reasoningLevel()).toBe('standard')
 
     harness.ctx.emit('session/event', harness.session, toolCall(1, 1, 1, 'call-1', 'echo', '{}'))
+    expect(transcript.cardsMode()).toBe('collapsed')
     harness.terminal.headless.press('\x0f')
+    expect(transcript.cardsMode()).toBe('expanded')
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
     harness.terminal.headless.press('\x0f')
+    expect(transcript.cardsMode()).toBe('hidden')
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.hidden))
     expect(harness.transcriptText()).not.toContain('Tool / echo')
 
     harness.terminal.headless.press('\x0c')
@@ -2617,6 +2632,11 @@ describe('TerminalApp /config dock', () => {
     expect(manager.switched.map(entry => entry.name)).not.toContain('bundle-ro')
 
     await pressConfigRow(harness, panel, 'display', 'display.cards')
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+    expect(transcript.cardsMode()).toBe('expanded')
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
+    })
     await pressConfigRow(harness, panel, 'display', 'display.reasoning')
     expect(privateValue(harness.app, 'transcript')).toBeDefined()
 
@@ -3788,5 +3808,125 @@ describe('TerminalApp /preset', () => {
     for (const key of '/pres') harness.terminal.headless.press(key)
     await waitForDock(harness, copy.completion.title)
     expect(dockText(harness.app)).toContain(copy.commands.preset)
+  })
+})
+
+describe('TerminalApp card modes', () => {
+  it('cycles the tool-card mode through the command with a notice each time', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    expect(transcript.cardsMode()).toBe('collapsed')
+    await submitLine(harness, '/cards')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('expanded') })
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
+
+    await submitLine(harness, '/cards')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('hidden') })
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.hidden))
+
+    await submitLine(harness, '/cards')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('collapsed') })
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.collapsed))
+  })
+
+  it('sets explicit mode ids and localized mode names', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    submitCommand(harness, '/cards hidden')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('hidden') })
+    expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.hidden))
+
+    submitCommand(harness, '/cards  EXPANDED ')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('expanded') })
+
+    submitCommand(harness, '/cards collapsed')
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('collapsed') })
+  })
+
+  it('parses the localized mode names under the Chinese locale', async () => {
+    setCopyLocale('zh')
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    submitCommand(harness, '/cards 隐藏')
+
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('hidden') })
+    expect(harness.transcriptText()).toContain(chinese.cards.changed(chinese.cards.levels.hidden))
+  })
+
+  it('reports the available modes for an unknown argument without changing the mode', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    submitCommand(harness, '/cards turbo')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.cards.available('collapsed, expanded, hidden'))
+    })
+    expect(transcript.cardsMode()).toBe('collapsed')
+  })
+
+  it('treats a blank argument as a cycle request', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    submitCommand(harness, '/cards    ')
+
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('expanded') })
+  })
+
+  it('ignores a card-mode change before the transcript exists', async () => {
+    const harness = await lifecycleHarness()
+    const setCardsMode = privateValue(harness.app, 'setCardsMode') as (argument: string | undefined) => void
+
+    expect(() => { setCardsMode.call(harness.app, 'hidden') }).not.toThrow()
+    expect(() => { setCardsMode.call(harness.app, undefined) }).not.toThrow()
+  })
+
+  it('shows the tool-card row in the status panel', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/cards expanded')
+
+    await submitLine(harness, '/status')
+    await waitForDock(harness, copy.panel.status)
+
+    const row = `${copy.statusPanel.cards.padEnd(12, ' ')} ${copy.cards.levels.expanded}`
+    expect(dockText(harness.app)).toContain(row)
+  })
+
+  it('completes and runs a card-mode argument through real input', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    for (const key of '/cards ex') harness.terminal.headless.press(key)
+    await waitForDock(harness, copy.completion.title)
+    expect(dockText(harness.app)).toContain(copy.cards.levels.expanded)
+
+    harness.terminal.headless.press('\t')
+
+    await vi.waitFor(() => { expect(editorOf(harness.app).getText()).toContain('expanded') })
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(transcript.cardsMode()).toBe('expanded') })
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
+    })
+    expect(editorOf(harness.app).getText()).toBe('')
   })
 })

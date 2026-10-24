@@ -35,7 +35,7 @@ dsh --profile headless "run the tests"
 | Enter | 发送提示；轮次运行时在下一个步骤边界 steer 它 |
 | Alt+Enter 或 Ctrl+J | 插入换行 |
 | Ctrl+C | 关闭打开的面板、取消运行中的轮次，或空闲时退出 |
-| Ctrl+O | 在收缩、展开与隐藏工具卡之间循环 |
+| Ctrl+O | 循环工具卡可见性（折叠 → 展开 → 隐藏） |
 | Ctrl+R | 显示或隐藏推理 |
 | Ctrl+L | 重绘屏幕 |
 | Esc | 编辑器为空时中断运行中的轮次 |
@@ -86,6 +86,10 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 ### 推理显示
 
 推理块按四级可见性渲染，与 Desktop 的工作细节模式对应：`compact`（单行预览）、`standard`（短预览）、`detailed`（较长预览）、`verbose`（完整块）。Ctrl+R 循环切换，`/reasoning <level>` 直接设置（也接受中文级别名），页脚在模型与推理强度之后显示当前级别。
+
+### 工具卡
+
+工具卡正文有三种可见模式：`collapsed`（按 `previewLines` 限制的预览）、`expanded`（完整正文）、`hidden`（不显示工具卡）。Ctrl+O 或 `/cards` 循环切换，`/cards <mode>` 直接设置（也接受中文模式名），Tab 可补全模式参数。每次切换都会打印 `工具卡：<模式>` 通知，`/status` 显示当前模式，`/config` 的 Terminal display tab 通过同一动作循环切换。
 
 ### 配置
 

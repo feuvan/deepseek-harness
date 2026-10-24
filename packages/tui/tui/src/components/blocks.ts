@@ -11,11 +11,12 @@ import { diffLines } from 'diff'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { FileDiff, ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { copy } from '../copy.ts'
+import type { CardMode } from '../cards.ts'
 import { displayText } from '../display-text.ts'
 import type { Palette } from '../palette.ts'
 
 /** How tool-card bodies are shown for the whole transcript. */
-export type CardMode = 'collapsed' | 'expanded' | 'hidden'
+export type { CardMode } from '../cards.ts'
 
 /** Values every transcript block needs at render time. */
 export interface BlockContext {

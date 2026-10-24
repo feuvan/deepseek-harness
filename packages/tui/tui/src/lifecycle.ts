@@ -28,6 +28,7 @@ import { TerminalAutocompleteProvider } from './autocomplete.ts'
 import { expandPromptMentions } from './mentions.ts'
 import { readClipboardImage } from './clipboard.ts'
 import { nextReasoningLevel, parseReasoningLevel, REASONING_LEVELS } from './reasoning.ts'
+import { CARD_MODES, nextCardMode, parseCardMode } from './cards.ts'
 import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer, type InteractionDock } from './interactions.ts'
 import { StatusModel } from './status.ts'
 import { TerminalTranscript } from './transcript.ts'
@@ -272,7 +273,7 @@ export class TerminalApp {
         model: () => { void this.openModelSelector() },
         clear: () => { this.transcript?.clear() },
         reasoning: (argument) => { this.setReasoningVisibility(argument) },
-        cards: () => { this.transcript?.toggleCards() },
+        cards: (argument) => { this.setCardsMode(argument) },
         effort: argument => this.setEffort(argument),
         permission: (argument) => { this.choosePermission(argument) },
         queue: argument => this.queuePrompt(argument),
@@ -340,7 +341,7 @@ export class TerminalApp {
         return { consume: true }
       }
       if (matchesKey(data, 'ctrl+o')) {
-        this.transcript?.toggleCards()
+        this.setCardsMode(undefined)
         return { consume: true }
       }
       if (matchesKey(data, 'ctrl+r')) {
@@ -656,7 +657,7 @@ export class TerminalApp {
           return { notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
         }
       },
-      toggleCards: () => { this.transcript?.toggleCards(); return undefined },
+      toggleCards: () => { this.setCardsMode(undefined); return undefined },
       toggleReasoning: () => { this.setReasoningVisibility(undefined); return undefined },
     }
     const display = {
@@ -738,6 +739,30 @@ export class TerminalApp {
     this.footer?.invalidate()
     this.tui?.requestRender()
     this.transcript?.notice(copy.reasoning.changed(copy.reasoning.levels[level]))
+  }
+
+  /**
+   * Cycle or set the tool-card visibility mode.
+   * @param argument - explicit mode id or localized name; absent cycles.
+   */
+  private setCardsMode(argument: string | undefined): void {
+    const transcript = this.transcript
+    if (transcript === undefined) return
+    const query = argument?.trim()
+    let mode
+    if (query === undefined || query === '') {
+      mode = nextCardMode(transcript.cardsMode())
+    } else {
+      const parsed = parseCardMode(query)
+      if (parsed === undefined) {
+        transcript.notice(copy.cards.available(CARD_MODES.join(', ')))
+        return
+      }
+      mode = parsed
+    }
+    transcript.setCardsMode(mode)
+    this.tui?.requestRender()
+    transcript.notice(copy.cards.changed(copy.cards.levels[mode]))
   }
 
   /** Push the current turn and modal state to the terminal's own status reporting. */
@@ -1197,6 +1222,7 @@ export class TerminalApp {
       `${labels.preset.padEnd(12, ' ')} ${this.presetId() === undefined ? labels.notAvailable : this.presetLabel(this.presetId() ?? '')}`,
       `${labels.effort.padEnd(12, ' ')} ${effort}`,
       `${labels.reasoning.padEnd(12, ' ')} ${copy.reasoning.levels[this.transcript?.reasoningLevel() ?? 'standard']}`,
+      `${labels.cards.padEnd(12, ' ')} ${copy.cards.levels[this.transcript?.cardsMode() ?? 'collapsed']}`,
       `${labels.permissions.padEnd(12, ' ')} ${state.permission ?? 'unknown'}`,
       `${labels.state.padEnd(12, ' ')} ${state.status}`,
       `${labels.tokens.padEnd(12, ' ')} ↑${String(state.inputTokens)} ↓${String(state.outputTokens)}`,

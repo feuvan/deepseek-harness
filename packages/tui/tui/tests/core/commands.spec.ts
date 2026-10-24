@@ -26,6 +26,7 @@ interface ComposerHarness {
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
   readonly presetArgs: (string | undefined)[]
+  readonly cardArgs: (string | undefined)[]
   readonly configures: string[]
   readonly notices: string[]
   readonly agent: AgentDouble
@@ -59,6 +60,7 @@ async function composerHarness(options: {
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
   const presetArgs: (string | undefined)[] = []
+  const cardArgs: (string | undefined)[] = []
   const configures: string[] = []
   const notices: string[] = []
   let presented: Agent | undefined = agent.agent
@@ -69,7 +71,7 @@ async function composerHarness(options: {
     model: record('model'),
     clear: record('clear'),
     reasoning: (argument) => { local.push('reasoning'); reasoningArgs.push(argument) },
-    cards: record('cards'),
+    cards: (argument) => { local.push('cards'); cardArgs.push(argument) },
     redraw: record('redraw'),
     effort: (argument) => { local.push('effort'); effortArgs.push(argument) },
     permission: (argument) => { local.push('permission'); permissionArgs.push(argument) },
@@ -95,6 +97,7 @@ async function composerHarness(options: {
     permissionArgs,
     queueArgs,
     presetArgs,
+    cardArgs,
     configures,
     notices,
     agent,
@@ -345,6 +348,7 @@ describe('Composer.helpLines', () => {
     expect(lines[0]).toBe('Keys')
     expect(lines).toContain('  /help               Show keys and commands')
     expect(lines).toContain('  /preset             ' + copy.commands.preset)
+    expect(lines).toContain('  /cards              ' + copy.commands.cards)
     expect(lines.some(line => line.includes('/inspect'))).toBe(false)
   })
 
@@ -618,6 +622,41 @@ describe('Composer copy and /queue', () => {
 
     expect(await reasoning?.getArgumentCompletions?.('详细')).toEqual([{ value: 'detailed', label: '详细' }])
     expect(await reasoning?.getArgumentCompletions?.('')).toHaveLength(4)
+  })
+
+  it('offers the card modes as argument completions', async () => {
+    const harness = await composerHarness()
+    const cards = harness.composer.slashCommands().find(command => command.name === 'cards')
+
+    expect(cards?.argumentHint).toBe('<mode>')
+    expect(await cards?.getArgumentCompletions?.('')).toEqual([
+      { value: 'collapsed', label: copy.cards.levels.collapsed },
+      { value: 'expanded', label: copy.cards.levels.expanded },
+      { value: 'hidden', label: copy.cards.levels.hidden },
+    ])
+    expect(await cards?.getArgumentCompletions?.('EXP')).toEqual([{ value: 'expanded', label: 'expanded' }])
+    expect(await cards?.getArgumentCompletions?.('hid')).toEqual([{ value: 'hidden', label: 'hidden' }])
+    expect(await cards?.getArgumentCompletions?.('zzz')).toEqual([])
+  })
+
+  it('localizes and filters the card mode completions', async () => {
+    setCopyLocale('zh')
+    const harness = await composerHarness()
+    const cards = harness.composer.slashCommands().find(command => command.name === 'cards')
+
+    expect(await cards?.getArgumentCompletions?.('')).toHaveLength(3)
+    expect(await cards?.getArgumentCompletions?.('隐藏')).toEqual([{ value: 'hidden', label: '隐藏' }])
+    expect(await cards?.getArgumentCompletions?.('展')).toEqual([{ value: 'expanded', label: '展开' }])
+  })
+
+  it('passes a parsed card argument', async () => {
+    const harness = await composerHarness()
+
+    harness.composer.submit('/cards hidden')
+    harness.composer.submit('/cards')
+
+    expect(harness.cardArgs).toEqual(['hidden', undefined])
+    expect(harness.local).toEqual(['cards', 'cards'])
   })
 
   it('passes a parsed queue argument', async () => {

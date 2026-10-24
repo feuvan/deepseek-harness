@@ -142,6 +142,19 @@ const en = {
     /** Notice that the preset could not be changed. */
     failed: (message: string): string => `Agent preset unchanged: ${message}`,
   },
+  /** Tool-card visibility labels. */
+  cards: {
+    /** Localized mode names, keyed by mode id. */
+    levels: {
+      collapsed: 'collapsed',
+      expanded: 'expanded',
+      hidden: 'hidden',
+    },
+    /** Notice after changing the mode. */
+    changed: (mode: string): string => `Tool cards: ${mode}`,
+    /** Usage hint for an unknown mode argument. */
+    available: (values: string): string => `Available card modes: ${values}`,
+  },
   /** Reasoning-visibility labels. */
   reasoning: {
     /** Heading for the reasoning chooser and status row. */
@@ -219,7 +232,7 @@ const en = {
     permission: 'Show or switch the permission preset',
     clear: 'Clear the rendered transcript',
     reasoning: 'Cycle or set the reasoning visibility',
-    cards: 'Cycle collapsed, expanded, and hidden tool cards',
+    cards: 'Cycle or set the tool-card visibility',
     redraw: 'Repaint the screen',
     exit: 'Close the terminal',
     quit: 'Close the terminal',
@@ -274,6 +287,8 @@ const en = {
     effort: 'Effort',
     /** Reasoning visibility label. */
     reasoning: 'Reasoning',
+    /** Tool-card visibility label. */
+    cards: 'Tool cards',
     /** Permission preset label. */
     permissions: 'Permissions',
     /** Agent status label. */
@@ -507,7 +522,7 @@ export const chinese: Copy = {
     permission: '显示或切换权限预设',
     clear: '清空已渲染的 transcript',
     reasoning: '循环或设置推理显示级别',
-    cards: '在收缩、展开与隐藏工具卡之间循环',
+    cards: '循环或设置工具卡可见性',
     redraw: '重绘屏幕',
     exit: '关闭终端',
     quit: '关闭终端',
@@ -544,6 +559,7 @@ export const chinese: Copy = {
     preset: 'Agent preset',
     effort: '推理强度',
     reasoning: '推理显示',
+    cards: '工具卡',
     permissions: '权限',
     state: '状态',
     tokens: 'Token',
@@ -599,6 +615,16 @@ export const chinese: Copy = {
     locked: '本会话已经开始，agent preset 不能再切换。',
     unavailable: '当前终端没有组装 agent preset。',
     failed: (message: string): string => `agent preset 未更改：${message}`,
+  },
+  /** 工具卡可见性文案。 */
+  cards: {
+    levels: {
+      collapsed: '折叠',
+      expanded: '展开',
+      hidden: '隐藏',
+    },
+    changed: (mode: string): string => `工具卡：${mode}`,
+    available: (values: string): string => `可用工具卡模式：${values}`,
   },
   reasoning: {
     title: '推理显示',

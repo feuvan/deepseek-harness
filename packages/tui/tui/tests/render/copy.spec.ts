@@ -111,6 +111,26 @@ describe('copy dictionaries', () => {
     for (const [path, format] of functions) expect(typeof format(), path).toBe('string')
   })
 
+  it('formats the tool-card visibility labels and notices', () => {
+    expect(copy.cards.levels.collapsed).toBe('collapsed')
+    expect(copy.cards.levels.expanded).toBe('expanded')
+    expect(copy.cards.levels.hidden).toBe('hidden')
+    expect(copy.cards.changed('expanded')).toBe('Tool cards: expanded')
+    expect(copy.cards.available('collapsed, expanded, hidden'))
+      .toBe('Available card modes: collapsed, expanded, hidden')
+    expect(copy.commands.cards).toBe('Cycle or set the tool-card visibility')
+    expect(copy.statusPanel.cards).toBe('Tool cards')
+
+    setCopyLocale('zh')
+    expect(copy.cards.levels.collapsed).toBe('折叠')
+    expect(copy.cards.levels.expanded).toBe('展开')
+    expect(copy.cards.levels.hidden).toBe('隐藏')
+    expect(copy.cards.changed('展开')).toBe('工具卡：展开')
+    expect(copy.cards.available('折叠, 展开, 隐藏')).toBe('可用工具卡模式：折叠, 展开, 隐藏')
+    expect(copy.commands.cards).toBe('循环或设置工具卡可见性')
+    expect(copy.statusPanel.cards).toBe('工具卡')
+  })
+
   it('formats the agent-preset labels, descriptions, and notices', () => {
     expect(copy.prompt.presetTitle).toBe('Agent preset')
     expect(copy.prompt.presetCurrent).toBe('current')

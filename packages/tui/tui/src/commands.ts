@@ -11,6 +11,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SlashCommand } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { REASONING_LEVELS } from './reasoning.ts'
+import { CARD_MODES } from './cards.ts'
 
 /** Terminal-local controls the composer owns instead of dispatching to the agent. */
 export interface LocalCommands {
@@ -24,8 +25,8 @@ export interface LocalCommands {
   clear(): void
   /** Cycle or set the reasoning visibility; an absent argument advances the level. */
   reasoning(argument: string | undefined): void | Promise<void>
-  /** Cycle tool-card density. */
-  cards(): void
+  /** Cycle or set the tool-card visibility; an absent argument advances the mode. */
+  cards(argument: string | undefined): void | Promise<void>
   /** Repaint the screen. */
   redraw(): void
   /** Choose or set the reasoning effort; an absent argument opens the chooser. */
@@ -98,7 +99,7 @@ export class Composer {
       model: { description: copy.commands.model, run: () => { deps.local.model() } },
       clear: { description: copy.commands.clear, run: () => { deps.local.clear() } },
       reasoning: { description: copy.commands.reasoning, run: (argument) => { void deps.local.reasoning(argument) } },
-      cards: { description: copy.commands.cards, run: () => { deps.local.cards() } },
+      cards: { description: copy.commands.cards, run: (argument) => { void deps.local.cards(argument) } },
       redraw: { description: copy.commands.redraw, run: () => { deps.local.redraw() } },
       effort: { description: copy.commands.effort, run: (argument) => { void deps.local.effort(argument) } },
       permission: { description: copy.commands.permission, run: (argument) => { void deps.local.permission(argument) } },
@@ -192,6 +193,8 @@ export class Composer {
         argument = { argumentHint: '<level>', getArgumentCompletions: (prefix: string) => this.argumentChoices(efforts, prefix) }
       } else if (name === 'reasoning') {
         argument = { argumentHint: '<level>', getArgumentCompletions: (prefix: string) => this.reasoningChoices(prefix) }
+      } else if (name === 'cards') {
+        argument = { argumentHint: '<mode>', getArgumentCompletions: (prefix: string) => this.cardChoices(prefix) }
       } else if (name === 'permission' && permissions !== undefined) {
         argument = { argumentHint: '<preset>', getArgumentCompletions: (prefix: string) => this.argumentChoices(() => Promise.resolve(permissions()), prefix) }
       }
@@ -218,6 +221,18 @@ export class Composer {
     const query = prefix.trim().toLowerCase()
     return REASONING_LEVELS
       .map(level => ({ value: level, label: copy.reasoning.levels[level] }))
+      .filter(item => item.value.includes(query) || item.label.toLowerCase().includes(query))
+  }
+
+  /**
+   * Filter the tool-card modes by the typed argument prefix.
+   * @param prefix - typed argument prefix.
+   * @returns matching completion items.
+   */
+  private cardChoices(prefix: string): { value: string; label: string }[] {
+    const query = prefix.trim().toLowerCase()
+    return CARD_MODES
+      .map(mode => ({ value: mode, label: copy.cards.levels[mode] }))
       .filter(item => item.value.includes(query) || item.label.toLowerCase().includes(query))
   }
 

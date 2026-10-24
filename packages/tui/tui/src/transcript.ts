@@ -18,7 +18,8 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { copy } from './copy.ts'
 import { reasoningPreviewLines, type ReasoningVisibility } from './reasoning.ts'
-import { AssistantBlock, CommandBlock, NoticeBlock, ToolCardBlock, UserMessageBlock, type BlockContext, type CardMode } from './components/blocks.ts'
+import { nextCardMode, type CardMode } from './cards.ts'
+import { AssistantBlock, CommandBlock, NoticeBlock, ToolCardBlock, UserMessageBlock, type BlockContext } from './components/blocks.ts'
 import type { Palette } from './palette.ts'
 
 /** Values the transcript needs from the terminal application. */
@@ -130,7 +131,23 @@ export class TerminalTranscript {
 
   /** Cycle the global card mode: collapsed → expanded → hidden. */
   toggleCards(): void {
-    this.mode = this.mode === 'collapsed' ? 'expanded' : this.mode === 'expanded' ? 'hidden' : 'collapsed'
+    this.setCardsMode(nextCardMode(this.mode))
+  }
+
+  /**
+   * The active tool-card visibility mode.
+   * @returns the current mode.
+   */
+  cardsMode(): CardMode {
+    return this.mode
+  }
+
+  /**
+   * Set the global card mode and repaint the transcript.
+   * @param mode - the mode to apply.
+   */
+  setCardsMode(mode: CardMode): void {
+    this.mode = mode
     for (const block of this.blocks) block.invalidate()
     this.deps.requestRender()
   }
