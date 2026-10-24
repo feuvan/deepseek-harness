@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Inbox } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
@@ -44,16 +45,32 @@ export function createSession(ctx: Context, id = 'session-test', events: readonl
   return ctx.sessions.create(SessionId(id), { seed: events })
 }
 
-/** A no-op inbox sufficient for Agent shapes used by terminal tests. */
-export function testInbox(): Inbox {
+/** Options for {@link testInbox}. */
+export interface TestInboxOptions {
+  /** Messages already waiting for the next turn. */
+  readonly nextTurn?: readonly UserMessage[]
+  /** Records the identity of every removed next-turn message. */
+  readonly removed?: string[]
+}
+
+/** An inbox double whose next-turn queue is mutable and observable. */
+export function testInbox(options: TestInboxOptions = {}): Inbox {
+  const nextTurn = [...(options.nextTurn ?? [])]
+  const removed = options.removed
   return {
-    nextTurn: [],
+    nextTurn,
     nextStep: [],
-    clear: () => {},
+    clear: () => { nextTurn.splice(0) },
     append: () => {},
     prepend: () => {},
     replace: () => false,
-    remove: () => false,
+    remove: (id) => {
+      const index = nextTurn.findIndex(message => message.id === id)
+      if (index < 0) return false
+      nextTurn.splice(index, 1)
+      removed?.push(String(id))
+      return true
+    },
     splice: () => [],
   }
 }

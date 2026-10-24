@@ -12,6 +12,7 @@ describe('resolveConfig', () => {
       windowBlocks: 20,
       title: 'Test',
       locale: 'auto',
+      busyEnter: 'queue',
     })
     expect(resolved).toEqual({
       sessionId: 'session-test',
@@ -21,6 +22,7 @@ describe('resolveConfig', () => {
       windowBlocks: 20,
       title: 'Test',
       locale: 'auto',
+      busyEnter: 'queue',
     })
     expect(Object.isFrozen(resolved)).toBe(true)
   })
@@ -34,6 +36,7 @@ describe('resolveConfig', () => {
       windowBlocks: 20,
       title: 'Test',
       locale: 'auto',
+      busyEnter: 'steer',
     })).toThrow('sessionId must not be blank')
   })
 
@@ -47,7 +50,24 @@ describe('resolveConfig', () => {
       locale: 'auto',
       windowBlocks: 200,
       title: 'DeepSeek Harness',
+      busyEnter: 'queue',
     })
+  })
+
+  it('resolves an explicit busy-Enter delivery mode', () => {
+    const resolved = resolveConfig({
+      sessionId: 'session-test',
+      color: true,
+      animation: true,
+      previewLines: 10,
+      windowBlocks: 200,
+      title: 'Test',
+      locale: 'en',
+      busyEnter: 'steer',
+    })
+
+    expect(resolved.busyEnter).toBe('steer')
+    expect(Config({ sessionId: 'session-test', busyEnter: 'steer' }).busyEnter).toBe('steer')
   })
 })
 

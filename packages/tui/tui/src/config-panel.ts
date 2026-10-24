@@ -11,6 +11,7 @@
 import { matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { displayText } from './display-text.ts'
+import type { BusyEnter } from './config.ts'
 import type { LocaleConfig } from './locale.ts'
 import type { Palette } from './palette.ts'
 
@@ -77,6 +78,8 @@ export interface ConfigDisplayState {
   readonly title: string
   /** Configured interface language, with `auto` still unresolved. */
   readonly locale: LocaleConfig
+  /** Delivery mode plain Enter uses while the Agent runs. */
+  readonly busyEnter: BusyEnter
 }
 
 /** One permission preset the panel can switch to. */
@@ -414,6 +417,7 @@ function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
     displayRow('windowBlocks', String(display.windowBlocks)),
     displayRow('title', display.title),
     displayRow('locale', display.locale),
+    displayRow('busyEnter', display.busyEnter),
     {
       id: 'display.cards',
       section: 'display',

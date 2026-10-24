@@ -71,6 +71,7 @@ const DISPLAY: ConfigDisplayState = {
   windowBlocks: 200,
   title: 'Test Terminal',
   locale: 'auto',
+  busyEnter: 'queue',
 }
 
 /** Two selectable permission presets. */
@@ -381,6 +382,12 @@ describe('loadConfigRows', () => {
     expect(findRow(first.rows, 'display.windowBlocks').value).toBe('200')
     expect(findRow(first.rows, 'display.title').value).toBe('Test Terminal')
     expect(findRow(first.rows, 'display.locale').value).toBe('auto')
+    expect(findRow(first.rows, 'display.busyEnter')).toMatchObject({
+      label: 'busyEnter',
+      value: 'queue',
+      scope: 'profile',
+      readOnly: true,
+    })
 
     const second = await loadRows({ display: { ...DISPLAY, color: false, animation: true } })
     expect(findRow(second.rows, 'display.color').value).toBe(copy.config.off)

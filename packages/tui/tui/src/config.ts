@@ -10,6 +10,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { LocaleConfig } from './locale.ts'
 
+/** Delivery mode plain Enter uses while the presented Agent is running. */
+export type BusyEnter = 'queue' | 'steer'
+
 /**
  * Cordis row configuration for the terminal front door. Every deployment-varying
  * presentation choice is a field here; interaction keys and layout constants
@@ -37,6 +40,8 @@ export interface Config {
    * `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`.
    */
   locale: LocaleConfig
+  /** Delivery mode plain Enter uses while the presented Agent is running. */
+  busyEnter: BusyEnter
 }
 
 /** Validated schema for {@link Config}. */
@@ -48,6 +53,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
   windowBlocks: z.number().step(1).min(20).max(5000).default(200),
   title: z.string().default('DeepSeek Harness'),
   locale: z.union([z.const('en'), z.const('zh'), z.const('auto')]).default('auto'),
+  busyEnter: z.union([z.const('queue'), z.const('steer')]).default('queue'),
 })
 
 /** Immutable runtime values resolved once when the plugin activates. */
@@ -66,6 +72,8 @@ export interface ResolvedConfig {
   readonly title: string
   /** Configured interface language, with `auto` still unresolved. */
   readonly locale: LocaleConfig
+  /** Delivery mode plain Enter uses while the presented Agent is running. */
+  readonly busyEnter: BusyEnter
 }
 
 /**
@@ -85,5 +93,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     windowBlocks: config.windowBlocks,
     title: config.title,
     locale: config.locale,
+    busyEnter: config.busyEnter,
   })
 }

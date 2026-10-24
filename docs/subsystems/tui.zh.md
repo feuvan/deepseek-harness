@@ -51,7 +51,7 @@ kind: "subsystem"
 
 ## 编辑器输入与中断
 
-Enter 会 steer 运行中的轮次；`/queue <text>` 改为把消息排到下一轮，并像普通提示一样展开 `@` 提及。编辑器上方的待处理提示行读取 `inbox` 投影，在 Agent 消费之前显示 steering 与排队计数，运行中时还会显示 Esc 提示。编辑器为空时 Esc 取消运行中的轮次；有文本或面板打开时，Esc 仍交给编辑器或面板处理。Ctrl+V 从宿主剪贴板读取一张图片，校验当前模型的输入模态，经附件存储准入后与 `@` 图片提及一起暂存，随下一条提交的提示发送。
+轮次运行时，普通 Enter 遵循配置的 `busyEnter`（默认 `queue`，与 Desktop 一致）：提示排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 在 `agent.inbox.nextTurn` 上打开队列 dock（插话/编辑/删除），`/steer <text>` 直接插话。两个显式命令都会像普通提示一样展开 `@` 提及。队列修改与 API session controller 一致：编辑替换待处理消息内容，删除移除它，插话在 Agent 运行中移除并重新发送到 `next-step`。编辑器上方的待处理提示行读取 `inbox` 投影，在 Agent 消费之前显示 steering 与排队计数，运行中时还会显示 Esc 提示。编辑器为空时 Esc 取消运行中的轮次；有文本或面板打开时，Esc 仍交给编辑器或面板处理。Ctrl+V 从宿主剪贴板读取一张图片，校验当前模型的输入模态，经附件存储准入后与 `@` 图片提及一起暂存，随下一条提交的提示发送。
 
 组合包组装与 Web profile 相同的 agent preset realm：禁用 base 的 agent 平面条目，在 `presets/` 下随附四个 `@deepseek-ai/dsh-agent-preset` 声明，并让 `agent-preset-registry` 默认 `standard`。Agent 所有者在创建前解析 preset（新会话用 `--preset` 或注册表默认值；恢复会话用已记录的 `agent-preset/selected`），在 Agent setup 中挂载它；终端的 `/preset` 选择器只在第一轮开始前调用注册表的 `select`。编辑器与页脚之间有一个底部 dock。同一时刻只有一个 surface 占用它：`/` 与 `@` 补全窗口（带描述、↑/↓、Tab 插入、Enter 运行或插入、Esc、最多 8 行并显示滚动指示），`/permission` 与不带参数的 `/effort` 使用的带说明选择列表，按 tab 组织的配置面板，以及帮助/状态、模型选择器、问题与审批面板。不存在浮动 overlay；长页面在 dock 内滚动（↑/↓ 或 PgUp/PgDn，并显示剩余行数）。编辑器内置下拉已停用，因此所有补全、选择与面板都在编辑器下方渲染，而不是遮住 transcript。
 

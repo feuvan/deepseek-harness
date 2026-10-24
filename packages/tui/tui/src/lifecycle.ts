@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plugin-manager'
 import { installModelSelection, type Agent, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -38,6 +38,7 @@ import { createTerminalSession, type TerminalSession } from './terminal.ts'
 import { TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
+import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
 import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
@@ -62,6 +63,7 @@ export class TerminalApp {
   private autocomplete: TerminalAutocompleteProvider | undefined
   private bottom: BottomPanel | undefined
   private bottomList: BottomList | undefined
+  private queuePanel: QueuePanel | undefined
   private completion: CompletionController | undefined
   private configPanel: ConfigPanel | undefined
   private dockOverlay: DockSurface | undefined
@@ -262,6 +264,7 @@ export class TerminalApp {
       ctx: this.ctx,
       agent: () => this.agent,
       notice: (text) => { this.transcript?.notice(text) },
+      busyEnter: this.config.busyEnter,
       expandPrompt: text => this.expandPrompt(text),
       choices: {
         efforts: () => this.effortChoices(),
@@ -277,6 +280,7 @@ export class TerminalApp {
         effort: argument => this.setEffort(argument),
         permission: (argument) => { this.choosePermission(argument) },
         queue: argument => this.queuePrompt(argument),
+        steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
         redraw: () => { tui.renderNow(true) },
@@ -298,6 +302,12 @@ export class TerminalApp {
     const bottom = new BottomPanel()
     this.bottom = bottom
     this.bottomList = new BottomList(this.palette, () => { this.syncDock(); tui.requestRender() })
+    this.queuePanel = new QueuePanel(this.palette, {
+      steer: (item) => { this.steerQueued(item.id) },
+      edit: (item) => { this.editQueued(item.id) },
+      remove: (item) => { this.removeQueued(item.id) },
+      close: () => { this.closeQueuePanel() },
+    })
     this.completion = new CompletionController({
       provider: () => this.autocomplete,
       editor: () => this.editor,
@@ -336,6 +346,16 @@ export class TerminalApp {
       }
       if (this.bottomList?.handleInput(data) === true) return { consume: true }
       if (this.completion?.handleInput(data) === true) return { consume: true }
+      if (matchesKey(data, 'ctrl+enter')) {
+        const text = this.editor?.getText() ?? ''
+        if (text.trim() !== '') {
+          this.editor?.setText('')
+          this.composer?.submit(text, this.config.busyEnter === 'queue' ? 'steer' : 'queue')
+        } else if (this.agent?.status === 'running') {
+          this.steerAllQueued()
+        }
+        return { consume: true }
+      }
       if (matchesKey(data, 'escape') && this.editor?.getText() === '' && this.agent?.status === 'running' && !this.modal.hasActive()) {
         this.interruptTurn()
         return { consume: true }
@@ -511,7 +531,7 @@ export class TerminalApp {
   private async queuePrompt(argument: string | undefined): Promise<void> {
     const text = argument?.trim() ?? ''
     if (text === '') {
-      this.transcript?.notice(copy.commands.usage('queue', '<message>'))
+      this.openQueuePanel()
       return
     }
     const agent = this.agent
@@ -531,6 +551,184 @@ export class TerminalApp {
     } catch (error: unknown) {
       this.transcript?.notice(copy.commands.promptFailed(error instanceof Error ? error.message : String(error)))
     }
+  }
+
+  /**
+   * Steer one prompt into the running turn, or steer every queued message.
+   * @param argument - the `/steer` text, or absent to steer the queue.
+   */
+  private async steerPrompt(argument: string | undefined): Promise<void> {
+    const text = argument?.trim() ?? ''
+    if (text === '') {
+      this.steerAllQueued()
+      return
+    }
+    const agent = this.agent
+    if (agent === undefined) {
+      this.transcript?.notice(copy.commands.agentNotReady)
+      return
+    }
+    try {
+      const expanded = await this.expandPrompt(text)
+      for (const notice of expanded.notices) this.transcript?.notice(notice)
+      const current = this.agent
+      if (current === undefined) {
+        this.transcript?.notice(copy.commands.agentNotReady)
+        return
+      }
+      const message = createUserMessage({ content: [...expanded.content], source: { kind: 'user' } })
+      if (current.status === 'running') {
+        current.steer(message)
+        this.transcript?.notice(copy.queue.steered)
+      } else {
+        current.followup(message)
+        this.transcript?.notice(copy.queue.queued)
+      }
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.commands.promptFailed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /** @returns the queued next-turn Messages in delivery order. */
+  private queuedMessages(): readonly UserMessage[] {
+    return this.agent?.inbox.nextTurn ?? []
+  }
+
+  /**
+   * Build one dock row for a queued Message.
+   * @param message - the queued Message.
+   * @param index - its zero-based position.
+   * @returns the row.
+   */
+  private queueItem(message: UserMessage, index: number): QueuePanelItem {
+    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
+    const nonText = message.content.some(block => block.type !== 'text')
+    return {
+      id: String(message.id),
+      label: `${String(index + 1)}. ${text === '' ? copy.queue.nonText : text}`,
+      ...(nonText ? { description: copy.queue.nonText } : {}),
+    }
+  }
+
+  /** Refresh the queue dock rows, closing it when the queue drains. */
+  private refreshQueuePanel(): void {
+    const panel = this.queuePanel
+    if (panel === undefined) return
+    const items = this.queuedMessages().map((message, index) => this.queueItem(message, index))
+    if (items.length === 0) {
+      this.closeQueuePanel()
+      return
+    }
+    panel.setItems(items)
+    this.tui?.requestRender()
+  }
+
+  /** Present the queued messages in the dock. */
+  private openQueuePanel(): void {
+    const panel = this.queuePanel
+    if (panel === undefined) return
+    const items = this.queuedMessages().map((message, index) => this.queueItem(message, index))
+    if (items.length === 0) {
+      this.transcript?.notice(copy.queue.empty)
+      return
+    }
+    panel.setItems(items)
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data); this.tui?.requestRender() },
+      close: () => { this.closeQueuePanel() },
+    })
+  }
+
+  /** Release the queue dock. */
+  private closeQueuePanel(): void {
+    this.queuePanel?.setItems([])
+    if (this.queuePanel === undefined) return
+    this.setDockOverlay(undefined)
+  }
+
+  /**
+   * Steer one queued Message into the running turn.
+   * @param id - queued Message identity.
+   */
+  private steerQueued(id: string): void {
+    const agent = this.agent
+    if (agent === undefined) return
+    const message = agent.inbox.nextTurn.find(item => String(item.id) === id)
+    if (message === undefined) {
+      this.refreshQueuePanel()
+      return
+    }
+    if (agent.status !== 'running') {
+      this.transcript?.notice(copy.queue.steerUnavailable)
+      return
+    }
+    agent.inbox.remove(message.id)
+    agent.steer(message)
+    this.transcript?.notice(copy.queue.steered)
+    this.refreshQueuePanel()
+  }
+
+  /**
+   * Move one queued Message's text back into the composer.
+   * @param id - queued Message identity.
+   */
+  private editQueued(id: string): void {
+    const agent = this.agent
+    if (agent === undefined) return
+    const message = agent.inbox.nextTurn.find(item => String(item.id) === id)
+    if (message === undefined) {
+      this.refreshQueuePanel()
+      return
+    }
+    if (message.content.some(block => block.type !== 'text')) {
+      this.transcript?.notice(copy.queue.editUnsupported)
+      return
+    }
+    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+    agent.inbox.remove(message.id)
+    this.editor?.setText(text)
+    this.closeQueuePanel()
+    this.transcript?.notice(copy.queue.editMoved)
+    this.tui?.requestRender()
+  }
+
+  /**
+   * Remove one queued Message.
+   * @param id - queued Message identity.
+   */
+  private removeQueued(id: string): void {
+    const agent = this.agent
+    if (agent === undefined) return
+    const message = agent.inbox.nextTurn.find(item => String(item.id) === id)
+    if (message === undefined) {
+      this.refreshQueuePanel()
+      return
+    }
+    agent.inbox.remove(message.id)
+    this.transcript?.notice(copy.queue.removed)
+    this.refreshQueuePanel()
+  }
+
+  /** Steer every queued Message into the running turn. */
+  private steerAllQueued(): void {
+    const agent = this.agent
+    if (agent === undefined) return
+    const messages = [...agent.inbox.nextTurn]
+    if (messages.length === 0) {
+      this.transcript?.notice(copy.queue.empty)
+      return
+    }
+    if (agent.status !== 'running') {
+      this.transcript?.notice(copy.queue.steerUnavailable)
+      return
+    }
+    for (const message of messages) {
+      agent.inbox.remove(message.id)
+      agent.steer(message)
+    }
+    this.transcript?.notice(copy.queue.steeredAll(messages.length))
+    this.refreshQueuePanel()
   }
 
   /** @returns the surface that currently owns dock input, if any. */
@@ -667,6 +865,7 @@ export class TerminalApp {
       windowBlocks: this.config.windowBlocks,
       title: this.config.title,
       locale: this.config.locale,
+      busyEnter: this.config.busyEnter,
     }
     const rows = await loadConfigRows({
       model: {

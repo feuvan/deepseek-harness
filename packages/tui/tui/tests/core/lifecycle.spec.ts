@@ -9,6 +9,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
+import type { BusyEnter } from '../../src/config.ts'
 import type { TerminalTranscript } from '../../src/transcript.ts'
 import type { TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
@@ -25,7 +26,8 @@ import type { InteractionDock } from '../../src/interactions.ts'
 import type { ConfigRow } from '../../src/config-panel.ts'
 import { ScrollView } from '@earendil-works/pi-tui'
 import type { AutocompleteItem } from '@earendil-works/pi-tui'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AdmittedPromptContentPart, ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentAdmissionPart } from '@deepseek-ai/dsh-attachment/types'
@@ -36,7 +38,8 @@ vi.mock('../../src/clipboard.ts', () => ({ readClipboardImage: vi.fn() }))
 import { sessionTitle, toolCall, userMessage } from '../support/events.ts'
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
-  agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, sessionQueryDouble, terminalConfig,
+  agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
+  screenLines, sessionQueryDouble, terminalConfig,
   toolsDouble, userQuestionsDouble, waitForScreen,
   type AgentDouble, type AgentsDouble, type AppExitDouble, type CommandsDouble,
   type ObservationDouble, type ProjectionsDouble, type SessionQueryDouble,
@@ -103,6 +106,10 @@ interface LifecycleOptions {
   readonly sessionCwd?: string
   /** Registered-command execution override for dispatch tests. */
   readonly execute?: (line: string) => Promise<import('@deepseek-ai/dsh-commands').CommandExecution | undefined>
+  /** Plain-Enter delivery mode while the Agent runs. */
+  readonly busyEnter?: BusyEnter
+  /** Messages already queued in the Agent inbox. */
+  readonly queued?: readonly UserMessage[]
 }
 
 /**
@@ -145,6 +152,7 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   const agent = agentDouble({
     session,
     ...(options.agentOptions === undefined ? {} : { options: options.agentOptions }),
+    ...(options.queued === undefined ? {} : { queued: options.queued }),
   })
   if (options.existingAgent !== false) agents.bind(agent.agent)
 
@@ -155,7 +163,10 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   const stop = vi.spyOn(owned.session, 'stop')
   const flush = vi.spyOn(ctx.sessions, 'flush')
   const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-  const config = terminalConfig(options.animation === true ? { animation: true } : {})
+  const config = terminalConfig({
+    ...(options.animation === true ? { animation: true } : {}),
+    ...(options.busyEnter === undefined ? {} : { busyEnter: options.busyEnter }),
+  })
   const app = new TerminalApp(ctx, config, exit.exit, () => owned.session)
   onTestFinished(() => { app.dispose() })
   const transcript = (): TerminalTranscript | undefined =>
@@ -2326,16 +2337,15 @@ describe('TerminalApp /queue', () => {
     expect(steers).toEqual([])
   })
 
-  it('reports the usage for an empty queue argument', async () => {
+  it('reports an empty queue when the inline queue editor has nothing to show', async () => {
     const harness = await lifecycleHarness()
     harness.start()
     await harness.awaitStarted()
 
     await submitLine(harness, '/queue')
 
-    await vi.waitFor(() => {
-      expect(harness.transcriptText()).toContain(copy.commands.usage('queue', '<message>'))
-    })
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.empty) })
+    expect(bottomOf(harness.app).active).toBe(false)
   })
 
   it('reports a queue without a live agent', async () => {
@@ -3928,5 +3938,504 @@ describe('TerminalApp card modes', () => {
       expect(harness.transcriptText()).toContain(copy.cards.changed(copy.cards.levels.expanded))
     })
     expect(editorOf(harness.app).getText()).toBe('')
+  })
+})
+
+describe('TerminalApp queue dock', () => {
+  it('opens the dock with the queued messages and cancels on Escape', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('first message'), queuedMessage('second message')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.queue.title)
+    expect(dock).toContain('1. first message')
+    expect(dock).toContain('2. second message')
+    expect(dock).toContain(copy.queue.hint)
+    expect(harness.agent.agent.inbox.nextTurn).toHaveLength(2)
+
+    harness.terminal.headless.press('\u001b')
+
+    await awaitDockClosed(harness)
+    expect(harness.agent.removed).toEqual([])
+    expect(harness.agent.steered).toEqual([])
+  })
+
+  it('steers the selected row and keeps the remaining queue visible', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('first message'), queuedMessage('second message')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+    const secondId = String(harness.agent.agent.inbox.nextTurn[1]?.id)
+
+    harness.terminal.headless.press('\u001b[B')
+    expect(dockText(harness.app)).toContain('❯ 2. second message')
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['second message']) })
+    expect(harness.agent.removed).toEqual([secondId])
+    expect(harness.agent.agent.inbox.nextTurn).toHaveLength(1)
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.steered) })
+    expect(dockText(harness.app)).toContain('1. first message')
+    expect(bottomOf(harness.app).active).toBe(true)
+  })
+
+  it('moves the selected row back into the composer and closes the dock', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('edit me')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    harness.terminal.headless.press('e')
+
+    await awaitDockClosed(harness)
+    expect(editorOf(harness.app).getText()).toBe('edit me')
+    expect(harness.agent.removed).toHaveLength(1)
+    expect(harness.agent.agent.inbox.nextTurn).toEqual([])
+    expect(harness.transcriptText()).toContain(copy.queue.editMoved)
+  })
+
+  it('removes rows with x and Delete and closes after the queue drains', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('one'), queuedMessage('two')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    harness.terminal.headless.press('x')
+    await vi.waitFor(() => { expect(harness.agent.removed).toHaveLength(1) })
+    expect(harness.transcriptText()).toContain(copy.queue.removed)
+    expect(bottomOf(harness.app).active).toBe(true)
+
+    harness.terminal.headless.press('\u001b[3~')
+
+    await awaitDockClosed(harness)
+    expect(harness.agent.removed).toHaveLength(2)
+    expect(harness.agent.agent.inbox.nextTurn).toEqual([])
+  })
+
+  it('refuses to steer while the agent is idle', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('waiting')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.steerUnavailable) })
+    expect(harness.agent.removed).toEqual([])
+    expect(harness.agent.steered).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+  })
+
+  it('refreshes the rows when a queued identity is missing', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('still here')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+    const steerQueued = privateValue(harness.app, 'steerQueued') as (id: string) => void
+    const editQueued = privateValue(harness.app, 'editQueued') as (id: string) => void
+    const removeQueued = privateValue(harness.app, 'removeQueued') as (id: string) => void
+
+    steerQueued.call(harness.app, 'missing')
+    editQueued.call(harness.app, 'missing')
+    removeQueued.call(harness.app, 'missing')
+
+    expect(harness.agent.removed).toEqual([])
+    expect(harness.agent.steered).toEqual([])
+    expect(bottomOf(harness.app).active).toBe(true)
+    expect(dockText(harness.app)).toContain('1. still here')
+  })
+
+  it('extracts only text when content changes between the guard and the edit', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('placeholder')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const message = queuedMessage('placeholder')
+    let reads = 0
+    const drifting = {
+      ...message,
+      get content() {
+        reads += 1
+        return reads === 1
+          ? [{ type: 'text', text: 'recovered text' }]
+          : [{ type: 'text', text: 'recovered text' }, { type: 'image', attachment: { attachmentId: AttachmentId('drift') } }]
+      },
+    }
+    const removed: string[] = []
+    const original = harness.agent.agent
+    Reflect.set(harness.app, 'agent', {
+      ...original,
+      inbox: {
+        ...original.inbox,
+        nextTurn: [drifting],
+        remove: (id: string) => { removed.push(id); return true },
+      },
+    })
+    const editQueued = privateValue(harness.app, 'editQueued') as (id: string) => void
+
+    editQueued.call(harness.app, String(drifting.id))
+
+    expect(editorOf(harness.app).getText()).toBe('recovered text')
+    expect(harness.transcriptText()).toContain(copy.queue.editMoved)
+    expect(removed).toEqual([String(drifting.id)])
+  })
+
+  it('reports non-text rows in the dock and refuses to edit them', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [
+        queuedMessage('text row'),
+        createUserMessage({
+          content: [{
+            type: 'image',
+            attachment: {
+              attachmentId: AttachmentId('queued-image'),
+              mediaType: 'image/png',
+              bytes: 3,
+              width: 1,
+              height: 1,
+            },
+          }],
+          source: { kind: 'user' },
+        }),
+      ],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    const dock = dockText(harness.app)
+    expect(dock).toContain(copy.queue.nonText)
+    expect(dock).toContain('2.')
+
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('e')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.editUnsupported) })
+    expect(harness.agent.removed).toEqual([])
+    expect(editorOf(harness.app).getText()).toBe('')
+    expect(bottomOf(harness.app).active).toBe(true)
+  })
+
+  it('steers every queued message from an empty composer with Ctrl+Enter', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('one'), queuedMessage('two')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    harness.terminal.headless.press('\u001b[13;5u')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['one', 'two']) })
+    expect(harness.transcriptText()).toContain(copy.queue.steeredAll(2))
+    expect(harness.agent.agent.inbox.nextTurn).toEqual([])
+  })
+
+  it('reports Ctrl+Enter on an empty composer without a queue', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    harness.terminal.headless.press('\u001b[13;5u')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.empty) })
+    expect(harness.agent.steered).toEqual([])
+  })
+
+  it('leaves Ctrl+Enter inert while idle and without a queue', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('idle queued')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    harness.terminal.headless.press('\u001b[13;5u')
+
+    await Promise.resolve()
+    expect(harness.agent.steered).toEqual([])
+    expect(harness.agent.followups).toEqual([])
+    expect(harness.agent.removed).toEqual([])
+    expect(editorOf(harness.app).getText()).toBe('')
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it.each([
+    { busyEnter: 'queue' as const, expected: 'steer' as const },
+    { busyEnter: 'steer' as const, expected: 'queue' as const },
+  ])('submits with the opposite delivery ($busyEnter) from Ctrl+Enter', async ({ busyEnter, expected }) => {
+    const harness = await lifecycleHarness({ busyEnter })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    for (const key of 'composed') harness.terminal.headless.press(key)
+
+    harness.terminal.headless.press('\u001b[13;5u')
+
+    await vi.waitFor(() => { expect(editorOf(harness.app).getText()).toBe('') })
+    if (expected === 'steer') {
+      await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['composed']) })
+      expect(harness.agent.followups).toEqual([])
+      expect(harness.transcriptText()).toContain(copy.queue.steered)
+    } else {
+      await vi.waitFor(() => { expect(harness.agent.followups).toEqual(['composed']) })
+      expect(harness.agent.steered).toEqual([])
+      expect(harness.transcriptText()).toContain(copy.queue.queued)
+    }
+  })
+
+  it('plain Enter queues under the default busy-Enter configuration', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    await submitLine(harness, 'queued while busy')
+
+    await vi.waitFor(() => { expect(harness.agent.followups).toEqual(['queued while busy']) })
+    expect(harness.agent.steered).toEqual([])
+    expect(harness.transcriptText()).toContain(copy.queue.queued)
+  })
+
+  it('plain Enter steers when busy-Enter is steer', async () => {
+    const harness = await lifecycleHarness({ busyEnter: 'steer' })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    await submitLine(harness, 'steer while busy')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['steer while busy']) })
+    expect(harness.agent.followups).toEqual([])
+    expect(harness.transcriptText()).toContain(copy.queue.steered)
+  })
+
+  it('surfaces the busy-Enter configuration in the display tab', async () => {
+    const harness = await lifecycleHarness({ busyEnter: 'steer' })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+
+    focusConfigRow(panel, 'display', 'display.busyEnter')
+
+    expect(dockText(harness.app)).toContain('busyEnter')
+    expect(dockText(harness.app)).toContain('steer')
+  })
+
+  it('keeps the pending strip visible with the queue-edit hint', async () => {
+    const harness = await lifecycleHarness({
+      values: { inbox: { 'next-step': [], 'next-turn': [queuedMessage('pending row')] } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await waitForScreen(harness.terminal.headless, copy.pending.queued(1))
+    expect((await screenLines(harness.terminal.headless)).some(line => line.includes(copy.pending.queueHint))).toBe(true)
+  })
+})
+
+describe('TerminalApp /steer command', () => {
+  it('steers an explicit prompt and reports its expansion notices', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    Reflect.set(harness.app, 'expandPrompt', async () => ({
+      content: [{ type: 'text', text: 'focus on tests' }],
+      notices: ['steer notice'],
+    }))
+
+    await submitLine(harness, '/steer focus on tests')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['focus on tests']) })
+    expect(harness.transcriptText()).toContain('steer notice')
+    expect(harness.transcriptText()).toContain(copy.queue.steered)
+  })
+
+  it('applies the queue policy to an explicit /steer prompt while idle', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/steer wait for me')
+
+    await vi.waitFor(() => { expect(harness.agent.followups).toEqual(['wait for me']) })
+    expect(harness.transcriptText()).toContain(copy.queue.queued)
+    expect(harness.agent.steered).toEqual([])
+  })
+
+  it('steers every queued message from a bare /steer while running', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('one'), queuedMessage('two')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    await submitLine(harness, '/steer')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['one', 'two']) })
+    expect(harness.transcriptText()).toContain(copy.queue.steeredAll(2))
+    expect(harness.agent.agent.inbox.nextTurn).toEqual([])
+  })
+
+  it('reports an empty queue from a bare /steer', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    await submitLine(harness, '/steer')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.empty) })
+  })
+
+  it('reports steering unavailable from a bare /steer while idle', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('idle row')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/steer')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.queue.steerUnavailable) })
+    expect(harness.agent.steered).toEqual([])
+  })
+
+  it('reports an explicit steer without a live agent', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const steerPrompt = privateValue(harness.app, 'steerPrompt') as (argument: string | undefined) => Promise<void>
+    Reflect.set(harness.app, 'agent', undefined)
+
+    await steerPrompt.call(harness.app, 'hello')
+
+    expect(harness.transcriptText()).toContain(copy.commands.agentNotReady)
+  })
+
+  it.each([
+    ['an Error', new Error('steer expand failed'), 'steer expand failed'],
+    ['a non-Error', 'steer expand failed', 'steer expand failed'],
+  ])('reports an expansion failure thrown as %s', async (_label, error, message) => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const expand = vi.fn(async () => { throw error })
+    Reflect.set(harness.app, 'expandPrompt', expand)
+
+    await submitLine(harness, '/steer remember')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.commands.promptFailed(message)) })
+  })
+
+  it('closes the queue dock through Ctrl+C', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('one')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/queue')
+    await waitForDock(harness, copy.queue.title)
+
+    harness.terminal.headless.press('\x03')
+
+    await awaitDockClosed(harness)
+    expect(harness.exit.codes).toEqual([])
+  })
+
+  it('ignores queue helpers before the terminal starts', async () => {
+    const harness = await lifecycleHarness()
+    const member = (name: string): unknown => privateValue(harness.app, name)
+    const refresh = member('refreshQueuePanel') as () => void
+    const open = member('openQueuePanel') as () => void
+    const close = member('closeQueuePanel') as () => void
+    const steer = member('steerQueued') as (id: string) => void
+    const edit = member('editQueued') as (id: string) => void
+    const remove = member('removeQueued') as (id: string) => void
+    const steerAll = member('steerAllQueued') as () => void
+    const queued = member('queuedMessages') as () => readonly UserMessage[]
+
+    expect(() => {
+      refresh.call(harness.app)
+      open.call(harness.app)
+      close.call(harness.app)
+      steer.call(harness.app, 'missing')
+      edit.call(harness.app, 'missing')
+      remove.call(harness.app, 'missing')
+      steerAll.call(harness.app)
+    }).not.toThrow()
+    expect(queued.call(harness.app)).toEqual([])
+  })
+
+  it('handles Ctrl+Enter before the editor exists', async () => {
+    const harness = await lifecycleHarness({
+      agentOptions: { provider: 'alpha', model: 'm-1' },
+      queued: [queuedMessage('queued row')],
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    Reflect.set(harness.app, 'editor', undefined)
+
+    harness.terminal.headless.press('\u001b[13;5u')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['queued row']) })
+    expect(harness.transcriptText()).toContain(copy.queue.steeredAll(1))
+  })
+
+  it('reports the agent disappearing while the steer prompt expands', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    let resolveExpansion!: (value: { content: ContentBlock[]; notices: string[] }) => void
+    Reflect.set(harness.app, 'expandPrompt', () => new Promise((resolve) => { resolveExpansion = resolve }))
+
+    await submitLine(harness, '/steer remember')
+    Reflect.set(harness.app, 'agent', undefined)
+    resolveExpansion({ content: [{ type: 'text', text: 'remember' }], notices: [] })
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.commands.agentNotReady) })
   })
 })

@@ -35,8 +35,11 @@ export class PendingStrip implements Component {
     if (state.pendingSteering > 0) parts.push(copy.pending.steering(state.pendingSteering))
     if (state.pendingQueued > 0) parts.push(copy.pending.queued(state.pendingQueued))
     if (parts.length === 0) return []
-    const hint = state.status === copy.status.running ? copy.pending.hint : undefined
-    const body = hint === undefined ? parts.join(' · ') : `${parts.join(' · ')} · ${hint}`
+    const hints = [
+      state.status === copy.status.running ? copy.pending.hint : undefined,
+      state.pendingQueued > 0 ? copy.pending.queueHint : undefined,
+    ].filter((hint): hint is string => hint !== undefined)
+    const body = hints.length === 0 ? parts.join(' · ') : `${parts.join(' · ')} · ${hints.join(' · ')}`
     return [truncateToWidth(` ${this.palette.warning(body)}`, width)]
   }
 

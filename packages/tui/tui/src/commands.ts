@@ -11,6 +11,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SlashCommand } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { REASONING_LEVELS } from './reasoning.ts'
+import type { BusyEnter } from './config.ts'
 import { CARD_MODES } from './cards.ts'
 
 /** Terminal-local controls the composer owns instead of dispatching to the agent. */
@@ -33,8 +34,10 @@ export interface LocalCommands {
   effort(argument: string | undefined): void | Promise<void>
   /** Choose or switch the permission preset; an absent argument opens the chooser. */
   permission(argument: string | undefined): void | Promise<void>
-  /** Queue one message for the next turn instead of steering the running one. */
+  /** Queue one message for the next turn, or edit the queue when no text is given. */
   queue(argument: string | undefined): void | Promise<void>
+  /** Steer one message into the running turn, or steer every queued message. */
+  steer(argument: string | undefined): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
@@ -63,6 +66,8 @@ export interface ComposerDeps {
   readonly local: LocalCommands
   /** Append a terminal-only notice. */
   readonly notice: (text: string) => void
+  /** Delivery mode plain Enter uses while the Agent runs. */
+  readonly busyEnter: BusyEnter
   /**
    * Expand `@` mentions of one prompt into user-message content. Omitted when
    * the composition has no attachment or file-reference services.
@@ -104,6 +109,7 @@ export class Composer {
       effort: { description: copy.commands.effort, run: (argument) => { void deps.local.effort(argument) } },
       permission: { description: copy.commands.permission, run: (argument) => { void deps.local.permission(argument) } },
       queue: { description: copy.commands.queue, run: (argument) => { void deps.local.queue(argument) } },
+      steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
@@ -114,8 +120,9 @@ export class Composer {
   /**
    * Submit one editor line.
    * @param line - the exact submitted text.
+   * @param mode - delivery override for a busy turn; `auto` reads the configured busy-Enter mode.
    */
-  submit(line: string): void {
+  submit(line: string, mode: 'auto' | BusyEnter = 'auto'): void {
     const text = line.trim()
     if (text === '') return
     const parsed = /^\/([a-z][a-z0-9_-]*)(?:[ \t]+([\s\S]*))?$/u.exec(text)
@@ -151,7 +158,7 @@ export class Composer {
     }
     const expand = this.deps.expandPrompt
     if (expand === undefined) {
-      this.send(agent, [{ type: 'text', text: line }])
+      this.send(agent, [{ type: 'text', text: line }], mode)
       return
     }
     void expand(line).then(({ content, notices }) => {
@@ -161,23 +168,34 @@ export class Composer {
         this.deps.notice(copy.commands.agentNotReady)
         return
       }
-      this.send(current, [...content])
+      this.send(current, [...content], mode)
     }).catch((error: unknown) => {
       this.deps.notice(copy.commands.promptFailed(error instanceof Error ? error.message : String(error)))
       const current = this.deps.agent()
-      if (current !== undefined) this.send(current, [{ type: 'text', text: line }])
+      if (current !== undefined) this.send(current, [{ type: 'text', text: line }], mode)
     })
   }
 
   /**
-   * Send one prepared user message, steering a running turn.
+   * Send one prepared user message with the configured busy-turn delivery.
    * @param agent - the live presented Agent.
    * @param content - the resolved message content blocks.
+   * @param mode - explicit delivery override, or `auto` for the configured mode.
    */
-  private send(agent: Agent, content: ContentBlock[]): void {
+  private send(agent: Agent, content: ContentBlock[], mode: 'auto' | BusyEnter): void {
     const message = createUserMessage({ content, source: { kind: 'user' } })
-    if (agent.status === 'running') agent.steer(message)
-    else agent.followup(message)
+    if (agent.status !== 'running') {
+      agent.followup(message)
+      return
+    }
+    const steer = mode === 'auto' ? this.deps.busyEnter === 'steer' : mode === 'steer'
+    if (steer) {
+      agent.steer(message)
+      this.deps.notice(copy.queue.steered)
+    } else {
+      agent.followup(message)
+      this.deps.notice(copy.queue.queued)
+    }
   }
 
   /**

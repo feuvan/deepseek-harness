@@ -48,16 +48,28 @@ describe('PendingStrip', () => {
     ])
   })
 
-  it('renders a queued-only line', () => {
+  it('renders a queued-only line with the queue-edit hint', () => {
     expect(visibleLines(strip(snapshot({ pendingQueued: 1 })).render(80))).toEqual([
-      ` ${copy.pending.queued(1)}`,
+      ` ${copy.pending.queued(1)} · ${copy.pending.queueHint}`,
     ])
   })
 
-  it('renders both counts in order', () => {
-    expect(visibleLines(strip(snapshot({ pendingSteering: 1, pendingQueued: 3 })).render(80))).toEqual([
-      ` ${copy.pending.steering(1)} · ${copy.pending.queued(3)}`,
+  it('renders both counts in order followed by the queue-edit hint', () => {
+    expect(visibleLines(strip(snapshot({ pendingSteering: 1, pendingQueued: 3 })).render(200))).toEqual([
+      ` ${copy.pending.steering(1)} · ${copy.pending.queued(3)} · ${copy.pending.queueHint}`,
     ])
+  })
+
+  it('adds the interrupt hint before the queue-edit hint while running', () => {
+    const line = visibleLines(strip(snapshot({
+      pendingSteering: 1,
+      pendingQueued: 2,
+      status: copy.status.running,
+    })).render(120))[0]
+
+    expect(line).toBe(
+      ` ${copy.pending.steering(1)} · ${copy.pending.queued(2)} · ${copy.pending.hint} · ${copy.pending.queueHint}`,
+    )
   })
 
   it('adds the interrupt hint only while the agent runs', () => {
@@ -85,9 +97,9 @@ describe('PendingStrip', () => {
   it('renders the active locale copy', () => {
     setCopyLocale('zh')
 
-    const line = visibleLines(strip(snapshot({ pendingSteering: 1, pendingQueued: 2, status: copy.status.running })).render(80))[0]
+    const line = visibleLines(strip(snapshot({ pendingSteering: 1, pendingQueued: 2, status: copy.status.running })).render(200))[0]
 
-    expect(line).toBe(` ${copy.pending.steering(1)} · ${copy.pending.queued(2)} · ${copy.pending.hint}`)
+    expect(line).toBe(` ${copy.pending.steering(1)} · ${copy.pending.queued(2)} · ${copy.pending.hint} · ${copy.pending.queueHint}`)
   })
 
   it('has no cached state to invalidate', () => {

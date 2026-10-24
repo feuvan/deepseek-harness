@@ -4259,7 +4259,7 @@ export type ToolPresentationMode = 'native' | 'ptc'
 ## `@deepseek-ai/dsh-tui`
 
 - `inject`: `agents` · `approval` · `commands` · `llm` · `sessionProjections` · `sessionQuery` · `sessions` · `tools` · `userQuestions`
-- `source`: [`packages/tui/tui/src/config.ts:18`](../packages/tui/tui/src/config.ts)
+- `source`: [`packages/tui/tui/src/config.ts:21`](../packages/tui/tui/src/config.ts)
 
 ```ts config-catalog
 /**
@@ -4289,10 +4289,15 @@ export interface Config {
    * `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`.
    */
   locale: LocaleConfig
+  /** Delivery mode plain Enter uses while the presented Agent is running. */
+  busyEnter: BusyEnter
 }
 
 /** Configuration value an operator may set: an explicit locale or environment detection. */
 export type LocaleConfig = Locale | 'auto'
+
+/** Delivery mode plain Enter uses while the presented Agent is running. */
+export type BusyEnter = 'queue' | 'steer'
 
 /** Interface languages the terminal ships. */
 export type Locale = 'en' | 'zh'

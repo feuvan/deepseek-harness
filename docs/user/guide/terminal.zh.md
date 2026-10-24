@@ -32,7 +32,8 @@ dsh --profile headless "run the tests"
 
 | 按键 | 操作 |
 |---|---|
-| Enter | 发送提示；轮次运行时在下一个步骤边界 steer 它 |
+| Enter | 发送提示；轮次运行时排队到下一轮 |
+| Ctrl+Enter | 轮次运行时插话（busy Enter 设为插话时改为排队）；编辑器为空时插话全部排队消息 |
 | Alt+Enter 或 Ctrl+J | 插入换行 |
 | Ctrl+C | 关闭打开的面板、取消运行中的轮次，或空闲时退出 |
 | Ctrl+O | 循环工具卡可见性（折叠 → 展开 → 隐藏） |
@@ -46,6 +47,12 @@ dsh --profile headless "run the tests"
 | Ctrl+Shift+F | 在已渲染的 transcript 中搜索 |
 
 输入时会出现补全。输入 `/` 会列出命令及其描述；输入 `@` 会补全工作区中的文件与目录，含空格的路径通过带引号的 `@"..."` 形式补全。`Tab` 接受高亮条目。
+
+### 插话与队列
+
+忙碌时的 Enter 与 Desktop 默认一致：普通 Enter 把提示排队到下一轮，而不是打断当前轮次；`/queue <text>` 显式做同样的事。`Ctrl+Enter` 使用相反的投递方式：把提示插话到运行中的轮次；编辑器为空时插话全部排队消息。`terminal-ui` 行的 `busyEnter` 字段可翻转普通 Enter 的两种行为（`queue` 或 `steer`）；`/config` 显示解析后的值。
+
+不带参数的 `/queue` 在编辑器下方打开队列。↑/↓ 移动，Enter 插话选中的消息，`e` 把文本移回编辑器继续修改，`x` 删除，Esc 关闭。`/steer <text>` 把一条提示插话到运行中的轮次；Agent 空闲时则排队到下一轮。编辑器上方的状态条继续显示插话与排队数量。
 
 ### 提及、图片与高亮
 

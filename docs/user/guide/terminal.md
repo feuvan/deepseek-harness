@@ -32,7 +32,8 @@ The banner names the model and the Session. The transcript above the composer sh
 
 | Key | Action |
 |---|---|
-| Enter | Send a prompt; while a turn runs, steer it at its next step |
+| Enter | Send a prompt; while a turn runs, queue it for the next turn |
+| Ctrl+Enter | Steer while a turn runs (queues when busy Enter is set to steer); with an empty composer, steer every queued message |
 | Alt+Enter or Ctrl+J | Insert a newline |
 | Ctrl+C | Close the open panel, cancel a running turn, or exit when idle |
 | Ctrl+O | Cycle tool-card visibility (collapsed → expanded → hidden) |
@@ -46,6 +47,12 @@ The banner names the model and the Session. The transcript above the composer sh
 | Ctrl+Shift+F | Search the rendered transcript |
 
 Completion appears as you type. Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
+
+### Steering and the queue
+
+Busy-Enter matches Desktop's default: plain Enter queues the prompt for the next turn instead of interrupting the current one, and `/queue <text>` does the same explicitly. `Ctrl+Enter` applies the opposite delivery: it steers the prompt into the running turn, and with an empty composer it steers every queued message. The `busyEnter` field of the `terminal-ui` row flips the two plain-Enter behaviours (`queue` or `steer`); `/config` shows the resolved value.
+
+`/queue` without text opens the queue below the composer. ↑/↓ moves, Enter steers the selected message, `e` moves its text back into the composer for editing, `x` removes it, and Esc closes. `/steer <text>` steers one prompt into the running turn, or queues it as the next turn when the Agent is idle. The strip above the composer keeps showing how many messages are steering and queued.
 
 ### Mentions, images, and highlighting
 

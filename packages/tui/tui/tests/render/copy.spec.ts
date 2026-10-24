@@ -111,6 +111,37 @@ describe('copy dictionaries', () => {
     for (const [path, format] of functions) expect(typeof format(), path).toBe('string')
   })
 
+  it('formats the queue-dock labels and notices', () => {
+    expect(copy.queue.title).toBe('Queued messages')
+    expect(copy.queue.hint).toBe('↑/↓ move · Enter steer · e edit · x remove · Esc close')
+    expect(copy.queue.queued).toBe('Queued for the next turn')
+    expect(copy.queue.steered).toBe('Steered into the running turn')
+    expect(copy.queue.steeredAll(2)).toBe('Steered 2 queued message(s)')
+    expect(copy.queue.removed).toBe('Removed the queued message')
+    expect(copy.queue.editUnsupported).toContain('cannot be edited here')
+    expect(copy.queue.editMoved).toBe('Queued message moved into the composer; press Enter to send it.')
+    expect(copy.queue.nonText).toBe('non-text content')
+    expect(copy.queue.empty).toBe('No queued messages.')
+    expect(copy.queue.steerUnavailable).toBe('Steering is available only while the agent is running.')
+    expect(copy.commands.steer).toBe('Steer a message into the running turn, or steer all queued messages')
+    expect(copy.pending.queueHint).toBe('/queue edits · Ctrl+Enter steers')
+
+    setCopyLocale('zh')
+    expect(copy.queue.title).toBe('排队消息')
+    expect(copy.queue.hint).toBe('↑/↓ 移动 · Enter 插话 · e 编辑 · x 删除 · Esc 关闭')
+    expect(copy.queue.queued).toBe('已排队，下一轮发送')
+    expect(copy.queue.steered).toBe('已插话到运行中的轮次')
+    expect(copy.queue.steeredAll(3)).toBe('已插话 3 条排队消息')
+    expect(copy.queue.removed).toBe('已删除排队消息')
+    expect(copy.queue.editUnsupported).toContain('非文本内容')
+    expect(copy.queue.editMoved).toContain('按 Enter 发送')
+    expect(copy.queue.nonText).toBe('非文本内容')
+    expect(copy.queue.empty).toBe('没有排队消息。')
+    expect(copy.queue.steerUnavailable).toBe('只有 Agent 运行中才能插话。')
+    expect(copy.commands.steer).toBe('把消息插话到运行中的轮次；不带参数时插话全部排队消息')
+    expect(copy.pending.queueHint).toBe('/queue 编辑 · Ctrl+Enter 插话')
+  })
+
   it('formats the tool-card visibility labels and notices', () => {
     expect(copy.cards.levels.collapsed).toBe('collapsed')
     expect(copy.cards.levels.expanded).toBe('expanded')
@@ -201,7 +232,7 @@ describe('setCopyLocale', () => {
 
     expect(copy).toBe(chinese)
     expect(copy.status.running).toBe('运行中')
-    expect(copy.commands.queue).toBe('把一条消息排到下一轮')
+    expect(copy.commands.queue).toBe('排队一条消息；不带参数时编辑队列')
     expect(copy.clipboard.unsupported).toBe('剪贴板中没有模型可接受的图片。')
 
     setCopyLocale('en')

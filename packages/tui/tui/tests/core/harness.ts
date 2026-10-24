@@ -16,6 +16,8 @@ import type {
 import type { CommandDescriptor, CommandExecution } from '@deepseek-ai/dsh-commands'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
 import type { TerminalSession } from '../../src/terminal.ts'
@@ -45,6 +47,15 @@ export function messageText(message: { content: readonly { type: string; text?: 
   return message.content.map(block => (block.type === 'text' ? block.text ?? '' : '')).join('')
 }
 
+/**
+ * Build one queued user message for the inbox double.
+ * @param text - message text.
+ * @returns the message identity and content.
+ */
+export function queuedMessage(text: string): UserMessage {
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+}
+
 /** Mutable Agent double options. */
 export interface AgentDoubleOptions {
   /** The real Session the Agent presents. */
@@ -53,6 +64,8 @@ export interface AgentDoubleOptions {
   readonly status?: AgentStatus
   /** Agent creation options; defaults to a test provider/model. */
   readonly options?: AgentOptions
+  /** Messages already waiting in `inbox.nextTurn`. */
+  readonly queued?: readonly UserMessage[]
 }
 
 /** A mutable Agent double with recording sinks. */
@@ -61,6 +74,12 @@ export interface AgentDouble {
   readonly agent: Agent
   /** Received prompts and steering input, in call order. */
   readonly received: string[]
+  /** Follow-up deliveries, separately from steering input. */
+  readonly followups: string[]
+  /** Steering deliveries, in call order. */
+  readonly steered: string[]
+  /** Identities removed from the next-turn queue. */
+  readonly removed: string[]
   /** Cancellation causes received, in call order. */
   readonly cancels: string[]
   /** Replace the lifecycle status. */
@@ -77,13 +96,19 @@ export interface AgentDouble {
 export function agentDouble(options: AgentDoubleOptions): AgentDouble {
   const ctx = new Context()
   const received: string[] = []
+  const followups: string[] = []
+  const steered: string[] = []
+  const removed: string[] = []
   const cancels: string[] = []
   let status: AgentStatus = options.status ?? 'idle'
   let whenIdle: () => Promise<void> = async () => {}
   const agent: Agent = {
     id: options.session.id,
     session: options.session,
-    inbox: testInbox(),
+    inbox: testInbox({
+      nextTurn: options.queued ?? [],
+      removed,
+    }),
     get status() { return status },
     ctx,
     options: options.options ?? { provider: 'test', model: 'test' },
@@ -91,14 +116,17 @@ export function agentDouble(options: AgentDoubleOptions): AgentDouble {
     whenIdle: () => whenIdle(),
     runMaintenance: async task => task(new AbortController().signal),
     send: (message) => { received.push(messageText(message)) },
-    followup: (message) => { received.push(messageText(message)) },
-    steer: (message) => { received.push(messageText(message)) },
+    followup: (message) => { received.push(messageText(message)); followups.push(messageText(message)) },
+    steer: (message) => { received.push(messageText(message)); steered.push(messageText(message)) },
     inject: () => {},
   }
   onTestFinished(async () => { await ctx.fiber.dispose() })
   return {
     agent,
     received,
+    followups,
+    steered,
+    removed,
     cancels,
     setStatus(next) { status = next },
     setWhenIdle(run) { whenIdle = run },
@@ -325,6 +353,7 @@ export function terminalConfig(overrides: Partial<Config> = {}): ResolvedConfig 
     windowBlocks: 200,
     title: 'Test Terminal',
     locale: 'auto',
+    busyEnter: 'queue',
     ...overrides,
   })
 }

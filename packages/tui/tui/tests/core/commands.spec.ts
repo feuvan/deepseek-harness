@@ -25,6 +25,7 @@ interface ComposerHarness {
   readonly effortArgs: (string | undefined)[]
   readonly permissionArgs: (string | undefined)[]
   readonly queueArgs: (string | undefined)[]
+  readonly steerArgs: (string | undefined)[]
   readonly presetArgs: (string | undefined)[]
   readonly cardArgs: (string | undefined)[]
   readonly configures: string[]
@@ -44,6 +45,7 @@ async function composerHarness(options: {
   status?: 'idle' | 'running'
   expandPrompt?: ComposerDeps['expandPrompt']
   choices?: ComposerDeps['choices']
+  busyEnter?: 'queue' | 'steer'
 } = {}): Promise<ComposerHarness> {
   const ctx = freshContext()
   await mountSessions(ctx)
@@ -59,6 +61,7 @@ async function composerHarness(options: {
   const effortArgs: (string | undefined)[] = []
   const permissionArgs: (string | undefined)[] = []
   const queueArgs: (string | undefined)[] = []
+  const steerArgs: (string | undefined)[] = []
   const presetArgs: (string | undefined)[] = []
   const cardArgs: (string | undefined)[] = []
   const configures: string[] = []
@@ -76,6 +79,7 @@ async function composerHarness(options: {
     effort: (argument) => { local.push('effort'); effortArgs.push(argument) },
     permission: (argument) => { local.push('permission'); permissionArgs.push(argument) },
     queue: (argument) => { local.push('queue'); queueArgs.push(argument) },
+    steer: (argument) => { local.push('steer'); steerArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
     exit: record('exit'),
@@ -85,6 +89,7 @@ async function composerHarness(options: {
     agent: () => presented,
     local: controls,
     notice: (text) => { notices.push(text) },
+    busyEnter: options.busyEnter ?? 'queue',
     ...(options.expandPrompt === undefined ? {} : { expandPrompt: options.expandPrompt }),
     ...(options.choices === undefined ? {} : { choices: options.choices }),
   })
@@ -96,6 +101,7 @@ async function composerHarness(options: {
     effortArgs,
     permissionArgs,
     queueArgs,
+    steerArgs,
     presetArgs,
     cardArgs,
     configures,
@@ -117,6 +123,7 @@ describe('Composer.submit', () => {
     ['effort', 'effort'],
     ['permission', 'permission'],
     ['queue', 'queue'],
+    ['steer', 'steer'],
     ['config', 'config'],
     ['preset', 'preset'],
     ['exit', 'exit'],
@@ -221,12 +228,66 @@ describe('Composer.submit', () => {
     expect(harness.agent.received).toEqual(['  keep exact text '])
   })
 
-  it('steers a prompt while the agent is running', async () => {
+  it('queues a prompt while running under the default busy-Enter mode', async () => {
     const harness = await composerHarness({ status: 'running' })
+
+    harness.composer.submit('queue this')
+
+    expect(harness.agent.followups).toEqual(['queue this'])
+    expect(harness.agent.steered).toEqual([])
+    expect(harness.notices).toEqual([copy.queue.queued])
+  })
+
+  it('steers a prompt while running when busy-Enter is steer', async () => {
+    const harness = await composerHarness({ status: 'running', busyEnter: 'steer' })
 
     harness.composer.submit('steer this')
 
-    expect(harness.agent.received).toEqual(['steer this'])
+    expect(harness.agent.steered).toEqual(['steer this'])
+    expect(harness.agent.followups).toEqual([])
+    expect(harness.notices).toEqual([copy.queue.steered])
+  })
+
+  it.each([
+    { configured: 'queue', mode: 'steer', expected: 'steer' },
+    { configured: 'steer', mode: 'queue', expected: 'queue' },
+  ] as const)('honours the explicit $mode delivery over a $configured busy-Enter', async ({ configured, mode, expected }) => {
+    const harness = await composerHarness({ status: 'running', busyEnter: configured })
+
+    harness.composer.submit('explicit', mode)
+
+    if (expected === 'steer') {
+      expect(harness.agent.steered).toEqual(['explicit'])
+      expect(harness.agent.followups).toEqual([])
+      expect(harness.notices).toEqual([copy.queue.steered])
+    } else {
+      expect(harness.agent.followups).toEqual(['explicit'])
+      expect(harness.agent.steered).toEqual([])
+      expect(harness.notices).toEqual([copy.queue.queued])
+    }
+  })
+
+  it('delivers an idle prompt as a follow-up regardless of the explicit mode', async () => {
+    const harness = await composerHarness({ status: 'idle', busyEnter: 'steer' })
+
+    harness.composer.submit('idle prompt', 'steer')
+
+    expect(harness.agent.followups).toEqual(['idle prompt'])
+    expect(harness.agent.steered).toEqual([])
+    expect(harness.notices).toEqual([])
+  })
+
+  it('passes the explicit mode through the expanding path', async () => {
+    const harness = await composerHarness({
+      status: 'running',
+      busyEnter: 'queue',
+      expandPrompt: async () => ({ content: [{ type: 'text', text: 'expanded' }], notices: [] }),
+    })
+
+    harness.composer.submit('with @a.png', 'steer')
+
+    await vi.waitFor(() => { expect(harness.agent.steered).toEqual(['expanded']) })
+    expect(harness.notices).toEqual([copy.queue.steered])
   })
 
   it('sends the expanded prompt content and reports its notices', async () => {
@@ -318,7 +379,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'config', 'preset', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -349,6 +410,7 @@ describe('Composer.helpLines', () => {
     expect(lines).toContain('  /help               Show keys and commands')
     expect(lines).toContain('  /preset             ' + copy.commands.preset)
     expect(lines).toContain('  /cards              ' + copy.commands.cards)
+    expect(lines).toContain('  /steer              ' + copy.commands.steer)
     expect(lines.some(line => line.includes('/inspect'))).toBe(false)
   })
 
@@ -386,9 +448,10 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, config: () => {}, preset: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
+      busyEnter: 'queue',
     })
 
     expect(composer.statusLines()).toEqual([
@@ -682,9 +745,10 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, config: () => {}, preset: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, exit: () => {},
       },
       notice: () => {},
+      busyEnter: 'queue',
     })
 
     expect(composer.statusLines().map(line => line.trimEnd())).toContain('Provider   -')

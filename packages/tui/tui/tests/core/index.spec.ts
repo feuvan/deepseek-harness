@@ -123,6 +123,7 @@ function terminalConfig(): Config {
     windowBlocks: 200,
     title: 'Test Terminal',
     locale: 'auto',
+    busyEnter: 'queue',
   }
 }
 
@@ -178,6 +179,7 @@ describe('apply', () => {
         windowBlocks: 200,
         title: 'Test Terminal',
         locale: 'auto',
+        busyEnter: 'queue',
       })
     }).toThrow('sessionId must not be blank')
   })

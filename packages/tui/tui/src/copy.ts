@@ -205,6 +205,31 @@ const en = {
     failed: (path: string, message: string): string => `Image mention "${path}" could not be attached: ${message}`,
   },
   /** Pending-input strip shown while a turn runs. */
+  /** Queued-message dock and delivery notices. */
+  queue: {
+    /** Panel heading. */
+    title: 'Queued messages',
+    /** Panel hint. */
+    hint: '↑/↓ move · Enter steer · e edit · x remove · Esc close',
+    /** Notice after queueing a prompt while a turn runs. */
+    queued: 'Queued for the next turn',
+    /** Notice after steering a queued message. */
+    steered: 'Steered into the running turn',
+    /** Notice after steering every queued message. */
+    steeredAll: (count: number): string => `Steered ${String(count)} queued message(s)`,
+    /** Notice after removing one queued message. */
+    removed: 'Removed the queued message',
+    /** Notice when a queued row contains non-text content. */
+    editUnsupported: 'This queued message contains non-text content and cannot be edited here.',
+    /** Notice after moving a queued message back into the composer. */
+    editMoved: 'Queued message moved into the composer; press Enter to send it.',
+    /** Placeholder for a queued row whose content is not text. */
+    nonText: 'non-text content',
+    /** Notice when there is nothing to list. */
+    empty: 'No queued messages.',
+    /** Notice when steering has no running turn to target. */
+    steerUnavailable: 'Steering is available only while the agent is running.',
+  },
   pending: {
     /** Steer messages waiting for the next step boundary. */
     steering: (count: number): string => `steering next step (${count})`,
@@ -212,6 +237,8 @@ const en = {
     queued: (count: number): string => `queued for next turn (${count})`,
     /** Hint naming the interrupt key. */
     hint: 'Esc interrupts and sends now',
+    /** Hint for opening the queue editor. */
+    queueHint: '/queue edits · Ctrl+Enter steers',
   },
   /** Clipboard image-attachment notices. */
   clipboard: {
@@ -236,7 +263,8 @@ const en = {
     redraw: 'Repaint the screen',
     exit: 'Close the terminal',
     quit: 'Close the terminal',
-    queue: 'Queue a message for the next turn',
+    queue: 'Queue a message, or edit the queue without an argument',
+    steer: 'Steer a message into the running turn, or steer all queued messages',
     config: 'Show and change the configuration',
     preset: 'Show or switch the agent preset',
     /** The Agent is not live yet. */
@@ -258,6 +286,7 @@ const en = {
       '  Alt+Enter/Ctrl+J   insert a newline',
       '  Ctrl+C             cancel a running turn, then exit when idle',
       '  Ctrl+O             cycle collapsed, expanded, and hidden tool cards',
+      '  Ctrl+Enter         steer while running (queue when busy Enter is steer)',
       '  Ctrl+R             cycle reasoning visibility',
       '  Ctrl+L             repaint',
       '  Ctrl+V             attach an image from the clipboard',
@@ -266,8 +295,6 @@ const en = {
     ],
     /** Help panel command section title. */
     helpCommandsTitle: 'Commands',
-    /** Usage error for a local command that needs an argument. */
-    usage: (name: string, hint: string): string => `Usage: /${name} ${hint}`,
   },
   /** Command status panel labels. */
   statusPanel: {
@@ -504,10 +531,25 @@ export const chinese: Copy = {
     tooMany: limit => `一条消息最多附加 ${String(limit)} 张图片。`,
     failed: (path, message) => `图片 "${path}" 附加失败：${message}`,
   },
+  /** 排队消息面板与投递提示。 */
+  queue: {
+    title: '排队消息',
+    hint: '↑/↓ 移动 · Enter 插话 · e 编辑 · x 删除 · Esc 关闭',
+    queued: '已排队，下一轮发送',
+    steered: '已插话到运行中的轮次',
+    steeredAll: (count: number): string => `已插话 ${String(count)} 条排队消息`,
+    removed: '已删除排队消息',
+    editUnsupported: '这条排队消息包含非文本内容，无法在这里编辑。',
+    editMoved: '排队消息已移回编辑器；按 Enter 发送。',
+    nonText: '非文本内容',
+    empty: '没有排队消息。',
+    steerUnavailable: '只有 Agent 运行中才能插话。',
+  },
   pending: {
     steering: count => `steering 下一步 (${String(count)})`,
     queued: count => `已排队到下一轮 (${String(count)})`,
     hint: 'Esc 中断并立即发送',
+    queueHint: '/queue 编辑 · Ctrl+Enter 插话',
   },
   clipboard: {
     unsupported: '剪贴板中没有模型可接受的图片。',
@@ -526,7 +568,8 @@ export const chinese: Copy = {
     redraw: '重绘屏幕',
     exit: '关闭终端',
     quit: '关闭终端',
-    queue: '把一条消息排到下一轮',
+    queue: '排队一条消息；不带参数时编辑队列',
+    steer: '把消息插话到运行中的轮次；不带参数时插话全部排队消息',
     config: '显示并修改配置',
     preset: '显示或切换 agent preset',
     agentNotReady: 'Agent 尚未就绪。',
@@ -540,7 +583,8 @@ export const chinese: Copy = {
       '  Esc                编辑器为空时中断运行中的轮次',
       '  Alt+Enter/Ctrl+J   插入换行',
       '  Ctrl+C             取消运行中的轮次，空闲时退出',
-      '  Ctrl+O             在收缩、展开与隐藏工具卡之间循环',
+      '  Ctrl+O             在折叠、展开与隐藏工具卡之间循环',
+      '  Ctrl+Enter         运行中插话（busy Enter 为插话时改为排队）',
       '  Ctrl+R             循环推理显示级别',
       '  Ctrl+L             重绘',
       '  Ctrl+V             从剪贴板附加图片',
@@ -548,7 +592,6 @@ export const chinese: Copy = {
       '  PgUp/PgDn          滚动 transcript',
     ],
     helpCommandsTitle: '命令',
-    usage: (name, hint) => `用法：/${name} ${hint}`,
   },
   statusPanel: {
     session: '会话',
