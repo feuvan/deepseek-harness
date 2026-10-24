@@ -108,6 +108,14 @@ afterEach(() => {
 })
 
 describe('TerminalAutocompleteProvider.getSuggestions delegation', () => {
+  it('does not open path completion after a space in prose', async () => {
+    const harness = await autocompleteHarness()
+
+    expect((await suggest(harness.provider, ['有什么好的 doc lint 或者 '], 0, 13)).suggestions).toBeNull()
+    expect((await suggest(harness.provider, ['look at src/fi'], 0, 14)).suggestions).toBeNull()
+    expect(harness.calls).toEqual([])
+  })
+
   it('completes slash commands through the shared editor provider', async () => {
     const harness = await autocompleteHarness()
 
@@ -303,10 +311,11 @@ describe('TerminalAutocompleteProvider.applyCompletion', () => {
 })
 
 describe('TerminalAutocompleteProvider.shouldTriggerFileCompletion', () => {
-  it('delegates the trigger decision to the shared provider', async () => {
+  it('never requests bare file completion', async () => {
     const harness = await autocompleteHarness()
 
-    expect(harness.provider.shouldTriggerFileCompletion(['hello'], 0, 5)).toBe(true)
+    expect(harness.provider.shouldTriggerFileCompletion(['hello'], 0, 5)).toBe(false)
+    expect(harness.provider.shouldTriggerFileCompletion(['src/fi'], 0, 6)).toBe(false)
     expect(harness.provider.shouldTriggerFileCompletion(['/he'], 0, 3)).toBe(false)
   })
 })

@@ -65,13 +65,13 @@ export class TerminalAutocompleteProvider implements AutocompleteProvider {
     // Slash commands own their arguments; an `@` inside a command line is not a
     // workspace mention.
     if (line.trimStart().startsWith('/')) return this.delegate.getSuggestions(lines, cursorLine, cursorCol, options)
+    // Prose never opens path completion: a plain space must not list the
+    // workspace. Local files are referenced explicitly through `@` mentions.
     const token = activeAtToken(line, cursorCol)
-    if (token === undefined) return this.delegate.getSuggestions(lines, cursorLine, cursorCol, options)
+    if (token === undefined) return null
     const agent = this.deps.agent()
     const references = this.deps.ctx.get('fileReferences')
-    if (agent === undefined || references === undefined) {
-      return this.delegate.getSuggestions(lines, cursorLine, cursorCol, options)
-    }
+    if (agent === undefined || references === undefined) return null
     try {
       const candidates = await references.list(agent, token.query, options.signal)
       const items: AutocompleteItem[] = []
@@ -121,13 +121,11 @@ export class TerminalAutocompleteProvider implements AutocompleteProvider {
   }
 
   /**
-   * Whether an exact file completion was explicitly requested.
-   * @param lines - editor content lines.
-   * @param cursorLine - cursor line index.
-   * @param cursorCol - cursor column within that line.
-   * @returns whether the delegate should offer file completion.
+   * Whether an exact file completion was explicitly requested. The terminal
+   * never falls back to bare path completion; mentions own that surface.
+   * @returns always false.
    */
-  shouldTriggerFileCompletion(lines: string[], cursorLine: number, cursorCol: number): boolean {
-    return this.delegate.shouldTriggerFileCompletion(lines, cursorLine, cursorCol)
+  shouldTriggerFileCompletion(_lines: string[], _cursorLine: number, _cursorCol: number): boolean {
+    return false
   }
 }

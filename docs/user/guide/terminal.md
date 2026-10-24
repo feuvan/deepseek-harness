@@ -46,7 +46,7 @@ The banner names the model and the Session. The transcript above the composer sh
 | Mouse wheel / drag | Scroll, and copy the selection through the terminal |
 | Ctrl+Shift+F | Search the rendered transcript |
 
-Completion appears as you type. Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
+Completion appears as you type, but only where it is meaningful: prose and bare paths never open it (a space does not list the workspace). Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
 
 ### Steering and the queue
 
