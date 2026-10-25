@@ -441,7 +441,8 @@ const en = {
     /** Hint line. */
     hint: '↑/↓ move · Enter open or toggle · Esc close',
     /** Hint line naming the tab keys. */
-    tabHint: '←/→ group · ↑/↓ move · Enter open · Esc close',
+    tabHint: '←/→ group · / search · ↑/↓ move · Enter open · Esc close',
+    searchHint: 'type to filter · ↑/↓ move · Enter open · Esc clear/close',
   },
   /** Model selector copy. */
   model: {
@@ -745,7 +746,8 @@ export const chinese: Copy = {
     failed: message => `无法读取配置：${message}`,
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
-    tabHint: '←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭',
+    tabHint: '←/→ 分组 · / 搜索 · ↑/↓ 移动 · Enter 打开 · Esc 关闭',
+    searchHint: '输入筛选 · ↑/↓ 移动 · Enter 打开 · Esc 清除/关闭',
   },
   /** Agent preset 名称、描述与提示。 */
   preset: {

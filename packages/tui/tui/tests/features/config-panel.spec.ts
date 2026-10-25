@@ -786,6 +786,55 @@ describe('ConfigPanel rendering', () => {
     expect(line).toContain('a-v')
   })
 
+  it('filters the active tab with slash search and clears before closing', () => {
+    const harness = panelFor({ rows: [actionRow('alpha', () => {}), actionRow('beta', () => {})] })
+    const panel = harness.panel
+
+    panel.handleInput('/')
+    expect(rendered(panel)).toContain(copy.config.searchHint)
+    expect(rendered(panel)).toContain('alpha')
+    for (const character of 'bet') panel.handleInput(character)
+    expect(rendered(panel)).not.toContain('alpha')
+    expect(rendered(panel)).toContain('beta')
+    panel.handleInput('\x7f')
+    panel.handleInput('\x7f')
+    panel.handleInput('\x7f')
+    expect(rendered(panel)).toContain('alpha')
+    panel.handleInput(ESCAPE)
+    expect(rendered(panel)).toContain('alpha')
+    expect(rendered(panel)).toContain(copy.config.tabHint)
+    panel.handleInput(ESCAPE)
+    expect(harness.cancels).toHaveLength(1)
+  })
+
+  it('navigates and activates filtered search results', () => {
+    const harness = panelFor({ rows: [actionRow('alpha', () => {}), actionRow('gamma', () => {})] })
+    const panel = harness.panel
+
+    panel.handleInput('/')
+    for (const character of 'a') panel.handleInput(character)
+    panel.handleInput(TAB)
+    panel.handleInput(DOWN)
+    panel.handleInput('\u001b[A')
+    expect(harness.activations).toHaveLength(0)
+    panel.handleInput(ENTER)
+    expect(harness.activations.map(row => row.label)).toEqual(['alpha'])
+  })
+
+  it('activates the filtered row with Enter and shows no matches', () => {
+    const harness = panelFor({ rows: [actionRow('alpha', () => {}), actionRow('beta', () => {})] })
+    const panel = harness.panel
+
+    panel.handleInput('/')
+    for (const character of 'zzz') panel.handleInput(character)
+    expect(rendered(panel)).toContain(copy.config.noMatches)
+    expect(panel.render(120).length).toBeGreaterThan(0)
+    panel.handleInput(ESCAPE)
+    panel.handleInput(ESCAPE)
+    panel.handleInput(ESCAPE)
+    expect(harness.cancels).toHaveLength(1)
+  })
+
   it('invalidates without cached state', () => {
     const harness = panelFor({ rows: [actionRow('alpha', () => {})] })
 

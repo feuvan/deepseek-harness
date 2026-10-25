@@ -498,6 +498,8 @@ export class ConfigPanel implements Component {
   private cursor = 0
   private scroll = 0
   private busy = false
+  private searching = false
+  private query = ''
 
   /**
    * @param options - rows, the terminal style table, callbacks, and the body height.
@@ -516,6 +518,48 @@ export class ConfigPanel implements Component {
    */
   handleInput(data: string): void {
     if (this.busy) return
+    if (this.searching) {
+      if (matchesKey(data, 'escape')) {
+        if (this.query !== '') {
+          this.query = ''
+          this.cursor = 0
+        } else {
+          this.searching = false
+        }
+        return
+      }
+      if (matchesKey(data, 'enter')) {
+        this.activateCurrent()
+        return
+      }
+      if (matchesKey(data, 'up')) {
+        this.moveCursor(-1)
+        return
+      }
+      if (matchesKey(data, 'down')) {
+        this.moveCursor(1)
+        return
+      }
+      if (matchesKey(data, 'backspace')) {
+        this.query = this.query.slice(0, -1)
+        this.cursor = 0
+        this.scroll = 0
+        return
+      }
+      if (data.length === 1 && data >= ' ' && data !== '\x7f') {
+        this.query += data
+        this.cursor = 0
+        this.scroll = 0
+      }
+      return
+    }
+    if (matchesKey(data, '/')) {
+      this.searching = true
+      this.query = ''
+      this.cursor = 0
+      this.scroll = 0
+      return
+    }
     if (matchesKey(data, 'tab') || matchesKey(data, 'right')) {
       this.switchSection(1)
       return
@@ -560,7 +604,7 @@ export class ConfigPanel implements Component {
       this.tabBar(width),
       '',
       ...this.bodyLines(this.activeRows(), width),
-      this.palette.dim(truncateToWidth(`  ${copy.config.tabHint}`, width)),
+      this.palette.dim(truncateToWidth(`  ${this.searching ? `/${this.query}  ${copy.config.searchHint}` : copy.config.tabHint}`, width)),
     ]
   }
 
@@ -569,7 +613,11 @@ export class ConfigPanel implements Component {
 
   /** @returns the rows of the active tab, in loader order. */
   private activeRows(): readonly ConfigRow[] {
-    return this.rows.filter(row => row.section === this.section)
+    const rows = this.rows.filter(row => row.section === this.section)
+    if (this.query === '') return rows
+    const needle = this.query.toLowerCase()
+    return rows.filter(row => [row.label, row.value, row.description ?? '', row.marker ?? '']
+      .some(value => value.toLowerCase().includes(needle)))
   }
 
   /**
@@ -611,7 +659,7 @@ export class ConfigPanel implements Component {
   private bodyLines(rows: readonly ConfigRow[], width: number): string[] {
     const lines: string[] = []
     if (rows.length === 0) {
-      lines.push(this.palette.dim(truncateToWidth(`  ${copy.config.none}`, width)))
+      lines.push(this.palette.dim(truncateToWidth(`  ${this.query === '' ? copy.config.none : copy.config.noMatches}`, width)))
     } else {
       const window = this.windowFor(rows.length)
       if (window.start > 0) lines.push(this.indicator('↑', window.start, width))

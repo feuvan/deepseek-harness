@@ -174,7 +174,7 @@ describe('copy dictionaries', () => {
     for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
       expect(copy.config.descriptions.display[key].length, key).toBeGreaterThan(0)
     }
-    expect(copy.config.tabHint).toBe('←/→ group · ↑/↓ move · Enter open · Esc close')
+    expect(copy.config.tabHint).toBe('←/→ group · / search · ↑/↓ move · Enter open · Esc close')
     expect(copy.config.hint).toContain('↑/↓ move')
 
     setCopyLocale('zh')
@@ -185,7 +185,7 @@ describe('copy dictionaries', () => {
     for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
       expect(copy.config.descriptions.display[key].length, key).toBeGreaterThan(0)
     }
-    expect(copy.config.tabHint).toBe('←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
+    expect(copy.config.tabHint).toBe('←/→ 分组 · / 搜索 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
   })
 
   it('formats the /terminal diagnostics copy', () => {
@@ -244,7 +244,7 @@ describe('copy dictionaries', () => {
     expect(copy.reasoning.available('compact, standard')).toBe('Available visibility levels: compact, standard')
     expect(copy.completion.title).toBe('Completions')
     expect(copy.completion.hint).toContain('Tab insert')
-    expect(copy.config.tabHint).toBe('←/→ group · ↑/↓ move · Enter open · Esc close')
+    expect(copy.config.tabHint).toBe('←/→ group · / search · ↑/↓ move · Enter open · Esc close')
     expect(copy.commands.reasoning).toBe('Cycle or set the reasoning visibility')
   })
 
@@ -254,7 +254,7 @@ describe('copy dictionaries', () => {
     expect(copy.moreRows(2)).toBe('另外 2 行')
     expect(copy.reasoning.levels.detailed).toBe('详细')
     expect(copy.completion.title).toBe('补全')
-    expect(copy.config.tabHint).toBe('←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
+    expect(copy.config.tabHint).toBe('←/→ 分组 · / 搜索 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
   })
 
   it('uses formatters that react to their arguments', () => {
