@@ -20,8 +20,11 @@ English | [中文](tui.zh.md)
 | `windowBlocks` | `200` | Maximum transcript blocks kept rendered |
 | `title` | `DeepSeek Harness` | Terminal title suffix |
 | `locale` | `auto` | Interface language: `en`, `zh`, or `auto` to follow `DSH_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG` |
+| `screen` | `inline` | Renderer: `inline` keeps history in the terminal scrollback (no mouse capture); `fullscreen` uses the alternate screen with app-owned scrolling |
 
-The terminal refuses to activate unless stdin and stdout are both TTYs. The failure is a startup diagnostic that names `dsh --profile headless "<task>"`; the process never enters the alternate screen.
+The terminal refuses to activate unless stdin and stdout are both TTYs. The failure is a startup diagnostic that names `dsh --profile headless "<task>"`; the process never takes over the screen.
+
+The default `inline` renderer (`TuiMainScreen`) prints the interface and all transcript history into the terminal's normal screen and scrollback: the first frame is bottom-anchored, later output grows downward, and the terminal owns wheel scrolling, scrollback, and text selection because the application requests no mouse capture. `screen: fullscreen` selects the alternate-screen renderer (`TuiAltScreen`) with an app-owned `ScrollView`, mouse capture, archived-block paging, the jump-to-end indicator, and transcript search. Both modes share the composer, dock, status, and projection machinery; inline mode disables the fullscreen-only paging and search paths.
 
 ## Lifecycle
 
@@ -57,7 +60,7 @@ The bundle composes the same agent-preset realm as the Web profile: the base age
 
 `/config` opens a tabbed configuration panel in that dock over the live services rather than a static config file: one tab per category, Tab/Left/Right switches, Up/Down and PageUp/PageDown scroll the tab body, Enter activates, Esc closes. The model and effort rows activate the existing selector and chooser; the permission rows write the Session preset through the registered `/permission` command; the experimental rows read `ctx.pluginManager.listBundles()`, toggle only the shipped optional bundles, and report the manager result (`restart-required` because the terminal bundle disables HMR, or the read-only reason); the display rows show the resolved profile values as read-only with the owning layer named. Writes never bypass the owning service, and a failed write is shown instead of retried.
 
-The terminal reports its own state outside the transcript: OSC 9;4 progress while a turn runs, and OSC 7501 program status (`working`, `blocked` while a question or approval panel waits, `idle` otherwise). Disposal clears the report. Interface copy ships in English and Chinese; `locale` selects a dictionary explicitly and `auto` follows the launch environment, so the footer, panels, notices, help, and diagnostics all switch together. Mouse reporting is enabled, so the wheel scrolls the transcript, drag-select copies through OSC 52, and the scroll view shows its jump-to-end indicator; `Ctrl+Shift+F` opens the transcript search.
+The terminal reports its own state outside the transcript: OSC 9;4 progress while a turn runs, and OSC 7501 program status (`working`, `blocked` while a question or approval panel waits, `idle` otherwise). Disposal clears the report. Interface copy ships in English and Chinese; `locale` selects a dictionary explicitly and `auto` follows the launch environment, so the footer, panels, notices, help, and diagnostics all switch together. `/terminal` reports the emulator, TERM, multiplexer/SSH state, renderer, keyboard protocol, focus, retained transcript size, and received wheel events. In fullscreen mode mouse reporting is enabled, so the wheel scrolls the app-owned viewport, drag-select copies through OSC 52, the scroll view shows its jump-to-end indicator, and `Ctrl+Shift+F` opens transcript search; inline mode deliberately leaves wheel and selection to the terminal.
 
 ## Human interaction
 

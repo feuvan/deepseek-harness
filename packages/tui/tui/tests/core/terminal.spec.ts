@@ -25,20 +25,43 @@ describe('assertInteractiveTerminal', () => {
 })
 
 describe('createTerminalSession', () => {
-  it('wraps the supplied terminal in an alternate-screen renderer', async () => {
-    const { headless, session } = headlessSession()
+  it('wraps the supplied terminal in the inline renderer by default', async () => {
+    const headless = new HeadlessTerminal({ columns: 100, rows: 30 })
+    onTestFinished(() => { headless.dispose() })
+    const session = createTerminalSession(headless)
 
     expect(session.terminal).not.toBe(headless)
     expect(session.tui.terminal).toBe(session.terminal)
     expect(session.terminal.columns).toBe(headless.columns)
     expect(session.terminal.rows).toBe(headless.rows)
+    expect(session.tui.mode).toBe('regular')
+    session.stop()
+    await headless.settle()
+  })
+
+  it('keeps the alternate-screen renderer for an explicit fullscreen session', async () => {
+    const { headless, session } = headlessSession({ screen: 'fullscreen' })
+
     expect(session.tui.mode).toBe('fullscreen')
     session.stop()
     await headless.settle()
   })
 
+  it('keeps the transcript scroll controls neutral for the inline renderer', async () => {
+    const headless = new HeadlessTerminal({ columns: 100, rows: 30 })
+    onTestFinished(() => { headless.dispose() })
+    const session = createTerminalSession(headless)
+
+    expect(session.scrollTop()).toBe(0)
+    session.scrollBy(3)
+    session.scrollToBottom()
+    expect(session.isFollowingEnd()).toBe(true)
+    session.stop()
+    await headless.settle()
+  })
+
   it('delegates transcript viewport scrolling to the renderer', async () => {
-    const { headless, session } = headlessSession()
+    const { headless, session } = headlessSession({ screen: 'fullscreen' })
     const tui = session.tui as TuiAltScreen
     const scrollBy = vi.spyOn(tui, 'scrollBy')
     const scrollToBottom = vi.spyOn(tui, 'scrollToBottom')
@@ -67,7 +90,7 @@ describe('createTerminalSession', () => {
   })
 
   it('enables mouse selection, copy-on-select, and the localized jump indicator', () => {
-    const { session } = headlessSession()
+    const { session } = headlessSession({ screen: 'fullscreen' })
     const tui = session.tui as TuiAltScreen
     const indicator = Reflect.get(tui, 'scrollToEndIndicator') as () => string
 
@@ -190,7 +213,7 @@ describe('InterceptingTerminal forwarding', () => {
 
   it('disables alternate-scroll mode right after the alternate screen and mouse capture', () => {
     const { terminal, calls } = recordingTerminal()
-    const session = createTerminalSession(terminal)
+    const session = createTerminalSession(terminal, { screen: 'fullscreen' })
 
     session.terminal.write('\u001b[?1049h\u001b[?1000h\u001b[?1006h')
     session.terminal.write('frame')
@@ -204,13 +227,26 @@ describe('InterceptingTerminal forwarding', () => {
 
   it('starts the renderer with alternate-scroll mode disabled', () => {
     const { terminal, calls } = recordingTerminal()
-    const session = createTerminalSession(terminal)
+    const session = createTerminalSession(terminal, { screen: 'fullscreen' })
 
     session.tui.start()
     session.stop()
 
     expect(calls.some(call => call.includes('\u001b[?1049h'))).toBe(true)
     expect(calls).toContain('write:\u001b[?1007l')
+  })
+
+  it('starts the inline renderer without alternate-screen or mouse capture sequences', () => {
+    const { terminal, calls } = recordingTerminal()
+    const session = createTerminalSession(terminal)
+
+    session.tui.start()
+    session.stop()
+
+    expect(calls.some(call => call.includes('\u001b[?1049h'))).toBe(false)
+    expect(calls.some(call => call.includes('\u001b[?1000h'))).toBe(false)
+    expect(calls.some(call => call.includes('\u001b[?1006h'))).toBe(false)
+    expect(calls).not.toContain('write:\u001b[?1007l')
   })
 
   it('tolerates a terminal without the optional exit restore hook', () => {

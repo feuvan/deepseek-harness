@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-25-tui-inline-renderer.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-25-tui-inline-renderer.md
+/agent-note-inline-terminal-renderer:
+  en: 72eacc4ef8084672
+  zh: 70003bbeb7424472
+/agent-note-inline-terminal-renderer/problem:
+  en: ab86eee5cd523f60
+  zh: 4948285376f31904
+/agent-note-inline-terminal-renderer/decision:
+  en: 0fff24f651b50225
+  zh: 264270c1a610edd9
+/agent-note-inline-terminal-renderer/verification:
+  en: cadc8fd54d05c162
+  zh: a17c579e1a1e3670
+/agent-note-inline-terminal-renderer/consequences:
+  en: 3bbdedb7931c2886
+  zh: cf082fc702347269
+/agent-note-inline-terminal-renderer/alternatives-considered:
+  en: ad0e47e76598a5e0
+  zh: 66fb6446eda741af

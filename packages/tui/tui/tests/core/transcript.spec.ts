@@ -602,6 +602,18 @@ describe('Transcript clear, cards, reasoning, and notices', () => {
     expect(() => { removeBlock.call(transcript, {}) }).not.toThrow()
   })
 
+  it('reports retained and archived block counts', () => {
+    const { transcript } = transcriptHarness({ windowBlocks: 1 })
+    transcript.notice('one')
+    transcript.notice('two')
+    transcript.notice('three')
+
+    expect(transcript.stats()).toEqual({ blocks: 3, archived: 2 })
+
+    transcript.showOlder(true)
+    expect(transcript.stats()).toEqual({ blocks: 3, archived: 0 })
+  })
+
   it('resets archived history on clear', () => {
     const { transcript } = transcriptHarness({ windowBlocks: 1 })
     transcript.notice('one')

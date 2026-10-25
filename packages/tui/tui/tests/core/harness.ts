@@ -21,7 +21,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
-import type { TerminalSession } from '../../src/terminal.ts'
+import type { ScreenMode, TerminalSession } from '../../src/terminal.ts'
 import { createTerminalSession } from '../../src/terminal.ts'
 import { resolveConfig, type Config, type ResolvedConfig } from '../../src/config.ts'
 import { createMarkdownTheme } from '../../src/markdown.ts'
@@ -355,6 +355,7 @@ export function terminalConfig(overrides: Partial<Config> = {}): ResolvedConfig 
     title: 'Test Terminal',
     locale: 'auto',
     busyEnter: 'queue',
+    screen: 'fullscreen',
     ...overrides,
   })
 }
@@ -399,7 +400,12 @@ export interface HeadlessSession {
  * @param options - geometry and whether to use the main-screen renderer.
  * @returns the terminal session and its emulator.
  */
-export function headlessSession(options: { columns?: number; rows?: number; mainScreen?: boolean } = {}): HeadlessSession {
+export function headlessSession(options: {
+  columns?: number
+  rows?: number
+  mainScreen?: boolean
+  screen?: ScreenMode
+} = {}): HeadlessSession {
   const headless = new HeadlessTerminal({ columns: options.columns ?? 100, rows: options.rows ?? 30 })
   onTestFinished(() => { headless.dispose() })
   if (options.mainScreen === true) {
@@ -420,7 +426,7 @@ export function headlessSession(options: { columns?: number; rows?: number; main
     }
     return { headless, session }
   }
-  return { headless, session: createTerminalSession(headless) }
+  return { headless, session: createTerminalSession(headless, { screen: options.screen ?? 'fullscreen' }) }
 }
 
 /** One terminal the lifecycle created, with start/stop spies. */

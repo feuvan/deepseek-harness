@@ -13,6 +13,7 @@ describe('resolveConfig', () => {
       title: 'Test',
       locale: 'auto',
       busyEnter: 'queue',
+      screen: 'inline',
     })
     expect(resolved).toEqual({
       sessionId: 'session-test',
@@ -23,6 +24,7 @@ describe('resolveConfig', () => {
       title: 'Test',
       locale: 'auto',
       busyEnter: 'queue',
+      screen: 'inline',
     })
     expect(Object.isFrozen(resolved)).toBe(true)
   })
@@ -37,6 +39,7 @@ describe('resolveConfig', () => {
       title: 'Test',
       locale: 'auto',
       busyEnter: 'steer',
+      screen: 'inline',
     })).toThrow('sessionId must not be blank')
   })
 
@@ -51,6 +54,7 @@ describe('resolveConfig', () => {
       windowBlocks: 200,
       title: 'DeepSeek Harness',
       busyEnter: 'queue',
+      screen: 'inline',
     })
   })
 
@@ -64,10 +68,13 @@ describe('resolveConfig', () => {
       title: 'Test',
       locale: 'en',
       busyEnter: 'steer',
+      screen: 'fullscreen',
     })
 
     expect(resolved.busyEnter).toBe('steer')
+    expect(resolved.screen).toBe('fullscreen')
     expect(Config({ sessionId: 'session-test', busyEnter: 'steer' }).busyEnter).toBe('steer')
+    expect(Config({ sessionId: 'session-test', screen: 'fullscreen' }).screen).toBe('fullscreen')
   })
 })
 

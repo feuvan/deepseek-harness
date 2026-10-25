@@ -4,6 +4,8 @@ English | [中文](terminal.zh.md)
 
 `dsh tui` runs the agent in the terminal you are already in. It uses the same model, tools, sessions, permissions, and approval policy as the Web UI, and it keeps working when no browser or server is involved.
 
+
+By default the transcript grows in the terminal's normal scrollback: the terminal's own wheel, scrollbar, and selection work, and the app requests no mouse capture. Set `screen: fullscreen` in the TUI profile to switch to an alternate-screen interface with an app-owned scroll view and transcript search. `/terminal` shows which renderer is active.
 ## Start it
 
 Run the command from the directory you want the agent to work in:
@@ -39,13 +41,13 @@ The banner names the model and the Session. The transcript above the composer sh
 | Ctrl+O | Cycle tool-card visibility (collapsed → expanded → hidden) |
 | Ctrl+R | Cycle reasoning visibility (compact → standard → detailed → verbose) |
 | Ctrl+L | Repaint the screen |
-| Esc | Return to the transcript bottom when scrolled; interrupt a running turn when the composer is empty and at the bottom |
+| Esc | Interrupt a running turn when the composer is empty; in `fullscreen` mode also return to the transcript bottom when scrolled |
 | Ctrl+V | Attach an image from the clipboard |
 | Shift+Tab | Advance the current model's reasoning effort |
-| PgUp / PgDn | Scroll the transcript; reaching the top loads older history |
-| Mouse wheel / drag | Scroll inside the transcript and copy the selection through the terminal (iTerm2 wheel conversion is disabled) |
-| Ctrl+Home / Ctrl+End | Load the full transcript history / jump to the newest output |
-| Ctrl+Shift+F | Search the rendered transcript |
+| PgUp / PgDn | Scroll the terminal scrollback in `inline` mode; page app-owned history in `fullscreen` mode |
+| Mouse wheel / drag | Native terminal scrolling and selection in `inline` mode; app-owned scrolling in `fullscreen` mode |
+| Ctrl+Home / Ctrl+End | `fullscreen` mode: load the full app history / jump to the newest output |
+| Ctrl+Shift+F | `fullscreen` mode: search the rendered transcript |
 
 Completion appears as you type, but only where it is meaningful: prose and bare paths never open it (a space does not list the workspace). Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
 
@@ -69,7 +71,7 @@ A question tagged as a plan review renders its own panel: the plan document is f
 
 ### Commands
 
-Terminal-only controls: `/help`, `/status`, `/model`, `/preset`, `/effort`, `/permission`, `/queue`, `/config`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`.
+Terminal-only controls: `/help`, `/status`, `/model`, `/preset`, `/effort`, `/permission`, `/queue`, `/config`, `/terminal`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`. `/terminal` reports the renderer, terminal environment, focus, transcript size, and received wheel events.
 
 Registered agent commands also work from the composer, including `/compact`, `/goal`, `/plan`, `/permission`, and skill invocations. Their recorded outcome appears in the transcript like any other command.
 
@@ -101,7 +103,7 @@ Tool-card bodies render in one of three visibility modes: `collapsed` (a preview
 
 ### Configuration
 
-`/config` opens a configuration panel below the composer with one tab per category; Tab or Left/Right switches tabs, Up/Down and PgUp/PgDn scroll, Enter opens or toggles, Esc closes. It shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; toggling one saves it through the plugin manager and tells you a restart is required (the terminal profile has no configuration reload), and rows the profile patch cannot change show their read-only reason. Terminal display values (styling, animation, card lines, transcript window, title, language) are shown read-only because the profile patch owns them; edit the `terminal-ui` row in your profile to change them.
+`/config` opens a configuration panel below the composer with one tab per category; Tab or Left/Right switches tabs, Up/Down and PgUp/PgDn scroll, Enter opens or toggles, Esc closes. It shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; toggling one saves it through the plugin manager and tells you a restart is required (the terminal profile has no configuration reload), and rows the profile patch cannot change show their read-only reason. Terminal display values (styling, animation, card lines, transcript window, title, language, screen mode) are shown read-only because the profile patch owns them; edit the `terminal-ui` row in your profile to change them.
 
 ### Interface language
 

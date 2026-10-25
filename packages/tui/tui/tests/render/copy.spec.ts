@@ -160,21 +160,51 @@ describe('copy dictionaries', () => {
     expect(copy.statusPanel.preset).toBe('Agent preset')
   })
 
+  it('formats the /terminal diagnostics copy', () => {
+    expect(copy.commands.terminal).toBe('Show terminal, input, and rendering diagnostics')
+    expect(copy.terminal.title).toBe('Terminal diagnostics')
+    expect(copy.terminal.environment).toBe('Environment')
+    expect(copy.terminal.renderer).toBe('Renderer')
+    expect(copy.terminal.transcript).toBe('Transcript')
+    expect(copy.terminal.screenInline).toBe('inline (terminal scrollback; no mouse capture)')
+    expect(copy.terminal.screenFullscreen).toBe('fullscreen (alternate screen; mouse capture)')
+    expect(copy.terminal.keyboardKitty).toBe('kitty')
+    expect(copy.terminal.keyboardLegacy).toBe('legacy')
+    expect(copy.terminal.focused).toBe('focused')
+    expect(copy.terminal.unfocused).toBe('unfocused')
+    expect(copy.terminal.focusUnknown).toBe('unknown')
+    expect(copy.terminal.wheelNone).toBe('0 — the terminal owns the wheel in inline mode')
+    expect(copy.terminal.wheelSeen(3, '1.2s')).toBe('3 (last 1.2s)')
+    expect(copy.terminal.transcriptValue(4, 2)).toBe('4 blocks · 2 archived')
+    expect(copy.terminal.hint).toContain('keeps history in the terminal scrollback')
+
+    setCopyLocale('zh')
+    expect(copy.commands.terminal).toBe('显示终端、输入与渲染诊断信息')
+    expect(copy.terminal.title).toBe('终端诊断')
+    expect(copy.terminal.environment).toBe('环境')
+    expect(copy.terminal.screenInline).toContain('inline')
+    expect(copy.terminal.screenFullscreen).toContain('fullscreen')
+    expect(copy.terminal.focusUnknown).toBe('未知')
+    expect(copy.terminal.wheelSeen(3, '1.2s')).toBe('3（最近 1.2s 前）')
+    expect(copy.terminal.transcriptValue(4, 2)).toBe('4 块 · 2 归档')
+    expect(copy.terminal.hint).toContain('scrollback')
+  })
+
   it('formats the transcript scrollback labels and help keys', () => {
     expect(copy.composer.scrollToEnd).toBe('↓ Back to bottom · esc')
     expect(copy.commands.helpKeys).toContain(
-      '  Esc                return to the transcript bottom, then interrupt a running turn',
+      '  Esc                interrupt; in fullscreen mode it first returns to the transcript bottom',
     )
     expect(copy.commands.helpKeys).toContain(
-      '  PgUp/PgDn          scroll the transcript; older history pages in at the top',
+      '  PgUp/PgDn          scroll the transcript (fullscreen mode pages older history in)',
     )
 
     setCopyLocale('zh')
     expect(copy.composer.scrollToEnd).toBe('↓ 回到底部 · esc')
     expect(copy.commands.helpKeys).toContain(
-      '  Esc                回到 transcript 底部；已在底部时中断运行中的轮次',
+      '  Esc                中断运行中的轮次；fullscreen 模式下先回到 transcript 底部',
     )
-    expect(copy.commands.helpKeys).toContain('  PgUp/PgDn          滚动 transcript；到达顶部时载入更早历史')
+    expect(copy.commands.helpKeys).toContain('  PgUp/PgDn          滚动 transcript（fullscreen 模式在顶部载入更早历史）')
   })
 
   it('formats the bottom-dock and reasoning labels', () => {

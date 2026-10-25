@@ -4,6 +4,8 @@
 
 `dsh tui` 在你当前所在的终端中运行 agent（智能体）。它使用与 Web UI 相同的模型、工具、会话、权限与审批策略，并且在没有浏览器或服务器参与时也能工作。
 
+
+默认情况下 transcript 写在终端普通 scrollback 中：终端自己的滚轮、滚动条与文本选择都可用，应用不捕获鼠标。在 TUI profile 中设置 `screen: fullscreen` 可切换到 alternate-screen 界面，获得应用自管滚动视图与 transcript 搜索。`/terminal` 显示当前渲染器。
 ## 启动
 
 在你希望 agent 工作的目录中运行：
@@ -39,13 +41,13 @@ dsh --profile headless "run the tests"
 | Ctrl+O | 循环工具卡可见性（折叠 → 展开 → 隐藏） |
 | Ctrl+R | 显示或隐藏推理 |
 | Ctrl+L | 重绘屏幕 |
-| Esc | 滚动时回到底部；已在底部且编辑器为空时中断运行中的轮次 |
+| Esc | 编辑器为空时中断运行中的轮次；`fullscreen` 模式下滚动时回到底部 |
 | Ctrl+V | 从剪贴板附加图片 |
 | Shift+Tab | 推进当前模型的推理强度 |
-| PgUp / PgDn | 滚动 transcript；到达顶部时载入更早历史 |
-| 鼠标滚轮 / 拖拽 | 在 transcript 内滚动，并通过终端复制选区（会关闭 iTerm2 的滚轮转换） |
-| Ctrl+Home / Ctrl+End | 载入完整 transcript 历史 / 跳到最新输出 |
-| Ctrl+Shift+F | 在已渲染的 transcript 中搜索 |
+| PgUp / PgDn | `inline` 模式滚动终端 scrollback；`fullscreen` 模式翻动应用自管历史 |
+| 鼠标滚轮 / 拖拽 | `inline` 模式使用终端原生滚动与选择；`fullscreen` 模式为应用自管滚动 |
+| Ctrl+Home / Ctrl+End | `fullscreen` 模式：载入完整应用历史 / 跳到最新输出 |
+| Ctrl+Shift+F | `fullscreen` 模式：在已渲染的 transcript 中搜索 |
 
 补全只在有意义的位置出现：普通文字与裸路径不会触发补全（输入空格不会列出工作区）。输入 `/` 会列出命令及其描述；输入 `@` 会补全工作区中的文件与目录，含空格的路径通过带引号的 `@"..."` 形式补全。`Tab` 接受高亮条目。
 
@@ -69,7 +71,7 @@ dsh --profile headless "run the tests"
 
 ### 命令
 
-终端专属控制：`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。
+终端专属控制：`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/config`、`/terminal`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。`/terminal` 显示渲染器、终端环境、焦点、transcript 规模与收到的滚轮事件。
 
 已注册的 agent 命令也可从编辑器使用，包括 `/compact`、`/goal`、`/plan`、`/permission` 以及 skill 调用。它们记录的结果会像其他命令一样出现在 transcript 中。
 
@@ -101,7 +103,7 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 
 ### 配置
 
-`/config` 在编辑器下方打开配置面板，每个分类一个 tab；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 滚动，Enter 打开或切换，Esc 关闭。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
+`/config` 在编辑器下方打开配置面板，每个分类一个 tab；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 滚动，Enter 打开或切换，Esc 关闭。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言、屏幕模式）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
 
 ### 界面语言
 

@@ -7,7 +7,7 @@
  */
 
 import {
-  ProcessTerminal, TuiAltScreen, isKeyRelease, type ProgramStatus, type Terminal, type TUI,
+  ProcessTerminal, TuiAltScreen, TuiMainScreen, isKeyRelease, type ProgramStatus, type Terminal, type TUI,
 } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 
@@ -19,6 +19,9 @@ import { copy } from './copy.ts'
  * enabled; mouse reporting is the authoritative wheel channel there.
  */
 const DISABLE_ALT_SCROLL = '\x1b[?1007l'
+
+/** Which renderer the terminal front door owns. */
+export type ScreenMode = 'inline' | 'fullscreen'
 
 /** The terminal surface this plugin owns for one application lifetime. */
 export interface TerminalSession {
@@ -110,26 +113,33 @@ export function assertInteractiveTerminal(stdinIsTty: boolean | undefined, stdou
 }
 
 /**
- * Create the alternate-screen renderer over one terminal.
+ * Create the renderer over one terminal.
  * @param terminal - the terminal to own; defaults to the process terminal.
+ * @param options - renderer selection; inline keeps history in the terminal's scrollback.
  * @returns the renderer/terminal pair with an idempotent stop.
  */
-export function createTerminalSession(terminal: Terminal = new ProcessTerminal()): TerminalSession {
+export function createTerminalSession(
+  terminal: Terminal = new ProcessTerminal(),
+  options: { readonly screen?: ScreenMode } = {},
+): TerminalSession {
   let interceptor: ((data: string) => boolean) | undefined
   const wrapped = new InterceptingTerminal(terminal, () => interceptor)
-  const tui = new TuiAltScreen(wrapped, false, undefined, {
-    mouse: true,
-    copyOnSelect: true,
-    scrollToEndIndicator: () => copy.composer.scrollToEnd,
-  })
+  const screen = options.screen ?? 'inline'
+  const tui: TUI = screen === 'inline'
+    ? new TuiMainScreen(wrapped, false)
+    : new TuiAltScreen(wrapped, false, undefined, {
+      mouse: true,
+      copyOnSelect: true,
+      scrollToEndIndicator: () => copy.composer.scrollToEnd,
+    })
   let stopped = false
   return {
     tui,
     terminal: wrapped,
-    scrollTop: () => tui.viewportTop,
-    scrollBy: (lines) => { tui.scrollBy(lines) },
-    scrollToBottom: () => { tui.scrollToBottom() },
-    isFollowingEnd: () => tui.isFollowingOutput,
+    scrollTop: () => tui.mode === 'fullscreen' ? (tui as TuiAltScreen).viewportTop : 0,
+    scrollBy: (lines) => { if (tui.mode === 'fullscreen') (tui as TuiAltScreen).scrollBy(lines) },
+    scrollToBottom: () => { if (tui.mode === 'fullscreen') (tui as TuiAltScreen).scrollToBottom() },
+    isFollowingEnd: () => tui.mode === 'fullscreen' ? (tui as TuiAltScreen).isFollowingOutput : true,
     stop: () => {
       if (stopped) return
       stopped = true

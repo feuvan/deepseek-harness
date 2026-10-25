@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { LocaleConfig } from './locale.ts'
+import type { ScreenMode } from './terminal.ts'
 
 /** Delivery mode plain Enter uses while the presented Agent is running. */
 export type BusyEnter = 'queue' | 'steer'
@@ -42,6 +43,8 @@ export interface Config {
   locale: LocaleConfig
   /** Delivery mode plain Enter uses while the presented Agent is running. */
   busyEnter: BusyEnter
+  /** Renderer ownership: inline keeps history in the terminal scrollback. */
+  screen: ScreenMode
 }
 
 /** Validated schema for {@link Config}. */
@@ -54,6 +57,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
   title: z.string().default('DeepSeek Harness'),
   locale: z.union([z.const('en'), z.const('zh'), z.const('auto')]).default('auto'),
   busyEnter: z.union([z.const('queue'), z.const('steer')]).default('queue'),
+  screen: z.union([z.const('inline'), z.const('fullscreen')]).default('inline'),
 })
 
 /** Immutable runtime values resolved once when the plugin activates. */
@@ -74,6 +78,8 @@ export interface ResolvedConfig {
   readonly locale: LocaleConfig
   /** Delivery mode plain Enter uses while the presented Agent is running. */
   readonly busyEnter: BusyEnter
+  /** Renderer ownership: inline keeps history in the terminal scrollback. */
+  readonly screen: ScreenMode
 }
 
 /**
@@ -94,5 +100,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     title: config.title,
     locale: config.locale,
     busyEnter: config.busyEnter,
+    screen: config.screen,
   })
 }

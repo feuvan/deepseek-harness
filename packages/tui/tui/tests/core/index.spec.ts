@@ -128,6 +128,7 @@ function terminalConfig(): Config {
     title: 'Test Terminal',
     locale: 'auto',
     busyEnter: 'queue',
+    screen: 'inline',
   }
 }
 
@@ -184,6 +185,7 @@ describe('apply', () => {
         title: 'Test Terminal',
         locale: 'auto',
         busyEnter: 'queue',
+        screen: 'inline',
       })
     }).toThrow('sessionId must not be blank')
   })

@@ -20,8 +20,11 @@ kind: "subsystem"
 | `windowBlocks` | `200` | 保留渲染的 transcript 块上限 |
 | `title` | `DeepSeek Harness` | 终端标题后缀 |
 | `locale` | `auto` | 界面语言：`en`、`zh`，或 `auto` 依次跟随 `DSH_LOCALE`、`LC_ALL`、`LC_MESSAGES`、`LANG` |
+| `screen` | `inline` | 渲染模式：`inline` 历史进入终端 scrollback（不捕获鼠标）；`fullscreen` 使用 alternate screen 与应用自管滚动 |
 
 除非 stdin 与 stdout 均为 TTY，终端拒绝激活。该失败是启动诊断，并指出 `dsh --profile headless "<task>"`；进程从不进入备用屏。
+
+默认 `inline` 渲染器（`TuiMainScreen`）把界面与全部 transcript 历史打印到终端普通屏幕与 scrollback：首帧底部对齐，后续输出向下增长；由于应用不请求鼠标捕获，滚轮、scrollback 与文本选择都由终端负责。`screen: fullscreen` 选择 alternate-screen 渲染器（`TuiAltScreen`），提供应用自管 `ScrollView`、鼠标捕获、归档块翻页、回到底部提示与 transcript 搜索。两种模式共用 composer、dock、状态与 projection 机制；inline 模式关闭仅属于 fullscreen 的翻页与搜索路径。
 
 ## 生命周期
 

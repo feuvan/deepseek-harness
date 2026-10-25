@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/terminal.md
 /use-the-terminal-interface:
-  en: 20917e8ccc6460ed
-  zh: b544a2c6a992d944
+  en: ccd12a80396f3186
+  zh: 3eb401473b0492bb
 /use-the-terminal-interface/start-it:
   en: 3688c760de5caa93
   zh: 7a0d51f5963180fd
@@ -15,8 +15,8 @@
   en: 8511fb10dc9feb08
   zh: 0a6c046f58d0b500
 /use-the-terminal-interface/what-you-see/keys:
-  en: e456213a5b76d1c1
-  zh: 305aa3a0bfc0a6f0
+  en: b01eee1c7dedcdda
+  zh: 3d1d816ef51e0e1a
 /use-the-terminal-interface/what-you-see/steering-and-the-queue:
   en: 205e496f4ba1645b
   zh: 32cf2a8718a8dcc0
@@ -27,8 +27,8 @@
   en: dbb2f07aec112626
   zh: 6f0d69b68081cfa3
 /use-the-terminal-interface/what-you-see/commands:
-  en: 64ca21478c14f862
-  zh: 51cd6a12321f4b2a
+  en: b90d81ded4d53da2
+  zh: b31124919df74f66
 /use-the-terminal-interface/what-you-see/command-arguments:
   en: 1932c78e94bf0ed1
   zh: 72a1b56aac28314b
@@ -45,8 +45,8 @@
   en: fca2ec5791b22355
   zh: c1f0b5bde9dc36c8
 /use-the-terminal-interface/what-you-see/configuration:
-  en: 82b9dd6e3b321e34
-  zh: bd6cd2216726d40a
+  en: 0e187f3f513ea95d
+  zh: fe161d13eede96cf
 /use-the-terminal-interface/what-you-see/interface-language:
   en: 9efe323d4bf3fcb4
   zh: c957339713a96618

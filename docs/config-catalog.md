@@ -4257,7 +4257,7 @@ export type ToolPresentationMode = 'native' | 'ptc'
 ## `@deepseek-ai/dsh-tui`
 
 - `inject`: `agents` · `approval` · `commands` · `llm` · `sessionProjections` · `sessionQuery` · `sessions` · `tools` · `userQuestions`
-- `source`: [`packages/tui/tui/src/config.ts:21`](../packages/tui/tui/src/config.ts)
+- `source`: [`packages/tui/tui/src/config.ts:22`](../packages/tui/tui/src/config.ts)
 
 ```ts config-catalog
 /**
@@ -4289,6 +4289,8 @@ export interface Config {
   locale: LocaleConfig
   /** Delivery mode plain Enter uses while the presented Agent is running. */
   busyEnter: BusyEnter
+  /** Renderer ownership: inline keeps history in the terminal scrollback. */
+  screen: ScreenMode
 }
 
 /** Configuration value an operator may set: an explicit locale or environment detection. */
@@ -4296,6 +4298,9 @@ export type LocaleConfig = Locale | 'auto'
 
 /** Delivery mode plain Enter uses while the presented Agent is running. */
 export type BusyEnter = 'queue' | 'steer'
+
+/** Which renderer the terminal front door owns. */
+export type ScreenMode = 'inline' | 'fullscreen'
 
 /** Interface languages the terminal ships. */
 export type Locale = 'en' | 'zh'

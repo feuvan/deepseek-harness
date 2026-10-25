@@ -39,6 +39,7 @@ import { TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
+import { BottomAnchor } from './components/bottom-anchor.ts'
 import { ContributedStrips } from './components/contributed-strips.ts'
 import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
 import { CompletionController } from './completion.ts'
@@ -76,6 +77,9 @@ export class TerminalApp {
   private selection: ModelSelectionRef | undefined
   private animation: ReturnType<typeof setInterval> | undefined
   private lastSeq = -1
+  private wheelEvents = 0
+  private lastWheelAt: number | undefined
+  private terminalFocused: boolean | undefined
   private disposed = false
   private exiting = false
   private readonly createTerminal: () => TerminalSession
@@ -93,12 +97,12 @@ export class TerminalApp {
     ctx: Context,
     config: ResolvedConfig,
     appExit: AppExit,
-    createTerminal: () => TerminalSession = () => createTerminalSession(),
+    createTerminal?: () => TerminalSession,
   ) {
     this.ctx = ctx
     this.config = config
     this.appExit = appExit
-    this.createTerminal = createTerminal
+    this.createTerminal = createTerminal ?? (() => createTerminalSession(undefined, { screen: config.screen }))
     this.palette = createPalette(config.color)
   }
 
@@ -331,7 +335,7 @@ export class TerminalApp {
       palette: this.palette,
       markdown,
       previewLines: this.config.previewLines,
-      windowBlocks: this.config.windowBlocks,
+      windowBlocks: this.config.screen === 'inline' ? Number.MAX_SAFE_INTEGER : this.config.windowBlocks,
       requestRender: () => { tui.requestRender() },
       findTool: name => this.ctx.tools.get(name, agent),
     })
@@ -390,6 +394,7 @@ export class TerminalApp {
         steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
+        terminal: () => { this.showTerminalDiagnostics() },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
       },
@@ -407,11 +412,13 @@ export class TerminalApp {
       },
       invalidate: () => { transcript.component.invalidate() },
     }
-    const transcriptView = new ScrollView(transcriptHost, {
-      follow: 'end',
-      primary: true,
-      overscroll: 'chain',
-    })
+    const transcriptView = isViewportTUI(tui)
+      ? new ScrollView(transcriptHost, {
+        follow: 'end',
+        primary: true,
+        overscroll: 'chain',
+      })
+      : transcriptHost
     const pending = new PendingStrip(this.palette, () => status.snapshot())
     const bottom = new BottomPanel()
     this.bottom = bottom
@@ -441,9 +448,7 @@ export class TerminalApp {
         { component: lower, basis: 'auto' },
       ]))
     } else {
-      tui.addChild(banner)
-      tui.addChild(transcriptView)
-      tui.addChild(lower)
+      tui.addChild(new BottomAnchor(new VStack([banner, transcriptView, lower]), () => tui.terminal.rows))
     }
     this.disposers.push(tui.addInputListener((data: string) => {
       if (matchesKey(data, 'ctrl+c')) {
@@ -886,6 +891,60 @@ export class TerminalApp {
   }
 
   /**
+   * Record input facts used by `/terminal` diagnostics.
+   * @param data - one raw input sequence.
+   */
+  private trackTerminalInput(data: string): void {
+    if (data === '\x1b[I') {
+      this.terminalFocused = true
+      return
+    }
+    if (data === '\x1b[O') {
+      this.terminalFocused = false
+      return
+    }
+    const sgr = /^\x1b\[<(\d+);/u.exec(data)
+    const button = sgr === null ? undefined : Number(sgr[1])
+    if (button !== undefined && (button & 64) !== 0) {
+      this.wheelEvents += 1
+      this.lastWheelAt = Date.now()
+    }
+  }
+
+  /** Build and present the terminal diagnostic panel. */
+  private showTerminalDiagnostics(): void {
+    const t = copy.terminal
+    const fullscreen = this.tui !== undefined && isViewportTUI(this.tui)
+    const emulator = [process.env.TERM_PROGRAM, process.env.TERM_PROGRAM_VERSION].filter(part => part !== undefined && part !== '').join(' ') || 'unknown'
+    const multiplexer = process.env.TMUX !== undefined
+      ? 'tmux'
+      : process.env.ZELLIJ !== undefined ? 'zellij' : process.env.STY !== undefined ? 'screen' : 'none'
+    const ssh = process.env.SSH_CONNECTION !== undefined || process.env.SSH_TTY !== undefined ? 'yes' : 'no'
+    const focus = this.terminalFocused === undefined ? t.focusUnknown : this.terminalFocused ? t.focused : t.unfocused
+    const age = this.lastWheelAt === undefined ? '' : `${((Date.now() - this.lastWheelAt) / 1000).toFixed(1)}s`
+    const wheel = this.wheelEvents === 0 ? t.wheelNone : t.wheelSeen(this.wheelEvents, age)
+    const transcript = this.transcript?.stats()
+    const lines = [
+      t.environment,
+      `  ${t.emulator}: ${emulator}`,
+      `  ${t.term}: ${process.env.TERM ?? 'unknown'}`,
+      `  ${t.multiplexer}: ${multiplexer} · ${t.ssh}: ${ssh}`,
+      `  ${t.size}: ${String(this.tui?.terminal.columns ?? 0)}x${String(this.tui?.terminal.rows ?? 0)}`,
+      t.renderer,
+      `  ${t.screen}: ${fullscreen ? t.screenFullscreen : t.screenInline}`,
+      `  ${t.keyboard}: ${this.terminal?.terminal.kittyProtocolActive === true ? t.keyboardKitty : t.keyboardLegacy}`,
+      `  ${t.focus}: ${focus}`,
+      fullscreen ? `  ${t.viewport}: ${this.terminal === undefined ? t.focusUnknown : `${String(this.terminal.scrollTop())} · ${this.terminal.isFollowingEnd() ? 'following end' : 'scrolled'}`}` : '',
+      t.transcript,
+      `  ${t.transcriptValue(transcript?.blocks ?? 0, transcript?.archived ?? 0)}`,
+      `  ${t.wheel}: ${wheel}`,
+      '',
+      t.hint,
+    ].filter(line => line !== '')
+    this.showText(t.title, lines, 16)
+  }
+
+  /**
    * Page older transcript blocks into the scroll view when the reader reaches
    * the top. Input still flows to the viewport so its page/wheel scroll applies
    * after the content grows; the added line count keeps the viewport anchored
@@ -914,6 +973,7 @@ export class TerminalApp {
    * @returns whether the sequence was consumed.
    */
   private interceptDockInput(data: string): boolean {
+    this.trackTerminalInput(data)
     if (matchesKey(data, 'ctrl+c')) return false
     const surface = this.activeDockSurface()
     if (surface === undefined) {
@@ -1004,10 +1064,11 @@ export class TerminalApp {
       color: this.config.color,
       animation: this.config.animation,
       previewLines: this.config.previewLines,
-      windowBlocks: this.config.windowBlocks,
+      windowBlocks: this.config.screen === 'inline' ? Number.MAX_SAFE_INTEGER : this.config.windowBlocks,
       title: this.config.title,
       locale: this.config.locale,
       busyEnter: this.config.busyEnter,
+      screen: this.config.screen,
     }
     const rows = await loadConfigRows({
       model: {
@@ -1182,8 +1243,8 @@ export class TerminalApp {
    * @param title - panel heading.
    * @param lines - plain body lines.
    */
-  private showText(title: string, lines: readonly string[]): void {
-    const panel = new TextPanel(title, lines, this.palette, () => { this.setDockOverlay(undefined) })
+  private showText(title: string, lines: readonly string[], maxVisible = 12): void {
+    const panel = new TextPanel(title, lines, this.palette, () => { this.setDockOverlay(undefined) }, maxVisible)
     this.setDockOverlay({
       component: panel,
       handleInput: (data) => { panel.handleInput(data) },

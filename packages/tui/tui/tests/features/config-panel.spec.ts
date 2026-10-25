@@ -72,6 +72,7 @@ const DISPLAY: ConfigDisplayState = {
   title: 'Test Terminal',
   locale: 'auto',
   busyEnter: 'queue',
+  screen: 'inline',
 }
 
 /** Two selectable permission presets. */
@@ -382,6 +383,7 @@ describe('loadConfigRows', () => {
     expect(findRow(first.rows, 'display.windowBlocks').value).toBe('200')
     expect(findRow(first.rows, 'display.title').value).toBe('Test Terminal')
     expect(findRow(first.rows, 'display.locale').value).toBe('auto')
+    expect(findRow(first.rows, 'display.screen').value).toBe('inline')
     expect(findRow(first.rows, 'display.busyEnter')).toMatchObject({
       label: 'busyEnter',
       value: 'queue',

@@ -3,7 +3,7 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/tui/tui/README.md
 /:
-  en: db05794f85f8e3c4
+  en: 763807071ee528c3
   zh: 98afc92fcb199618
 /deepseek-ai-dsh-tui:
   en: 2212eca37e67f797
@@ -15,11 +15,14 @@
   en: d152484eb41ac6b4
   zh: 25a869ade3faf251
 /deepseek-ai-dsh-tui/use-this-package:
-  en: fe1ef0f0f7723a28
-  zh: cdf220408574b9b3
+  en: a082d2d29516ebbd
+  zh: e83eb50f43de9854
+/deepseek-ai-dsh-tui/use-this-package/screen-modes:
+  en: da921157eaf7e2fd
+  zh: 040fe96b324fa2d6
 /deepseek-ai-dsh-tui/use-this-package/interaction-surface:
-  en: 919407eb9718cc5d
-  zh: d8bcc9fdad84acb1
+  en: 82129444d2ff11d0
+  zh: e10ae7a1909ef2bb
 /deepseek-ai-dsh-tui/understand-the-implementation:
   en: 8674d5f6f509d7ea
   zh: b3adcbd078e7bdda
@@ -36,8 +39,8 @@
   en: a117d0021ba54dc5
   zh: 433c4c08309603c6
 /deepseek-ai-dsh-tui/known-limitations-and-deferred-work:
-  en: 43961e54a212fe5f
-  zh: 4cac10fc39921f79
+  en: 16c89c2d5f21e0c7
+  zh: 2c79622ef421aaf1
 /deepseek-ai-dsh-tui/known-limitations-and-deferred-work/dev-note:
   en: 2595a82de85143b4
   zh: 106d57a2a6357739

@@ -80,6 +80,8 @@ export interface ConfigDisplayState {
   readonly locale: LocaleConfig
   /** Delivery mode plain Enter uses while the Agent runs. */
   readonly busyEnter: BusyEnter
+  /** Renderer ownership. */
+  readonly screen: string
 }
 
 /** One permission preset the panel can switch to. */
@@ -418,6 +420,7 @@ function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
     displayRow('title', display.title),
     displayRow('locale', display.locale),
     displayRow('busyEnter', display.busyEnter),
+    displayRow('screen', display.screen),
     {
       id: 'display.cards',
       section: 'display',

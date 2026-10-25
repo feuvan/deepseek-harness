@@ -11,7 +11,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
 import type { BusyEnter } from '../../src/config.ts'
 import { TerminalTranscript } from '../../src/transcript.ts'
-import type { TerminalSession } from '../../src/terminal.ts'
+import type { ScreenMode, TerminalSession } from '../../src/terminal.ts'
 import { TerminalAutocompleteProvider, type TerminalAutocompleteDeps } from '../../src/autocomplete.ts'
 import type { Composer } from '../../src/commands.ts'
 import type { Footer } from '../../src/components/footer.ts'
@@ -110,6 +110,8 @@ interface LifecycleOptions {
   readonly busyEnter?: BusyEnter
   /** Attached transcript block window. */
   readonly windowBlocks?: number
+  /** Renderer mode this launch owns. */
+  readonly screen?: ScreenMode
   /** Messages already queued in the Agent inbox. */
   readonly queued?: readonly UserMessage[]
 }
@@ -158,7 +160,9 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   })
   if (options.existingAgent !== false) agents.bind(agent.agent)
 
-  const owned = headlessSession(options.mainScreen === true ? { mainScreen: true } : {})
+  const owned = headlessSession(options.mainScreen === true
+    ? { mainScreen: true }
+    : (options.screen === undefined ? {} : { screen: options.screen }))
   const start = vi.spyOn(owned.session.tui, 'start')
   const requestRender = vi.spyOn(owned.session.tui, 'requestRender')
   const renderNow = vi.spyOn(owned.session.tui, 'renderNow')
@@ -169,6 +173,7 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
     ...(options.animation === true ? { animation: true } : {}),
     ...(options.busyEnter === undefined ? {} : { busyEnter: options.busyEnter }),
     ...(options.windowBlocks === undefined ? {} : { windowBlocks: options.windowBlocks }),
+    ...(options.screen === undefined ? {} : { screen: options.screen }),
   })
   const app = new TerminalApp(ctx, config, exit.exit, () => owned.session)
   onTestFinished(() => { app.dispose() })
@@ -4861,9 +4866,9 @@ describe('TerminalApp transcript scrollback', () => {
     const lines = composer.helpLines()
 
     expect(lines).toContain(
-      '  PgUp/PgDn          scroll the transcript; older history pages in at the top',
+      '  PgUp/PgDn          scroll the transcript (fullscreen mode pages older history in)',
     )
-    expect(lines).toContain('  Esc                return to the transcript bottom, then interrupt a running turn')
+    expect(lines).toContain('  Esc                interrupt; in fullscreen mode it first returns to the transcript bottom')
   })
 
   it('does not anchor the viewport when archived blocks render no lines', async () => {
@@ -4975,5 +4980,215 @@ describe('TerminalApp transcript scrollback', () => {
 
     expect(() => { load.call(harness.app, '\u001b[5~') }).not.toThrow()
     expect(transcript.hasOlder()).toBe(true)
+  })
+})
+
+describe('TerminalApp inline renderer', () => {
+  it('uses the inline renderer with a bottom-anchored stack and no scroll window', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline', windowBlocks: 2 })
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+
+    expect(harness.terminal.session.tui.mode).toBe('regular')
+    const children: Component[] = Reflect.get(harness.terminal.session.tui, 'children')
+    expect(children).toHaveLength(1)
+    expect(children[0]?.constructor.name).toBe('BottomAnchor')
+    expect(children.some(child => child.constructor.name === 'ScrollView')).toBe(false)
+
+    for (let index = 0; index < 10; index += 1) transcript.notice(`notice ${String(index)}`)
+    expect(transcript.hasOlder()).toBe(false)
+    expect(transcript.stats()).toEqual({ blocks: 10, archived: 0 })
+  })
+
+  it('reports the inline renderer in /terminal without viewport or wheel data', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    harness.start()
+    await harness.awaitStarted()
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+    transcript.notice('one')
+    transcript.notice('two')
+
+    await submitLine(harness, '/terminal')
+    await waitForDock(harness, copy.terminal.title)
+    const dock = dockText(harness.app)
+
+    expect(dock).toContain(copy.terminal.environment)
+    expect(dock).toContain(copy.terminal.screenInline)
+    expect(dock).toContain(copy.terminal.wheelNone)
+    expect(dock).toContain('100x30')
+    expect(dock).toContain(copy.terminal.transcriptValue(2, 0))
+    expect(dock).toContain(copy.terminal.focusUnknown)
+    expect(dock).toContain(copy.terminal.keyboardLegacy)
+    expect(dock).not.toContain(copy.terminal.viewport)
+    expect(dock).toContain('Inline mode keeps history in the terminal scrollback')
+  })
+
+  it('passes the inline transcript window into the configuration display state', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    harness.start()
+    await harness.awaitStarted()
+
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    focusConfigRow(panel, 'display', 'display.windowBlocks')
+
+    expect(dockText(harness.app)).toContain(String(Number.MAX_SAFE_INTEGER))
+  })
+})
+
+describe('TerminalApp /terminal diagnostics', () => {
+  /** Environment variables this test suite mutates. */
+  const ENV_KEYS = [
+    'TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'TMUX', 'ZELLIJ', 'STY',
+    'SSH_CONNECTION', 'SSH_TTY',
+  ] as const
+
+  /**
+   * Install one environment scenario and restore it after the test.
+   * @param env - variables to set; every other tracked variable is unset.
+   */
+  function applyEnv(env: Partial<Record<(typeof ENV_KEYS)[number], string>>): void {
+    const saved = new Map<(typeof ENV_KEYS)[number], string | undefined>(
+      ENV_KEYS.map(key => [key, process.env[key]]),
+    )
+    for (const key of ENV_KEYS) Reflect.deleteProperty(process.env, key)
+    for (const [key, value] of Object.entries(env)) process.env[key] = value
+    onTestFinished(() => {
+      for (const [key, value] of saved) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = value
+      }
+    })
+  }
+
+  /**
+   * Open the diagnostics panel and return its rendered text.
+   * @param harness - the application harness.
+   * @returns the dock text.
+   */
+  async function diagnostics(harness: LifecycleHarness): Promise<string> {
+    await submitLine(harness, '/terminal')
+    await waitForDock(harness, copy.terminal.title)
+    return dockText(harness.app)
+  }
+
+  it.each([
+    {
+      label: 'tmux over ssh in iTerm',
+      env: {
+        TERM: 'xterm-256color',
+        TERM_PROGRAM: 'iTerm.app',
+        TERM_PROGRAM_VERSION: '3.5.0',
+        TMUX: '/tmp/tmux',
+        SSH_CONNECTION: '1 2 3 4',
+      },
+      multiplexer: 'tmux',
+      ssh: 'yes',
+      emulator: 'iTerm.app 3.5.0',
+    },
+    { label: 'zellij', env: { ZELLIJ: '0' }, multiplexer: 'zellij', ssh: 'no', emulator: 'unknown' },
+    { label: 'screen', env: { STY: '1.pts' }, multiplexer: 'screen', ssh: 'no', emulator: 'unknown' },
+    { label: 'no multiplexer', env: {}, multiplexer: 'none', ssh: 'no', emulator: 'unknown' },
+  ] as const)('reports the environment for $label', async ({ env, multiplexer, ssh, emulator }) => {
+    applyEnv(env)
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+
+    const dock = await diagnostics(harness)
+
+    expect(dock).toContain(`${copy.terminal.emulator}: ${emulator}`)
+    expect(dock).toContain(`${copy.terminal.term}: ${process.env.TERM ?? 'unknown'}`)
+    expect(dock).toContain(`${copy.terminal.multiplexer}: ${multiplexer} · ${copy.terminal.ssh}: ${ssh}`)
+    expect(dock).toContain(`${copy.terminal.size}: 100x30`)
+  })
+
+  it('reports the fullscreen renderer, keyboard protocol, viewport, and wheel events', async () => {
+    const kitty = vi.spyOn({ value: false }, 'value', 'get')
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+    const kittySpy = vi.spyOn(harness.terminal.headless, 'kittyProtocolActive', 'get').mockReturnValue(true)
+    harness.terminal.headless.press('\x1b[I')
+    harness.terminal.headless.press('\x1b[<64;10;10M')
+
+    const dock = await diagnostics(harness)
+
+    expect(dock).toContain(copy.terminal.screenFullscreen)
+    expect(dock).toContain(copy.terminal.keyboardKitty)
+    expect(dock).toContain(copy.terminal.focused)
+    expect(dock).toContain(`${copy.terminal.viewport}: 0 · following end`)
+    expect(dock).toMatch(new RegExp(`${copy.terminal.wheel}: 1 \\(last .*s\\)`, 'u'))
+    kittySpy.mockRestore()
+    void kitty
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+  })
+
+  it('reports scrolled viewports, unfocused input, and later wheel events', async () => {
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('\x1b[I')
+    harness.terminal.headless.press('\x1b[<64;10;10M')
+    const first = await diagnostics(harness)
+    expect(first).toContain(copy.terminal.focused)
+    expect(first).toMatch(new RegExp(`${copy.terminal.wheel}: 1 \\(last .*s\\)`, 'u'))
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    harness.terminal.headless.press('\x1b[O')
+    harness.terminal.headless.press('\x1b[<65;10;10M')
+    harness.terminal.headless.press('\x1b[<0;10;10M')
+    const real = harness.terminal.session
+    Reflect.set(harness.app, 'terminal', {
+      ...real,
+      scrollTop: () => 7,
+      isFollowingEnd: () => false,
+    })
+    const dock = await diagnostics(harness)
+
+    expect(dock).toContain(copy.terminal.unfocused)
+    expect(dock).toContain(`${copy.terminal.viewport}: 7 · scrolled`)
+    expect(dock).toMatch(new RegExp(`${copy.terminal.wheel}: 2 \\(last .*s\\)`, 'u'))
+    Reflect.set(harness.app, 'terminal', real)
+  })
+
+  it('counts wheel events while a dock surface owns input', async () => {
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/help')
+    await waitForDock(harness, copy.panel.help)
+    harness.terminal.headless.press('\x1b[<64;10;10M')
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    const dock = await diagnostics(harness)
+
+    expect(dock).toMatch(new RegExp(`${copy.terminal.wheel}: 1 \\(last .*s\\)`, 'u'))
+  })
+
+  it('reports an unknown viewport when the terminal session is gone', async () => {
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'terminal', undefined)
+
+    const dock = await diagnostics(harness)
+
+    expect(dock).toContain(copy.terminal.screenFullscreen)
+    expect(dock).toContain(`${copy.terminal.viewport}: ${copy.terminal.focusUnknown}`)
+    expect(dock).toContain(copy.terminal.keyboardLegacy)
+  })
+
+  it('builds diagnostics before the renderer starts', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    const show = privateValue(harness.app, 'showTerminalDiagnostics') as () => void
+
+    expect(() => { show.call(harness.app) }).not.toThrow()
   })
 })

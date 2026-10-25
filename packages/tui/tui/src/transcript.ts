@@ -444,6 +444,14 @@ export class TerminalTranscript {
   }
 
   /**
+   * Retained transcript sizes for diagnostics.
+   * @returns total and archived block counts.
+   */
+  stats(): { readonly blocks: number; readonly archived: number } {
+    return { blocks: this.blocks.length, archived: this.windowStart }
+  }
+
+  /**
    * Reattach older blocks above the active window.
    * @param all - load the whole archived history instead of one window.
    * @returns the number of lines added above the viewport.

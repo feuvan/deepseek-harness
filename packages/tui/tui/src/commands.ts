@@ -43,6 +43,8 @@ export interface LocalCommands {
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
   preset(argument: string | undefined): void | Promise<void>
+  /** Show terminal, input, and rendering diagnostics. */
+  terminal(): void
   /** Close the terminal. */
   exit(): void
 }
@@ -114,6 +116,7 @@ export class Composer {
       steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
+      terminal: { description: copy.commands.terminal, run: () => { deps.local.terminal() } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
       quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
     }
