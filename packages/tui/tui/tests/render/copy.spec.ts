@@ -160,6 +160,34 @@ describe('copy dictionaries', () => {
     expect(copy.statusPanel.preset).toBe('Agent preset')
   })
 
+  it('formats the configuration dock copy', () => {
+    expect(copy.config.subtitle).toBe('Changes save automatically')
+    expect(copy.config.action).toBe('Configure ›')
+    expect(copy.config.descriptions.modelCurrent).toBe('Current model route for this Session')
+    expect(copy.config.descriptions.modelChange).toBe('Choose the model used for this Session')
+    expect(copy.config.descriptions.effortCurrent).toBe('Current reasoning effort')
+    expect(copy.config.descriptions.effortChange).toBe('Choose how much reasoning the model shows')
+    expect(copy.config.descriptions.permission).toContain('workspace')
+    expect(copy.config.descriptions.bundle).toContain('restart')
+    expect(copy.config.descriptions.cards).toContain('Cycle')
+    expect(copy.config.descriptions.reasoning).toContain('compact')
+    for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
+      expect(copy.config.descriptions.display[key].length, key).toBeGreaterThan(0)
+    }
+    expect(copy.config.tabHint).toBe('←/→ group · ↑/↓ move · Enter open · Esc close')
+    expect(copy.config.hint).toContain('↑/↓ move')
+
+    setCopyLocale('zh')
+    expect(copy.config.subtitle).toBe('修改会自动保存')
+    expect(copy.config.action).toBe('配置 ›')
+    expect(copy.config.descriptions.modelCurrent).toBe('本会话当前使用的模型')
+    expect(copy.config.descriptions.bundle).toContain('重启')
+    for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
+      expect(copy.config.descriptions.display[key].length, key).toBeGreaterThan(0)
+    }
+    expect(copy.config.tabHint).toBe('←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
+  })
+
   it('formats the /terminal diagnostics copy', () => {
     expect(copy.commands.terminal).toBe('Show terminal, input, and rendering diagnostics')
     expect(copy.terminal.title).toBe('Terminal diagnostics')
@@ -216,7 +244,7 @@ describe('copy dictionaries', () => {
     expect(copy.reasoning.available('compact, standard')).toBe('Available visibility levels: compact, standard')
     expect(copy.completion.title).toBe('Completions')
     expect(copy.completion.hint).toContain('Tab insert')
-    expect(copy.config.tabHint).toContain('Tab')
+    expect(copy.config.tabHint).toBe('←/→ group · ↑/↓ move · Enter open · Esc close')
     expect(copy.commands.reasoning).toBe('Cycle or set the reasoning visibility')
   })
 
@@ -226,7 +254,7 @@ describe('copy dictionaries', () => {
     expect(copy.moreRows(2)).toBe('另外 2 行')
     expect(copy.reasoning.levels.detailed).toBe('详细')
     expect(copy.completion.title).toBe('补全')
-    expect(copy.config.tabHint).toContain('Tab')
+    expect(copy.config.tabHint).toBe('←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
   })
 
   it('uses formatters that react to their arguments', () => {

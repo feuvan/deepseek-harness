@@ -2557,10 +2557,12 @@ describe('TerminalApp /config dock', () => {
     const panel = configPanelOf(harness.app)
     expect(panel).toBeDefined()
     const dock = dockText(harness.app)
+    expect(dock).toContain(copy.config.title)
+    expect(dock).toContain(copy.config.subtitle)
     expect(dock).toContain(copy.config.modelSection)
     expect(dock).toContain(copy.config.permissionSection)
     expect(dock).toContain(copy.config.tabHint)
-    expect(panel?.render(100)).toHaveLength(10)
+    expect(panel?.render(100)).toHaveLength(14)
 
     harness.terminal.headless.press('\u001b')
 
@@ -5190,5 +5192,84 @@ describe('TerminalApp /terminal diagnostics', () => {
     const show = privateValue(harness.app, 'showTerminalDiagnostics') as () => void
 
     expect(() => { show.call(harness.app) }).not.toThrow()
+  })
+})
+
+
+describe('TerminalApp inline dock reanchor', () => {
+  it('reanchors and forces a clear redraw when a dock closes in inline mode', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    harness.start()
+    await harness.awaitStarted()
+    const anchor = privateValue(harness.app, 'inlineAnchor') as { reanchor(): void }
+    const reanchor = vi.spyOn(anchor, 'reanchor')
+    const clear = vi.spyOn(harness.terminal.session.tui, 'setClearOnShrink')
+    const render = vi.spyOn(harness.terminal.session.tui, 'renderNow')
+    await submitLine(harness, '/help')
+    await waitForDock(harness, copy.panel.help)
+    reanchor.mockClear()
+    clear.mockClear()
+    render.mockClear()
+
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    expect(reanchor).toHaveBeenCalledOnce()
+    expect(clear.mock.calls.map(call => call[0])).toEqual([true, false])
+    expect(render).toHaveBeenCalled()
+    const lines = await screenLines(harness.terminal.headless)
+    expect(lines.some(line => line.includes('dsh>'))).toBe(true)
+    expect(lines.some(line => line.includes(copy.commands.helpTitle))).toBe(false)
+    vi.restoreAllMocks()
+  })
+
+  it('reanchors when the configuration dock closes', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    harness.start()
+    await harness.awaitStarted()
+    const anchor = privateValue(harness.app, 'inlineAnchor') as { reanchor(): void }
+    const reanchor = vi.spyOn(anchor, 'reanchor')
+    const clear = vi.spyOn(harness.terminal.session.tui, 'setClearOnShrink')
+    const render = vi.spyOn(harness.terminal.session.tui, 'renderNow')
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    reanchor.mockClear()
+    clear.mockClear()
+    render.mockClear()
+
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    expect(reanchor).toHaveBeenCalledOnce()
+    expect(clear.mock.calls.map(call => call[0])).toEqual([true, false])
+    expect(render).toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  it('leaves the fullscreen renderer untouched when a dock closes', async () => {
+    const harness = await lifecycleHarness({ screen: 'fullscreen' })
+    harness.start()
+    await harness.awaitStarted()
+    expect(privateValue(harness.app, 'inlineAnchor')).toBeUndefined()
+    const clear = vi.spyOn(harness.terminal.session.tui, 'setClearOnShrink')
+    const render = vi.spyOn(harness.terminal.session.tui, 'renderNow')
+    await submitLine(harness, '/help')
+    await waitForDock(harness, copy.panel.help)
+    clear.mockClear()
+    render.mockClear()
+
+    harness.terminal.headless.press('\x03')
+    await awaitDockClosed(harness)
+
+    expect(clear).not.toHaveBeenCalled()
+    expect(render).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  it('ignores reanchoring before startup', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    const reanchor = privateValue(harness.app, 'reanchorInline') as () => void
+
+    expect(() => { reanchor.call(harness.app) }).not.toThrow()
   })
 })

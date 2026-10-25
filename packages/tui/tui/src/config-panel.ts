@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-tui/config-panel
  */
 
-import { matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'
+import { matchesKey, truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 import { displayText } from './display-text.ts'
 import type { BusyEnter } from './config.ts'
@@ -46,6 +46,8 @@ export interface ConfigRow {
   readonly scope: ConfigScope | undefined
   /** Whether the row only displays a value and ignores Enter. */
   readonly readOnly: boolean
+  /** One-sentence meaning shown in the description column. */
+  readonly description?: string
   /** Additional localized status marker rendered after the value. */
   readonly marker?: string
   /** Action invoked by Enter; absent for read-only rows. */
@@ -63,6 +65,9 @@ export interface ConfigModelState {
   /** Whether `effort` comes from the adapter default rather than the selection. */
   readonly effortImplicit: boolean
 }
+
+/** Fields shown in the terminal-display section. */
+type DisplayField = 'color' | 'animation' | 'previewLines' | 'windowBlocks' | 'title' | 'locale' | 'busyEnter' | 'screen'
 
 /** The terminal display values the profile configuration owns. */
 export interface ConfigDisplayState {
@@ -295,6 +300,7 @@ function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: `${deps.model.provider}/${deps.model.model}`,
       scope: undefined,
       readOnly: true,
+      description: copy.config.descriptions.modelCurrent,
     },
     {
       id: 'model.change',
@@ -303,6 +309,7 @@ function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: '',
       scope: 'session',
       readOnly: false,
+      description: copy.config.descriptions.modelChange,
       activate: () => deps.actions.pickModel(),
     },
     {
@@ -312,6 +319,7 @@ function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: effortValue(deps.model),
       scope: undefined,
       readOnly: true,
+      description: copy.config.descriptions.effortCurrent,
     },
     {
       id: 'effort.change',
@@ -320,6 +328,7 @@ function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: '',
       scope: 'session',
       readOnly: false,
+      description: copy.config.descriptions.effortChange,
       activate: () => deps.actions.pickEffort(),
     },
   ]
@@ -362,9 +371,10 @@ function permissionRows(deps: ConfigPanelDeps): ConfigRow[] {
     id: `permission.${option.value}`,
     section: 'permissions',
     label: option.name,
-    value: option.description ?? '',
+    value: '',
     scope: 'session',
     readOnly: false,
+    description: option.description ?? copy.config.descriptions.permission,
     ...(option.value === deps.permission ? { marker: copy.prompt.permissionCurrent } : {}),
     activate: () => deps.actions.setPermission(option.value),
   }))
@@ -389,6 +399,7 @@ async function experimentalRows(deps: ConfigPanelDeps): Promise<ConfigRow[]> {
     value: bundle.enabled ? copy.config.on : copy.config.off,
     scope: 'session',
     readOnly: bundle.readOnlyReason !== undefined,
+    description: bundle.readOnlyReason ?? copy.config.descriptions.bundle,
     ...(bundle.readOnlyReason === undefined
       ? { activate: () => deps.actions.setBundle(bundle.name, !bundle.enabled) }
       : { marker: bundle.readOnlyReason }),
@@ -401,8 +412,16 @@ async function experimentalRows(deps: ConfigPanelDeps): Promise<ConfigRow[]> {
  * @param value - the current value rendered as text.
  * @returns the row.
  */
-function displayRow(field: string, value: string): ConfigRow {
-  return { id: `display.${field}`, section: 'display', label: field, value, scope: 'profile', readOnly: true }
+function displayRow(field: DisplayField, value: string): ConfigRow {
+  return {
+    id: `display.${field}`,
+    section: 'display',
+    label: field,
+    value,
+    scope: 'profile',
+    readOnly: true,
+    description: copy.config.descriptions.display[field],
+  }
 }
 
 /**
@@ -428,6 +447,7 @@ function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: '',
       scope: 'session',
       readOnly: false,
+      description: copy.config.descriptions.cards,
       activate: () => deps.actions.toggleCards(),
     },
     {
@@ -437,6 +457,7 @@ function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
       value: '',
       scope: 'session',
       readOnly: false,
+      description: copy.config.descriptions.reasoning,
       activate: () => deps.actions.toggleReasoning(),
     },
   ]
@@ -454,6 +475,16 @@ export async function loadConfigRows(deps: ConfigPanelDeps): Promise<ConfigRow[]
     ...(await experimentalRows(deps)),
     ...displayRows(deps),
   ]
+}
+
+/**
+ * Pad one string to a visible width.
+ * @param text - source text.
+ * @param width - target columns.
+ * @returns the text followed by spaces.
+ */
+function padEnd(text: string, width: number): string {
+  return `${text}${' '.repeat(Math.max(0, width - visibleWidth(text)))}`
 }
 
 /** The `/config` bottom dock: one tab per section over a scrolling row list. */
@@ -523,7 +554,11 @@ export class ConfigPanel implements Component {
    */
   render(width: number): string[] {
     return [
+      this.palette.heading(truncateToWidth(copy.config.title, width)),
+      this.palette.dim(truncateToWidth(`  ${copy.config.subtitle}`, width)),
+      '',
       this.tabBar(width),
+      '',
       ...this.bodyLines(this.activeRows(), width),
       this.palette.dim(truncateToWidth(`  ${copy.config.tabHint}`, width)),
     ]
@@ -646,7 +681,7 @@ export class ConfigPanel implements Component {
     const bar = SECTION_ORDER.map((section) => {
       const label = ` ${sectionTitle(section)} `
       return section === this.section ? this.palette.inverse(label) : this.palette.dim(label)
-    }).join('')
+    }).join('   ')
     return truncateToWidth(bar, width)
   }
 
@@ -658,11 +693,30 @@ export class ConfigPanel implements Component {
    * @returns the row line.
    */
   private rowLine(row: ConfigRow, selected: boolean, width: number): string {
-    const marker = selected ? this.palette.accent('❯') : ' '
-    return truncateToWidth(
-      `  ${marker} ${displayText(row.label)}${this.valueOf(row)}${this.markersOf(row)}`,
-      width,
-    )
+    const label = displayText(row.label)
+    const value = displayText(this.displayValue(row))
+    const description = displayText(row.description ?? '')
+    const labelWidth = Math.min(22, Math.max(4, visibleWidth(label)))
+    const valueWidth = Math.min(20, Math.max(4, visibleWidth(value)))
+    const gap = 2
+    const cursor = selected ? this.palette.accent('❯') : ' '
+    const descriptionWidth = Math.max(0, width - 4 - labelWidth - valueWidth - (gap * 2))
+    let line = `  ${cursor} ${padEnd(label, labelWidth)}${' '.repeat(gap)}${padEnd(value, valueWidth)}${' '.repeat(gap)}${truncateToWidth(description, descriptionWidth)}`
+    line += this.markersOf(row)
+    line = truncateToWidth(line, width)
+    return selected ? this.palette.inverse(padEnd(line, width)) : line
+  }
+
+  /**
+   * Format one row's value column with action and toggle values.
+   * @param row - the row.
+   * @returns the display value.
+   */
+  private displayValue(row: ConfigRow): string {
+    if (row.activate !== undefined && row.value === '') return copy.config.action
+    if (row.activate !== undefined && row.value === copy.config.on) return '[x] On'
+    if (row.activate !== undefined && row.value === copy.config.off) return '[ ] Off'
+    return row.value
   }
 
   /** Invoke the highlighted row's action and report its result. */
@@ -697,16 +751,6 @@ export class ConfigPanel implements Component {
       this.restartMarkers.set(rowId, copy.config.restartMarker)
       this.handlers.onRestartNotice(copy.config.restartRequired)
     }
-  }
-
-  /**
-   * Render one row's value column.
-   * @param row - the row.
-   * @returns the styled value suffix, empty for a row without a value.
-   */
-  private valueOf(row: ConfigRow): string {
-    if (row.value === '') return ''
-    return `  ${this.palette.dim(displayText(row.value))}`
   }
 
   /**

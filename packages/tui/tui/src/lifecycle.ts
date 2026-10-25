@@ -80,6 +80,7 @@ export class TerminalApp {
   private wheelEvents = 0
   private lastWheelAt: number | undefined
   private terminalFocused: boolean | undefined
+  private inlineAnchor: BottomAnchor | undefined
   private disposed = false
   private exiting = false
   private readonly createTerminal: () => TerminalSession
@@ -448,7 +449,9 @@ export class TerminalApp {
         { component: lower, basis: 'auto' },
       ]))
     } else {
-      tui.addChild(new BottomAnchor(new VStack([banner, transcriptView, lower]), () => tui.terminal.rows))
+      const anchor = new BottomAnchor(new VStack([banner, transcriptView, lower]), () => tui.terminal.rows)
+      this.inlineAnchor = anchor
+      tui.addChild(anchor)
     }
     this.disposers.push(tui.addInputListener((data: string) => {
       if (matchesKey(data, 'ctrl+c')) {
@@ -994,6 +997,25 @@ export class TerminalApp {
     this.dockOverlay = surface
     this.syncDock()
     this.tui?.requestRender()
+    if (surface === undefined) this.reanchorInline()
+  }
+
+  /**
+   * Re-anchor the inline renderer after the bottom dock closes. The full
+   * render clears the dock rows and rebuilds the scrollback with the composer
+   * at the bottom; fullscreen keeps its app-owned scroll position.
+   */
+  private reanchorInline(): void {
+    const anchor = this.inlineAnchor
+    const tui = this.tui
+    if (anchor === undefined || tui === undefined || isViewportTUI(tui)) return
+    anchor.reanchor()
+    tui.setClearOnShrink(true)
+    try {
+      tui.renderNow()
+    } finally {
+      tui.setClearOnShrink(false)
+    }
   }
 
   /** @returns the dock presenter the interaction answerers use. */
@@ -1116,6 +1138,7 @@ export class TerminalApp {
     this.configPanel = undefined
     this.syncDock()
     this.tui?.requestRender()
+    this.reanchorInline()
   }
 
   /**

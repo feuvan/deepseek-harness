@@ -36,6 +36,15 @@ export class BottomAnchor implements Component {
     return [...Array.from({ length: this.padding }, () => ''), ...lines]
   }
 
+  /**
+   * Recompute the top padding on the next render, e.g. after a dock closes.
+   * The caller must force a full render so the new first line reaches the
+   * terminal instead of being diffed against the previous viewport.
+   */
+  reanchor(): void {
+    this.padding = undefined
+  }
+
   /** Invalidate the child. */
   invalidate(): void {
     this.child.invalidate()

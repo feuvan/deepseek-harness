@@ -98,6 +98,32 @@ describe('BottomAnchor', () => {
     expect(bottom.render(80)).toEqual([...Array.from({ length: 7 }, () => ''), 'only'])
   })
 
+  it('recomputes the padding after reanchor and the next render', () => {
+    const child = childDouble(['a', 'b'])
+    const { anchor: bottom, setRows } = anchor(child, 6)
+    expect(bottom.render(80)).toHaveLength(6)
+
+    child.lines = ['a', 'b', 'c', 'd', 'e', 'f']
+    setRows(10)
+    bottom.reanchor()
+    expect(bottom.render(80)).toEqual(['', '', '', '', 'a', 'b', 'c', 'd', 'e', 'f'])
+
+    child.lines = ['only']
+    setRows(4)
+    bottom.reanchor()
+    expect(bottom.render(80)).toEqual(['', '', '', 'only'])
+  })
+
+  it('reanchors without changing a child that already fills the terminal', () => {
+    const child = childDouble(['a', 'b', 'c'])
+    const { anchor: bottom } = anchor(child, 3)
+    expect(bottom.render(80)).toHaveLength(3)
+
+    bottom.reanchor()
+
+    expect(bottom.render(80)).toEqual(['a', 'b', 'c'])
+  })
+
   it('renders the child at the requested width', () => {
     const widths: number[] = []
     const child: Component = {

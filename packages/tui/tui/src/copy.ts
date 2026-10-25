@@ -367,6 +367,31 @@ const en = {
   config: {
     /** Panel heading. */
     title: 'Configuration',
+    /** Panel subtitle shown under the heading. */
+    subtitle: 'Changes save automatically',
+    /** Value shown for an action row. */
+    action: 'Configure ›',
+    /** One-sentence descriptions shown in the row description column. */
+    descriptions: {
+      modelCurrent: 'Current model route for this Session',
+      modelChange: 'Choose the model used for this Session',
+      effortCurrent: 'Current reasoning effort',
+      effortChange: 'Choose how much reasoning the model shows',
+      permission: 'Choose what the Agent may do in this workspace',
+      bundle: 'Optional experimental capability; enabling it requires a restart',
+      cards: 'Cycle collapsed, expanded, and hidden tool cards',
+      reasoning: 'Cycle compact, standard, detailed, and verbose reasoning',
+      display: {
+        color: 'Emit ANSI styling',
+        animation: 'Advance the running clock once per second',
+        previewLines: 'Body lines shown for a collapsed tool card',
+        windowBlocks: 'Blocks attached before older history pages in',
+        title: 'Terminal title suffix',
+        locale: 'Interface language; auto follows the environment',
+        busyEnter: 'Plain Enter while the Agent runs',
+        screen: 'Inline keeps history in the terminal scrollback',
+      },
+    },
     /** Filter input placeholder. */
     filter: 'Filter configuration',
     /** Label for the row that opens the model selector. */
@@ -416,7 +441,7 @@ const en = {
     /** Hint line. */
     hint: '↑/↓ move · Enter open or toggle · Esc close',
     /** Hint line naming the tab keys. */
-    tabHint: 'Tab/←/→ switch · ↑/↓ move · Enter open or toggle · Esc close',
+    tabHint: '←/→ group · ↑/↓ move · Enter open · Esc close',
   },
   /** Model selector copy. */
   model: {
@@ -674,6 +699,28 @@ export const chinese: Copy = {
   },
   config: {
     title: '配置',
+    subtitle: '修改会自动保存',
+    action: '配置 ›',
+    descriptions: {
+      modelCurrent: '本会话当前使用的模型',
+      modelChange: '选择本会话使用的模型',
+      effortCurrent: '当前推理强度',
+      effortChange: '选择模型展示多少推理',
+      permission: '选择 Agent 在此工作区可以做什么',
+      bundle: '可选的实验性能力；启用后需要重启',
+      cards: '循环折叠、展开与隐藏工具卡',
+      reasoning: '循环 compact、standard、detailed、verbose 推理显示',
+      display: {
+        color: '输出 ANSI 样式',
+        animation: '运行中时钟每秒推进一次',
+        previewLines: '折叠工具卡展示的正文行数',
+        windowBlocks: '更早历史翻页前挂载的块数',
+        title: '终端标题后缀',
+        locale: '界面语言；auto 跟随环境',
+        busyEnter: 'Agent 运行时普通 Enter 的行为',
+        screen: 'inline 模式把历史保留在终端 scrollback',
+      },
+    },
     filter: '筛选配置',
     changeModel: '更改模型',
     changeEffort: '更改推理强度',
@@ -698,7 +745,7 @@ export const chinese: Copy = {
     failed: message => `无法读取配置：${message}`,
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
-    tabHint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
+    tabHint: '←/→ 分组 · ↑/↓ 移动 · Enter 打开 · Esc 关闭',
   },
   /** Agent preset 名称、描述与提示。 */
   preset: {
