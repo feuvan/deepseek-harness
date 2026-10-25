@@ -11,6 +11,15 @@ import {
 } from '@earendil-works/pi-tui'
 import { copy } from './copy.ts'
 
+/**
+ * DECSET 1007 turns wheel input into arrow keys in the alternate screen.
+ * iTerm2 applies that conversion even while mouse reporting is active, so the
+ * wheel reaches the composer as Up/Down instead of the transcript as mouse
+ * events. Keep it off whenever the alternate screen and mouse capture are
+ * enabled; mouse reporting is the authoritative wheel channel there.
+ */
+const DISABLE_ALT_SCROLL = '\x1b[?1007l'
+
 /** The terminal surface this plugin owns for one application lifetime. */
 export interface TerminalSession {
   /** The renderer the application composes components into. */
@@ -65,7 +74,13 @@ class InterceptingTerminal implements Terminal {
   stop(): void { this.inner.stop() }
   restoreOnExit(before: string, after: string): void { this.inner.restoreOnExit?.(before, after) }
   drainInput(maxMs?: number, idleMs?: number): Promise<void> { return this.inner.drainInput(maxMs, idleMs) }
-  write(data: string): void { this.inner.write(data) }
+  write(data: string): void {
+    this.inner.write(data)
+    // TuiAltScreen enables the alternate screen and mouse reporting in one
+    // write. Follow it immediately so iTerm2 cannot keep converting the wheel
+    // into arrow keys while mouse capture is active.
+    if (data.includes('\x1b[?1049h') || data.includes('\x1b[?1000h')) this.inner.write(DISABLE_ALT_SCROLL)
+  }
   get columns(): number { return this.inner.columns }
   get rows(): number { return this.inner.rows }
   get kittyProtocolActive(): boolean { return this.inner.kittyProtocolActive }

@@ -39,11 +39,12 @@ dsh --profile headless "run the tests"
 | Ctrl+O | 循环工具卡可见性（折叠 → 展开 → 隐藏） |
 | Ctrl+R | 显示或隐藏推理 |
 | Ctrl+L | 重绘屏幕 |
-| Esc | 编辑器为空时中断运行中的轮次 |
+| Esc | 滚动时回到底部；已在底部且编辑器为空时中断运行中的轮次 |
 | Ctrl+V | 从剪贴板附加图片 |
 | Shift+Tab | 推进当前模型的推理强度 |
-| PgUp / PgDn | 滚动 transcript |
-| 鼠标滚轮 / 拖拽 | 滚动，并通过终端复制选区 |
+| PgUp / PgDn | 滚动 transcript；到达顶部时载入更早历史 |
+| 鼠标滚轮 / 拖拽 | 在 transcript 内滚动，并通过终端复制选区（会关闭 iTerm2 的滚轮转换） |
+| Ctrl+Home / Ctrl+End | 载入完整 transcript 历史 / 跳到最新输出 |
 | Ctrl+Shift+F | 在已渲染的 transcript 中搜索 |
 
 补全只在有意义的位置出现：普通文字与裸路径不会触发补全（输入空格不会列出工作区）。输入 `/` 会列出命令及其描述；输入 `@` 会补全工作区中的文件与目录，含空格的路径通过带引号的 `@"..."` 形式补全。`Tab` 接受高亮条目。

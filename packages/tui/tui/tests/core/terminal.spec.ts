@@ -188,6 +188,31 @@ describe('InterceptingTerminal forwarding', () => {
     ])
   })
 
+  it('disables alternate-scroll mode right after the alternate screen and mouse capture', () => {
+    const { terminal, calls } = recordingTerminal()
+    const session = createTerminalSession(terminal)
+
+    session.terminal.write('\u001b[?1049h\u001b[?1000h\u001b[?1006h')
+    session.terminal.write('frame')
+
+    expect(calls).toEqual([
+      'write:\u001b[?1049h\u001b[?1000h\u001b[?1006h',
+      'write:\u001b[?1007l',
+      'write:frame',
+    ])
+  })
+
+  it('starts the renderer with alternate-scroll mode disabled', () => {
+    const { terminal, calls } = recordingTerminal()
+    const session = createTerminalSession(terminal)
+
+    session.tui.start()
+    session.stop()
+
+    expect(calls.some(call => call.includes('\u001b[?1049h'))).toBe(true)
+    expect(calls).toContain('write:\u001b[?1007l')
+  })
+
   it('tolerates a terminal without the optional exit restore hook', () => {
     const { terminal } = recordingTerminal({ restoreOnExit: false })
     const session = createTerminalSession(terminal)

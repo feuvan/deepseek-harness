@@ -39,11 +39,12 @@ The banner names the model and the Session. The transcript above the composer sh
 | Ctrl+O | Cycle tool-card visibility (collapsed → expanded → hidden) |
 | Ctrl+R | Cycle reasoning visibility (compact → standard → detailed → verbose) |
 | Ctrl+L | Repaint the screen |
-| Esc | Interrupt a running turn when the composer is empty |
+| Esc | Return to the transcript bottom when scrolled; interrupt a running turn when the composer is empty and at the bottom |
 | Ctrl+V | Attach an image from the clipboard |
 | Shift+Tab | Advance the current model's reasoning effort |
-| PgUp / PgDn | Scroll the transcript |
-| Mouse wheel / drag | Scroll, and copy the selection through the terminal |
+| PgUp / PgDn | Scroll the transcript; reaching the top loads older history |
+| Mouse wheel / drag | Scroll inside the transcript and copy the selection through the terminal (iTerm2 wheel conversion is disabled) |
+| Ctrl+Home / Ctrl+End | Load the full transcript history / jump to the newest output |
 | Ctrl+Shift+F | Search the rendered transcript |
 
 Completion appears as you type, but only where it is meaningful: prose and bare paths never open it (a space does not list the workspace). Typing `/` lists commands with their descriptions; typing `@` completes files and directories from the workspace, including paths with spaces through the quoted `@"..."` form. `Tab` accepts the highlighted entry.
