@@ -85,15 +85,20 @@ describe('TeamController strip', () => {
 })
 
 describe('TeamController /team command', () => {
-  it('opens the roster dock without an argument', () => {
+  it('opens the read-only roster for every argument form', () => {
     const installed = install({ projection: teamProjection() })
     const command = installed.harness.ui.commands.get('team')
 
-    void command?.run(undefined)
+    for (const argument of [undefined, 'task Inspect the workspace', 'message Worker hi', 'unknown']) {
+      void command?.run(argument)
+    }
 
-    expect(installed.harness.ui.docks).toHaveLength(1)
+    expect(installed.harness.ui.docks).toHaveLength(4)
+    expect(installed.harness.ui.notices).toEqual([])
+    expect(installed.harness.ui.editors).toEqual([])
     expect(dockText(installed)).toContain(copy.team.title)
     expect(dockText(installed)).toContain(copy.team.membersTab)
+    expect(dockText(installed)).toContain(copy.team.hint)
   })
 
   it('reports the unavailable notice without a projection', () => {
@@ -105,142 +110,75 @@ describe('TeamController /team command', () => {
     expect(installed.harness.ui.notices).toContain(copy.team.unavailable)
   })
 
-  it('creates a shared task through the command', async () => {
-    const installed = install()
-    void installed.harness.ui.commands.get('team')?.run('task Inspect the workspace')
-
-    await waitFor(() => installed.harness.services.created.length === 1)
-    expect(installed.harness.services.created).toEqual([
-      { subject: 'Inspect the workspace', description: 'Inspect the workspace' },
-    ])
-    expect(installed.harness.ui.notices).toContain(copy.team.taskCreated('task-new'))
-  })
-
-  it('reports invalid argument forms as usage', () => {
-    const installed = install()
-    const command = installed.harness.ui.commands.get('team')
-
-    void command?.run('task   ')
-    void command?.run('message Worker')
-    void command?.run('unknown')
-
-    expect(installed.harness.ui.notices).toEqual([copy.team.usage, copy.team.usage, copy.team.usage])
-  })
-
-  it('sends a teammate message through the command', async () => {
-    const installed = install()
-    void installed.harness.ui.commands.get('team')?.run('message Worker please look')
-
-    await waitFor(() => installed.harness.services.messages.length === 1)
-    expect(installed.harness.services.messages).toEqual([
-      { target: 'Worker', text: 'please look' },
-    ])
-    expect(installed.harness.ui.notices).toContain(copy.team.messageSent('Worker'))
-  })
-
-  it('reports success and failure paths for task and message actions', async () => {
-    const failing = install({ serviceError: new Error('service rejected') })
-    void failing.harness.ui.commands.get('team')?.run('task anything')
-    await waitFor(() => failing.harness.ui.notices.includes(copy.team.actionFailed('service rejected')))
-
-    const nonError = install({ serviceError: 'service rejected' })
-    void nonError.harness.ui.commands.get('team')?.run('message Worker hi')
-    await waitFor(() => nonError.harness.ui.notices.includes(copy.team.actionFailed('service rejected')))
-
-    const missing = install({ withoutTeamService: true })
-    void missing.harness.ui.commands.get('team')?.run('task anything')
-    void missing.harness.ui.commands.get('team')?.run('message Worker hi')
-    await waitFor(() => missing.harness.ui.notices.filter(text => text === copy.team.unavailable).length === 2)
-
-    const agentless = install({ withoutAgent: true })
-    void agentless.harness.ui.commands.get('team')?.run('task anything')
-    await waitFor(() => agentless.harness.ui.notices.includes(copy.team.unavailable))
-  })
-
-  it('claims and completes tasks through the dock actions', async () => {
+  it('opens a read-only task detail and performs no task or message actions', () => {
     const installed = install({
       projection: teamProjection({
-        tasks: [
-          teamTask({ id: 'first', revision: 3 }),
-          teamTask({ id: 'second', revision: 8, status: 'in_progress' }),
+        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' })],
+        tasks: [teamTask({ description: 'Full description from the projection.' })],
+      }),
+    })
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    dockComponent(installed).handleInput('\t')
+    dockComponent(installed).handleInput('\r')
+
+    const text = dockText(installed)
+    expect(text).toContain('Inspect the workspace')
+    expect(text).toContain('Full description from the projection.')
+    expect(text).toContain(copy.team.detailHint)
+
+    for (const key of ['a', 'c', 'n', 'm']) dockComponent(installed).handleInput(key)
+    expect(installed.harness.ui.editors).toEqual([])
+    expect(installed.harness.ui.notices).toEqual([])
+    expect(dockText(installed)).toContain('Full description from the projection.')
+
+    dockComponent(installed).handleInput('\u001b')
+    expect(dockText(installed)).toContain(copy.team.hint)
+  })
+
+  it('opens a member transcript only for active teammates', () => {
+    const installed = install({
+      projection: teamProjection({
+        members: [
+          teamMember(),
+          teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' }),
+          teamMember({ id: 'teammate-2', name: 'Broken', role: 'teammate', phase: 'failed' }),
         ],
       }),
     })
     void installed.harness.ui.commands.get('team')?.run(undefined)
-    const panel = dockComponent(installed)
-    panel.handleInput('\t')
-    panel.handleInput('a')
-    await waitFor(() => installed.harness.services.updates.length === 1)
-    panel.handleInput('\u001b[B')
-    panel.handleInput('c')
-    await waitFor(() => installed.harness.services.updates.length === 2)
 
-    expect(installed.harness.services.updates).toEqual([
-      { taskId: 'first', expectedRevision: 3, action: 'claim' },
-      { taskId: 'second', expectedRevision: 8, action: 'complete' },
-    ])
-    expect(installed.harness.ui.notices).toContain(copy.team.taskClaimed('first'))
-    expect(installed.harness.ui.notices).toContain(copy.team.taskCompleted('second'))
+    dockComponent(installed).handleInput('\r')
+    expect(installed.harness.services.observed).toEqual([])
+    dockComponent(installed).handleInput('\u001b[B')
+    dockComponent(installed).handleInput('\r')
+    expect(installed.harness.services.observed).toHaveLength(1)
   })
 
-  it('reports non-Error create, message, and update failures', async () => {
-    const createFailure = install({ serviceError: 'service rejected' })
-    void createFailure.harness.ui.commands.get('team')?.run('task anything')
-    await waitFor(() => createFailure.harness.ui.notices.includes(copy.team.actionFailed('service rejected')))
-
-    const messageFailure = install({ serviceError: new Error('message rejected') })
-    void messageFailure.harness.ui.commands.get('team')?.run('message Worker hi')
-    await waitFor(() => messageFailure.harness.ui.notices.includes(copy.team.actionFailed('message rejected')))
-
-    const updateFailure = install({
-      projection: teamProjection({ tasks: [teamTask()] }),
-      serviceError: 'update rejected',
-    })
-    void updateFailure.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(updateFailure).handleInput('\t')
-    dockComponent(updateFailure).handleInput('a')
-    await waitFor(() => updateFailure.harness.ui.notices.includes(copy.team.actionFailed('update rejected')))
-  })
-
-  it('reports task action failures and unavailable services', async () => {
-    const failing = install({
-      projection: teamProjection({ tasks: [teamTask()] }),
-      serviceError: new Error('stale revision'),
-    })
-    void failing.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(failing).handleInput('\t')
-    dockComponent(failing).handleInput('a')
-    await waitFor(() => failing.harness.ui.notices.includes(copy.team.actionFailed('stale revision')))
-
-    const missing = install({ projection: teamProjection({ tasks: [teamTask()] }), withoutTeamService: true })
-    void missing.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(missing).handleInput('\t')
-    dockComponent(missing).handleInput('a')
-    await waitFor(() => missing.harness.ui.notices.includes(copy.team.unavailable))
-  })
-
-  it('pre-fills the composer from the roster and task tabs', () => {
+  it('overlays live status and the persisted model on member rows', async () => {
     const installed = install({
       projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-        tasks: [teamTask()],
+        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' })],
       }),
+      members: { 'teammate-1': { status: 'running', model: 'live/m', sessionModel: 'persisted/m' } },
     })
-    const command = installed.harness.ui.commands.get('team')
-
-    void command?.run(undefined)
+    void installed.harness.ui.commands.get('team')?.run(undefined)
     dockComponent(installed).handleInput('\u001b[B')
-    dockComponent(installed).handleInput('m')
-    expect(installed.harness.ui.editors.at(-1)).toBe('/team message Worker ')
+    await waitFor(() => dockText(installed).includes(copy.team.model))
 
-    void command?.run(undefined)
-    dockComponent(installed).handleInput('n')
-    expect(installed.harness.ui.editors.at(-1)).toBe('/team task ')
+    expect(dockText(installed)).toContain(copy.team.memberStatuses.running)
+    expect(dockText(installed)).toContain('Model: persisted/m')
 
-    void command?.run(undefined)
-    dockComponent(installed).handleInput('\t')
-    dockComponent(installed).handleInput('n')
-    expect(installed.harness.ui.editors.at(-1)).toBe('/team task ')
+    installed.harness.services.members.set('teammate-1', { status: 'inactive', model: 'live/m', withoutSession: true })
+    dockComponent(installed).handleInput('\u001b[A')
+    dockComponent(installed).handleInput('\u001b[B')
+    expect(dockText(installed)).toContain(copy.team.memberStatuses.inactive)
+    expect(dockText(installed)).toContain('Model: live/m')
+
+    installed.harness.services.members.set('teammate-1', { withoutAgent: true, sessionModel: 'persisted/m' })
+    dockComponent(installed).handleInput('\u001b[A')
+    dockComponent(installed).handleInput('\u001b[B')
+    expect(dockText(installed)).toContain(copy.team.memberStatuses.inactive)
+    expect(dockText(installed)).toContain('Model: persisted/m')
   })
 
   it('closes the roster dock on Escape and unsubscribes on install dispose', () => {

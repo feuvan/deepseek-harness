@@ -40,36 +40,13 @@ export interface TeamTaskRow {
   readonly id: string
   readonly revision: number
   readonly subject: string
+  readonly description: string
   readonly status: 'pending' | 'in_progress' | 'completed'
   readonly blockedBy: readonly string[]
   readonly writeScopes: readonly string[]
   readonly ownerName?: string
   readonly ready: boolean
   readonly writeScopeWarnings: readonly string[]
-}
-
-/** Structural view of the Agent Teams service methods the terminal calls. */
-export interface TeamServiceLike {
-  createTask(caller: Agent, request: { subject: string; description: string }): Promise<{ id: string }>
-  updateTask(caller: Agent, request: {
-    taskId: string
-    expectedRevision: number
-    action: 'claim' | 'complete'
-  }): Promise<{ id: string }>
-  sendMessage(caller: Agent, request: {
-    target: string
-    content: readonly { type: 'text'; text: string }[]
-    signal: AbortSignal
-  }): Promise<unknown>
-}
-
-/**
- * Read the composed Agent Teams service through its structural view.
- * @param ctx - host context that may carry the service.
- * @returns the service, or undefined when the bundle is not composed.
- */
-export function teamService(ctx: Context): TeamServiceLike | undefined {
-  return ctx.get('agentTeams') as TeamServiceLike | undefined
 }
 
 /** Counts the terminal shows for one Team. */

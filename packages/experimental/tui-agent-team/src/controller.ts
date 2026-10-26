@@ -1,8 +1,8 @@
 /**
- * Agent Teams behind the terminal contribution seam: one compact strip, one
- * `/team` command, the roster/task dock, teammate transcripts, and task and
- * message actions. The controller owns no renderer state beyond its surfaces;
- * the terminal owns layout, focus, and dock input routing.
+ * Read-only Agent Teams surface behind the terminal contribution seam: one
+ * compact strip, one `/team` command, a native-parity roster and shared task
+ * board, and teammate transcripts. Team mutations stay in the Team tools and
+ * the conversation; this controller never changes a task or roster entry.
  *
  * @module @deepseek-ai/dsh-experimental-tui-agent-team/controller
  */
@@ -12,15 +12,15 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-query'
-import type { TeamMemberProjectionRow, TeamTaskRow } from './team.ts'
-import { readTeamProjection, teamService } from './team.ts'
+import type { TeamMemberProjectionRow } from './team.ts'
+import { readTeamProjection } from './team.ts'
 import { copy, setCopyLocale } from './copy.ts'
 import { TeamMemberPanel } from './components/team-member-panel.ts'
-import { TeamPanel } from './components/team-panel.ts'
+import { TeamPanel, type TeamMemberRuntime } from './components/team-panel.ts'
 import { TeamStrip } from './components/team-strip.ts'
 import type { TerminalUiLike } from './types.ts'
 
-/** Agent Teams controller bound to one terminal launch. */
+/** Read-only Agent Teams controller bound to one terminal launch. */
 export class TeamController {
   private readonly ctx: Context
   private readonly ui: TerminalUiLike
@@ -30,21 +30,17 @@ export class TeamController {
   private memberStop: (() => void) | undefined
 
   /**
-   * @param ctx - host context carrying the projection, query, Agent, and Team services.
+   * @param ctx - host context carrying the projection, query, and Agent services.
    * @param ui - the terminal contribution seam.
    */
   constructor(ctx: Context, ui: TerminalUiLike) {
     this.ctx = ctx
     this.ui = ui
+    this.memberPanel = new TeamMemberPanel(ui.palette, () => { this.backToTeamPanel() })
     this.teamPanel = new TeamPanel(ui.palette, {
       close: () => { this.closeTeamPanel() },
       openMember: (member) => { void this.openMember(member) },
-      messageMember: (member) => { this.promptMessage(member) },
-      claimTask: (task) => { void this.updateTask(task, 'claim') },
-      completeTask: (task) => { void this.updateTask(task, 'complete') },
-      createTask: () => { this.promptTask() },
-    })
-    this.memberPanel = new TeamMemberPanel(ui.palette, () => { this.backToTeamPanel() })
+    }, id => this.memberRuntime(id))
   }
 
   /**
@@ -57,7 +53,7 @@ export class TeamController {
     const unregisterCommand = this.ui.registerCommand({
       name: 'team',
       description: copy.team.title,
-      run: (argument) => { void this.teamCommand(argument) },
+      run: () => { this.openTeamPanel() },
     })
     return () => {
       this.closeTeamPanel()
@@ -77,100 +73,20 @@ export class TeamController {
   }
 
   /**
-   * Handle `/team` and its argument forms.
-   * @param argument - panel (absent), `task <subject>`, or `message <member> <text>`.
+   * Overlay live turn state and the persisted model selection on one member.
+   * @param id - durable member Session id.
+   * @returns runtime status and model, when known.
    */
-  private async teamCommand(argument: string | undefined): Promise<void> {
-    const text = argument?.trim() ?? ''
-    if (text === '') {
-      this.openTeamPanel()
-      return
-    }
-    const [verb, ...rest] = text.split(/\s+/u)
-    if (verb === 'task') {
-      const subject = rest.join(' ').trim()
-      if (subject === '') {
-        this.ui.notice(copy.team.usage)
-        return
-      }
-      await this.createTask(subject)
-      return
-    }
-    if (verb === 'message') {
-      const target = rest.shift()
-      const message = rest.join(' ').trim()
-      if (target === undefined || message === '') {
-        this.ui.notice(copy.team.usage)
-        return
-      }
-      await this.sendMessage(target, message)
-      return
-    }
-    this.ui.notice(copy.team.usage)
-  }
-
-  /**
-   * Create one shared task.
-   * @param subject - task subject and description.
-   */
-  private async createTask(subject: string): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent()
-    if (service === undefined || agent === undefined) {
-      this.ui.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      const task = await service.createTask(agent, { subject, description: subject })
-      this.ui.notice(copy.team.taskCreated(task.id))
-      this.refreshTeamPanel()
-    } catch (error: unknown) {
-      this.ui.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /**
-   * Send one text message to a teammate.
-   * @param target - teammate name.
-   * @param text - message text.
-   */
-  private async sendMessage(target: string, text: string): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent()
-    if (service === undefined || agent === undefined) {
-      this.ui.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      await service.sendMessage(agent, {
-        target,
-        content: [{ type: 'text', text }],
-        signal: new AbortController().signal,
-      })
-      this.ui.notice(copy.team.messageSent(target))
-    } catch (error: unknown) {
-      this.ui.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  /**
-   * Apply one task transition.
-   * @param task - selected task with its projection revision.
-   * @param action - claim or complete.
-   */
-  private async updateTask(task: TeamTaskRow, action: 'claim' | 'complete'): Promise<void> {
-    const service = teamService(this.ctx)
-    const agent = this.agent()
-    if (service === undefined || agent === undefined) {
-      this.ui.notice(copy.team.unavailable)
-      return
-    }
-    try {
-      await service.updateTask(agent, { taskId: task.id, expectedRevision: task.revision, action })
-      this.ui.notice(action === 'claim' ? copy.team.taskClaimed(task.id) : copy.team.taskCompleted(task.id))
-      this.refreshTeamPanel()
-    } catch (error: unknown) {
-      this.ui.notice(copy.team.actionFailed(error instanceof Error ? error.message : String(error)))
+  private memberRuntime(id: string): TeamMemberRuntime {
+    const sessionId = SessionId(id)
+    const live = this.ctx.agents.get(sessionId)
+    const session = this.ctx.sessions.get(sessionId)
+    const values = session === undefined ? undefined : this.ctx.get('sessionProjections')?.snapshot(session).values
+    const model = (values as { modelSelection?: { next?: { model?: string } } } | undefined)?.modelSelection?.next?.model
+      ?? live?.options.model
+    return {
+      status: live?.status === 'running' ? 'running' : 'inactive',
+      ...model === undefined ? {} : { model },
     }
   }
 
@@ -214,22 +130,7 @@ export class TeamController {
     this.openTeamPanel()
   }
 
-  /** Pre-fill the composer with the task-creation command. */
-  private promptTask(): void {
-    this.closeTeamPanel()
-    this.ui.setEditorText('/team task ')
-  }
-
-  /**
-   * Pre-fill the composer with a teammate-message command.
-   * @param member - selected teammate.
-   */
-  private promptMessage(member: TeamMemberProjectionRow): void {
-    this.closeTeamPanel()
-    this.ui.setEditorText(`/team message ${member.name} `)
-  }
-
-  /** Present the roster and task board. */
+  /** Present the read-only roster and shared task board. */
   private openTeamPanel(): void {
     const team = this.projection()
     if (team === undefined) {

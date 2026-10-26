@@ -116,7 +116,7 @@ export function fakeUi(options: {
 
 /** The Team projection registry double with a live change feed. */
 export interface ProjectionsDouble {
-  /** The projection values returned by `snapshot`. */
+  /** The projection values returned for the presented Lead Session. */
   values: { agentTeam?: TeamProjection }
   /** Dispatch one change notification. */
   emit(session: unknown): void
@@ -130,20 +130,30 @@ export interface ObservedSession {
   readonly options: unknown
 }
 
+/** Live and persisted facts the panel overlays on one roster member. */
+export interface MemberRuntimeConfig {
+  /** Live Agent status; `inactive` models a live Agent outside a running turn. */
+  readonly status?: AgentStatus | 'inactive'
+  /** Model carried by the live Agent options. */
+  readonly model?: string
+  /** Persisted model reported by the member Session projection. */
+  readonly sessionModel?: string
+  /** Omit the member Session even though its Agent may exist. */
+  readonly withoutSession?: boolean
+  /** Omit the live member Agent. */
+  readonly withoutAgent?: boolean
+}
+
 /** The structural services the controller consumes. */
 export interface TeamServices {
-  /** The projection registry double. */
+  /** The projection registry double for the Lead Session. */
   readonly projections: ProjectionsDouble
   /** Recorded `observeSession` calls. */
   readonly observed: ObservedSession[]
-  /** Teammate Agent statuses keyed by Session identity. */
+  /** Live Agent statuses keyed by Session identity. */
   readonly agentStatuses: Map<string, string>
-  /** Task/message service recordings. */
-  readonly created: { readonly subject: string; readonly description: string }[]
-  /** Task transition recordings. */
-  readonly updates: { readonly taskId: string; readonly expectedRevision: number; readonly action: string }[]
-  /** Peer-message recordings. */
-  readonly messages: { readonly target: string; readonly text: string }[]
+  /** Per-member runtime configuration the Agent/session doubles read. */
+  readonly members: Map<string, MemberRuntimeConfig>
 }
 
 /** One controller harness. */
@@ -164,27 +174,22 @@ export interface ControllerOptions {
   queryError?: unknown
   /** Omit the sessionQuery service entirely. */
   withoutQuery?: boolean
-  /** Omit the Agent Teams task/message service. */
-  withoutTeamService?: boolean
-  /** Rejection thrown by every Team service action. */
-  serviceError?: unknown
   /** Present no Agent. */
   withoutAgent?: boolean
   /** Locale for the seam. */
   locale?: 'en' | 'zh'
+  /** Runtime facts for roster members keyed by Session identity. */
+  members?: Readonly<Record<string, MemberRuntimeConfig>>
 }
 
 /**
- * Build one controller harness over a real Cordis context and fake seam.
- * @param options - projection, observation, service, and Agent overrides.
- * @returns the context, seam, agent, and service recordings.
+ * Build one Agent double over the supplied Session identity.
+ * @param session - the Agent's Session.
+ * @param status - live Agent status.
+ * @param model - Agent option model.
+ * @returns the typed Agent double.
  */
-export function controllerHarness(options: ControllerOptions = {}): ControllerHarness {
-  const ctx = new Context()
-  onTestFinished(async () => { await ctx.fiber.dispose() })
-  setCopyLocale(options.locale ?? 'en')
-
-  const session = Session.create(SessionId('lead-session'))
+function agentDouble(session: Session, status: AgentStatus, model: string): Agent {
   const inbox: Inbox = {
     nextTurn: [],
     nextStep: [],
@@ -195,14 +200,13 @@ export function controllerHarness(options: ControllerOptions = {}): ControllerHa
     remove: () => false,
     splice: () => [],
   }
-  const status: AgentStatus = 'idle'
-  const agent: Agent = {
+  return {
     id: session.id,
     session,
     inbox,
     get status() { return status },
-    ctx,
-    options: { provider: 'test', model: 'test' },
+    ctx: new Context(),
+    options: { provider: 'test', model },
     cancel: () => {},
     whenIdle: async () => {},
     runMaintenance: async task => task(new AbortController().signal),
@@ -211,6 +215,20 @@ export function controllerHarness(options: ControllerOptions = {}): ControllerHa
     steer: () => {},
     inject: () => {},
   }
+}
+
+/**
+ * Build one controller harness over a real Cordis context and fake seam.
+ * @param options - projection, observation, runtime, and Agent overrides.
+ * @returns the context, seam, agent, and service recordings.
+ */
+export function controllerHarness(options: ControllerOptions = {}): ControllerHarness {
+  const ctx = new Context()
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  setCopyLocale(options.locale ?? 'en')
+
+  const session = Session.create(SessionId('lead-session'))
+  const agent = agentDouble(session, 'idle', 'test')
   const ui = fakeUi({
     locale: options.locale ?? 'en',
     ...(options.withoutAgent === true ? {} : { agent }),
@@ -219,14 +237,29 @@ export function controllerHarness(options: ControllerOptions = {}): ControllerHa
   const values: { agentTeam?: TeamProjection } = options.projection === undefined
     ? {}
     : { agentTeam: options.projection }
+  const members = new Map<string, MemberRuntimeConfig>(Object.entries(options.members ?? {}))
+  const sessionsById = new Map<string, Session>()
   const listeners = new Set<(session: unknown) => void>()
   const projections: ProjectionsDouble = {
     values,
     emit(session) { for (const listener of [...listeners]) listener(session) },
     listenerCount: () => listeners.size,
   }
+  /** @returns the member Session, created on first use. */
+  const memberSession = (id: string): Session => {
+    const existing = sessionsById.get(id)
+    if (existing !== undefined) return existing
+    const created = Session.create(SessionId(id))
+    sessionsById.set(id, created)
+    return created
+  }
   ctx.provide('sessionProjections', {
-    snapshot: () => ({ values }),
+    snapshot: (target: Session) => {
+      const id = String(target.id)
+      if (id === String(session.id)) return { values }
+      const model = members.get(id)?.sessionModel
+      return { values: model === undefined ? {} : { modelSelection: { next: { model } } } }
+    },
     onChanged: (listener: (session: unknown) => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -244,43 +277,36 @@ export function controllerHarness(options: ControllerOptions = {}): ControllerHa
     } as never)
   }
 
-  const agentStatuses = new Map<string, string>()
-  ctx.provide('agents', {
+  ctx.provide('sessions', {
     get: (id: unknown) => {
-      const status = agentStatuses.get(String(id))
-      return status === undefined ? undefined : { status }
+      const key = String(id)
+      const config = members.get(key)
+      if (config === undefined || config.withoutSession === true) return undefined
+      return memberSession(key)
     },
   } as never)
 
-  const created: TeamServices['created'] = []
-  const updates: TeamServices['updates'] = []
-  const messages: TeamServices['messages'] = []
-  if (options.withoutTeamService !== true) {
-    const reject = async (): Promise<never> => { throw options.serviceError }
-    ctx.provide('agentTeams', {
-      createTask: async (_agent: unknown, request: { subject: string; description: string }) => {
-        if (options.serviceError !== undefined) return reject()
-        created.push(request)
-        return { id: 'task-new' }
-      },
-      updateTask: async (_agent: unknown, request: { taskId: string; expectedRevision: number; action: string }) => {
-        if (options.serviceError !== undefined) return reject()
-        updates.push(request)
-        return { id: request.taskId }
-      },
-      sendMessage: async (_agent: unknown, request: { target: string; content: readonly { type: 'text'; text: string }[] }) => {
-        if (options.serviceError !== undefined) return reject()
-        messages.push({ target: request.target, text: request.content[0]?.text ?? '' })
-        return {}
-      },
-    } as never)
-  }
+  const agentStatuses = new Map<string, string>()
+  ctx.provide('agents', {
+    get: (id: unknown) => {
+      const key = String(id)
+      if (key === String(session.id)) return agent
+      const config = members.get(key)
+      const status = agentStatuses.get(key) ?? config?.status
+      if (config === undefined && status === undefined) return undefined
+      if (config?.withoutAgent === true) return undefined
+      return {
+        status: status ?? 'idle',
+        options: { provider: 'test', model: config?.model ?? 'test' },
+      }
+    },
+  } as never)
 
   return {
     ctx,
     ui,
     agent,
-    services: { projections, observed, agentStatuses, created, updates, messages },
+    services: { projections, observed, agentStatuses, members },
   }
 }
 
@@ -303,6 +329,7 @@ export function teamTask(overrides: Partial<TeamTaskRow> = {}): TeamTaskRow {
     id: 'task-1',
     revision: 1,
     subject: 'Inspect the workspace',
+    description: 'Inspect the workspace and report findings.',
     status: 'pending',
     blockedBy: [],
     writeScopes: [],

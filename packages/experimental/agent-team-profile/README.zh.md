@@ -48,7 +48,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile
 
 本层会添加 Agent Teams domain，以及 Team-scoped 创建、roster、消息、interrupt、等待与任务板工具。直接委派使用支持 fresh 和 fork 上下文的 `spawn_teammate`。`subagent`、`subagent_fork` 工具和名称重叠的全局 child control 均被禁用。Workflow 保留 base profile 的 `spawn` 提供方，底层 Subagent 服务和两个提供方仍供 teammate 与 workflow 使用。
 
-在 Web 和 Desktop 会话中，[Team UI](../client-ui-agent-team/README.zh.md) 显示成员 roster 与共享任务板，并可打开 teammate 会话。终端 preset 也会通过本 bundle 抑制自己的 subagent 控制行，从而由 Team 工具替换而不是被遮蔽。终端 profile 通过 [`@deepseek-ai/dsh-experimental-tui-agent-team`](../tui-agent-team/README.zh.md) 渲染同一个 `agentTeam` projection：编辑器上方的紧凑状态行，以及 `/team` dock（Members / Tasks tab、只读 teammate transcript、认领/完成/创建任务动作）。在没有终端贡献 seam 的界面上该行是惰性的。同一个 bundle 开关控制工具与这两个界面。插件页通过组合包的 `package.json.icon` 声明读取其[图标](icon.svg)，组合包禁用时也会显示。
+在 Web 和 Desktop 会话中，[Team UI](../client-ui-agent-team/README.zh.md) 显示成员 roster 与共享任务板，并可打开 teammate 会话。终端 preset 也会通过本 bundle 抑制自己的 subagent 控制行，从而由 Team 工具替换而不是被遮蔽。终端 profile 通过 [`@deepseek-ai/dsh-experimental-tui-agent-team`](../tui-agent-team/README.zh.md) 渲染同一个 `agentTeam` projection：编辑器上方的紧凑状态行，以及与 native 面板一致的只读 `/team` dock（Members / Shared tasks 区块、teammate transcript、任务详情）。在没有终端贡献 seam 的界面上该行是惰性的。同一个 bundle 开关控制工具与这两个界面。插件页通过组合包的 `package.json.icon` 声明读取其[图标](icon.svg)，组合包禁用时也会显示。
 
 -----
 
@@ -105,7 +105,7 @@ Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../t
 - **Workflow 子代理工具**——[Team 工具可见性限制](../tool-agent-team/README.zh.md#known-limitations-and-deferred-work)也适用于 workflow 子代理。
 - **共享 checkout**——所有 teammate 都观察同一个工作目录；本 bundle 不提供 worktree 隔离或文件系统锁。
 - **预设内的子代理控件**——Web 与终端的预设仍可在各自作用域挂载 continuable Subagent 控件；顶层组合包不会替换这些注册。
-- **终端视图限于 dock**——终端显示 roster 与任务板，可打开只读 teammate transcript，支持认领/完成/创建与 peer 消息；但不能把 teammate 变成主会话。
+- **终端视图只读且限于 dock**——终端显示 roster 与共享任务板，可打开只读 teammate transcript 或任务详情；不能修改 Team，也不能把 teammate 变成主会话。
 - **需要 base profile**——本 patch 依赖 `dsh-base` 提供的配置行 id 与 Subagent 提供方；它不是独立 profile。
 
 <a id="dev-note"></a>

@@ -121,11 +121,11 @@ dsh tui --preset ptc
 
 ## Agent Teams
 
-在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开 Team 命令中心：readiness 行显示 `就绪` 或 `降级` 及成员/任务/进行中计数，tab 带各自计数，行有列标题。Tab 或 ←/→ 在 Members 与 Tasks 间切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭。在成员上按 Enter 打开只读 transcript；在任务上按 Enter 打开任务详情，显示状态、主题、owner、阻塞项、写作用域、警告以及当前可用动作，Esc 返回。footer 只列主要动作，`?` 打开完整快捷键帮助。不可用动作会在面板内解释原因。行内显示成员角色/阶段，以及任务状态、owner、阻塞项与写作用域警告；面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
+在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开与 native 面板一致的只读智能体团队视图：Members 与 Shared tasks 两个区块及计数、成员运行状态/模型/当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Tab 或 ←/→ 切换区块，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭。在成员上按 Enter 打开只读 transcript；在任务上按 Enter 展开完整描述与元数据，Esc 返回。任务板没有修改控件；任务与消息通过 Team 工具和会话创建/更新。面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
 
-Members 中 Enter 打开选中 teammate 的只读 transcript（↑/↓ 滚动，Esc 返回），`m` 预填 `/team message <name> `，`n` 预填 `/team task `。Tasks 中 Enter 打开任务详情；`a` 认领就绪且未认领的任务，`c` 完成进行中的任务，`n` 预填新任务。任务详情内 `a`/`c` 执行同样的守卫动作，Esc 返回列表；`?` 显示全部快捷键。`/team task <subject>` 创建共享任务，`/team message <member> <text>` 发送 peer 消息，无需离开编辑器。
+Members 中 Enter 打开选中 teammate 的只读 transcript（↑/↓ 滚动，Esc 返回）。Tasks 中 Enter 打开只读任务详情，显示完整描述、状态、owner、依赖、写作用域与警告；↑/↓ 滚动，Esc 返回。面板不会 spawn、发送消息、认领、完成或编辑任何内容。
 
-teammate transcript 只是查看器，不驱动对话：提示仍通过编辑器里的 `/team message` 发送。启用 bundle 会用 Team 工具替换 preset scope 的 subagent 控件；未启用 bundle 的 profile 不显示状态行，`/team` 会说明如何启用。
+teammate transcript 只是查看器，不驱动对话。启用 bundle 会用 Team 工具替换 preset scope 的 subagent 控件；未启用 bundle 的 profile 不显示状态行，`/team` 会说明如何启用。
 
 ## 继续会话
 

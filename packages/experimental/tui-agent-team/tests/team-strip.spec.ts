@@ -91,8 +91,7 @@ describe('TeamStrip', () => {
     const strip = new TeamStrip(palette.palette, harness.ctx, () => team)
 
     const [line] = strip.render(200)
-    expect(line).toContain(copy.team.failure)
-    expect(line).toContain('bad record')
+    expect(line).toContain(copy.team.failure('bad record'))
     expect(palette.calls).toContain('warning')
   })
 

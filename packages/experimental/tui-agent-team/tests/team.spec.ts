@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
-  readTeamProjection, summarizeTeam, teamService, teamVisible,
+  readTeamProjection, summarizeTeam, teamVisible,
 } from '../src/team.ts'
 import {
   controllerHarness, sessionToken, teamMember, teamProjection, teamTask,
@@ -89,20 +89,6 @@ describe('summarizeTeam', () => {
       inProgress: 1,
       completed: 1,
     })
-  })
-})
-
-describe('teamService', () => {
-  it('returns the composed Agent Teams service', () => {
-    const harness = controllerHarness()
-
-    expect(teamService(harness.ctx)).toBeDefined()
-  })
-
-  it('returns undefined without the service', () => {
-    const harness = controllerHarness({ withoutTeamService: true })
-
-    expect(teamService(harness.ctx)).toBeUndefined()
   })
 })
 

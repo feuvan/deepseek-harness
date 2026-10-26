@@ -3,23 +3,23 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/tui-agent-team/README.md
 /:
-  en: 06d6ca7f283eaa8f
-  zh: d95c830e3e6436c4
+  en: 5ce5a2c9525cabe1
+  zh: c739809390ea162b
 /deepseek-ai-dsh-experimental-tui-agent-team:
   en: e21e4d1228b52b5a
   zh: f5bc3dd0478fbda1
 /deepseek-ai-dsh-experimental-tui-agent-team/summary:
-  en: 3e5212af713177be
-  zh: 63dfa46dd4c4f2bf
+  en: 7d7e11052e3fd919
+  zh: 831c09903e79b1e9
 /deepseek-ai-dsh-experimental-tui-agent-team/table-of-contents:
   en: ca5dc537b0599b2a
   zh: b6eb1c3c29f3174e
 /deepseek-ai-dsh-experimental-tui-agent-team/use-this-package:
-  en: 0077bdf15792136c
-  zh: 54322539cb2aff95
+  en: 54d3d9ff81f7d749
+  zh: 6632b5bcb1351656
 /deepseek-ai-dsh-experimental-tui-agent-team/understand-the-implementation:
-  en: ecf6adc435edb19c
-  zh: 45065145da9fc3bf
+  en: 3c6808efd9e106a4
+  zh: 9842760095da6110
 /deepseek-ai-dsh-experimental-tui-agent-team/model-experience:
   en: df9bb73d28171b05
   zh: 2f8c33563d553532
@@ -27,8 +27,8 @@
   en: b51b320f5e4dacfc
   zh: 8762fc39ec5232a9
 /deepseek-ai-dsh-experimental-tui-agent-team/known-limitations-and-deferred-work:
-  en: b0a2507680649856
-  zh: 55a72f8a75768d91
+  en: 159bd372d50f561c
+  zh: 94fbc9e6743a36f3
 /deepseek-ai-dsh-experimental-tui-agent-team/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: e88aeb617ffb74ea

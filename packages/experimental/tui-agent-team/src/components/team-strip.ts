@@ -39,7 +39,7 @@ export class TeamStrip implements Component {
     if (team === undefined || !teamVisible(team)) return []
     const summary = summarizeTeam(this.ctx, team)
     const parts = stripParts(summary)
-    if (team.failure !== undefined) parts.push(`${copy.team.failure}: ${team.failure}`)
+    if (team.failure !== undefined) parts.push(copy.team.failure(team.failure))
     const line = ` ${parts.join(' · ')}`
     return [truncateToWidth(team.failure === undefined ? this.palette.dim(line) : this.palette.warning(line), width)]
   }

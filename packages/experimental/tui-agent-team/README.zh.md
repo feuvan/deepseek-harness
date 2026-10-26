@@ -1,5 +1,5 @@
 ---
-description: "终端 Agent Teams 界面：紧凑状态行、/team roster 与任务 dock、teammate transcript，以及基于终端贡献 seam 的任务/消息动作。"
+description: "终端 Agent Teams 界面：紧凑状态行、/team 只读 roster 与共享任务 dock、teammate transcript，基于终端贡献 seam。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包提供 `dsh tui` 的 Agent Teams 界面。它通过终端的 `ctx.terminalUi` 贡献 seam 注册：编辑器上方的紧凑状态行、`/team` 命令、Members/Tasks dock、只读 teammate transcript，以及任务/消息动作。它由 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md) 组合包提供——该组合包同时提供 Team 服务与工具；启用该 bundle 是受支持的使用方式。
+本包提供 `dsh tui` 的 Agent Teams 界面。它通过终端的 `ctx.terminalUi` 贡献 seam 注册：编辑器上方的紧凑状态行、`/team` 命令，以及只读的 Members / Shared tasks dock 与 teammate transcript。它与 native 智能体团队面板对齐，由 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md) 组合包提供——该组合包同时提供 Team 服务与工具；启用该 bundle 是受支持的使用方式。
 
 在没有终端贡献 seam 的组合（Web / Desktop）中插件是惰性的，因此同一个 bundle 可以跨界面复用。
 
@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在 `tui` profile 的 `/config` → 实验性能力中启用 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md)（或执行 `dsh plugin --profile tui add ...`），然后重启终端。Lead Session 有 teammate 或共享任务时状态行出现；`/team` 打开 dock。
 
-dock 作为紧凑的命令中心打开：readiness 行（`就绪`/`降级` 及成员/任务/进行中计数）、带计数的 tab、列标题，以及只显示主要动作的一行 footer。Tab 或 ←/→ 切换 Members/Tasks；↑/↓ 与 PgUp/PgDn 移动。Members：Enter 打开只读 transcript，`m` 预填 `/team message <name> `。Tasks：Enter 打开任务详情，显示状态、主题、owner、阻塞项、写作用域、警告与当前可用动作；`a` 认领就绪且未认领的任务，`c` 完成进行中的任务。`n` 预填新任务，`?` 打开完整快捷键帮助，Esc 返回或关闭。不可用动作会在面板内解释原因，而不是静默失败。`/team task <subject>` 与 `/team message <member> <text>` 可在编辑器中直接使用。teammate transcript 是查看器：提示通过 `/team message` 发送，不能直接输入到 transcript 中驱动对话。
+dock 与 native 面板一致，是只读视图：带计数的 Members / Shared tasks 区块、成员运行状态/模型/当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Tab 或 ←/→ 切换区块；↑/↓ 与 PgUp/PgDn 移动。Enter 打开 teammate 的只读 transcript，或展开任务的完整描述与元数据；Esc 返回或关闭。面板没有 spawn/消息/认领/完成/编辑控件；这些操作仍由 Team 工具与会话完成。teammate transcript 是查看器，不驱动对话。
 
 <a id="understand-the-implementation"></a>
 ## 实现说明
@@ -39,7 +39,7 @@ dock 作为紧凑的命令中心打开：readiness 行（`就绪`/`降级` 及�
 | 文件 | 角色 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 可选 seam 注入与 effect 生命周期 |
-| [`src/controller.ts`](src/controller.ts) | projection、命令、dock、transcript 与任务动作 |
+| [`src/controller.ts`](src/controller.ts) | projection、命令、dock 与只读 transcript/任务查看 |
 | [`src/components/`](src/components/) | 状态行、roster/任务面板、transcript 查看器 |
 | [`src/copy.ts`](src/copy.ts) | 中英文文案 |
 | [`src/types.ts`](src/types.ts) | 结构化 seam 与调色板契约 |
@@ -60,9 +60,9 @@ None, as the terminal surface only presents the Agent Teams projection and servi
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只读 transcript** — teammate 历史在 dock 中滚动查看，但不能驱动；提示通过 `/team message` 发送。
+- **只读面板** — dock 只展示 roster 与共享任务板，不修改它们；spawn/消息/任务变更仍由 Team 工具与会话完成。
+- **只读 transcript** — teammate 历史在 dock 中滚动查看，但不能驱动。
 - **限于 dock** — teammate 不能成为终端主 Session。
-- **任务动作** — 仅认领、完成、创建；reassign/edit/delete 仍属于模型工具与 Web 流程。
 
 -----
 

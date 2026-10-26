@@ -1,59 +1,66 @@
 /**
- * Agent Teams dock: readiness, roster, and shared task board for the Lead
- * Session's `agentTeam` projection. The panel exposes only actions that are
- * ready for the selected row and explains unavailable actions in place.
+ * Agent Teams dock: a read-only view of the Lead Session's roster and shared
+ * task board, matching the native Agent Teams panel. Selecting a member opens
+ * its transcript; selecting a task expands its full description and metadata.
+ * Task and member mutations stay in the Team tools and conversation.
  *
  * @module @deepseek-ai/dsh-experimental-tui-agent-team/components/team-panel
  */
 
-import { matchesKey, truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui'
-import type {
-  TeamMemberProjectionRow, TeamProjection, TeamTaskRow,
-} from '../team.ts'
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
+import type { TeamMemberProjectionRow, TeamProjection, TeamTaskRow } from '../team.ts'
 import { copy } from '../copy.ts'
 import { displayText } from '../display-text.ts'
 import type { Palette } from '../types.ts'
 
-/** The two Team tabs. */
+/** The two read-only sections. */
 type TeamTab = 'members' | 'tasks'
 
-/** Maximum rows one tab renders before scrolling. */
+/** Maximum rows one section shows before scrolling. */
 const MAX_VISIBLE = 8
+/** Maximum task-detail rows shown before scrolling. */
+const MAX_DETAIL = 14
 
-/** Callbacks the Team panel dispatches. */
+/** Runtime facts the roster overlays on the durable projection. */
+export interface TeamMemberRuntime {
+  /** Live turn state for an active member. */
+  readonly status: 'running' | 'inactive'
+  /** Model reported by the member Session, when available. */
+  readonly model?: string
+}
+
+/** Callbacks the read-only Team panel dispatches. */
 export interface TeamPanelHandlers {
   /** Close the panel and release the dock. */
   close(): void
   /** Open one teammate's read-only transcript. */
   openMember(member: TeamMemberProjectionRow): void
-  /** Pre-fill the composer with a message to one teammate. */
-  messageMember(member: TeamMemberProjectionRow): void
-  /** Claim one ready task for the Lead. */
-  claimTask(task: TeamTaskRow): void
-  /** Complete one in-progress task. */
-  completeTask(task: TeamTaskRow): void
-  /** Pre-fill the composer with a task-creation command. */
-  createTask(): void
 }
 
-/** A bottom-dock Agent Teams panel. */
+/** A read-only bottom-dock Agent Teams panel. */
 export class TeamPanel implements Component {
   private readonly palette: Palette
   private readonly handlers: TeamPanelHandlers
+  private readonly runtime: (id: string) => TeamMemberRuntime
   private team: TeamProjection | undefined
   private tab: TeamTab = 'members'
   private index = 0
-  private message: string | undefined
   private detail: TeamTaskRow | undefined
-  private help = false
+  private detailOffset = 0
 
   /**
    * @param palette - terminal style table.
    * @param handlers - panel actions.
+   * @param runtime - live member status/model lookup.
    */
-  constructor(palette: Palette, handlers: TeamPanelHandlers) {
+  constructor(
+    palette: Palette,
+    handlers: TeamPanelHandlers,
+    runtime: (id: string) => TeamMemberRuntime,
+  ) {
     this.palette = palette
     this.handlers = handlers
+    this.runtime = runtime
   }
 
   /** Whether a Team projection is presented. */
@@ -62,17 +69,15 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Replace the presented Team value, keeping the selected tab and clamping the cursor.
+   * Replace the presented Team value, keeping the selected section and clamping the cursor.
    * @param team - current projection, or undefined when it disappeared.
    */
   setTeam(team: TeamProjection | undefined): void {
     this.team = team
     this.index = Math.min(this.index, Math.max(0, this.rowCount() - 1))
-    this.message = undefined
     if (this.detail !== undefined) {
-      const refreshed = team?.tasks.find(task => task.id === this.detail?.id)
-      if (refreshed === undefined) this.detail = undefined
-      else this.detail = refreshed
+      this.detail = team?.tasks.find(task => task.id === this.detail?.id)
+      if (this.detail === undefined) this.detailOffset = 0
     }
   }
 
@@ -83,38 +88,28 @@ export class TeamPanel implements Component {
    */
   handleInput(data: string): boolean {
     if (this.team === undefined) return false
-    if (this.help) {
-      if (match(data, '?') || matchesKey(data, 'escape')) this.help = false
-      return true
-    }
     if (this.detail !== undefined) {
       if (matchesKey(data, 'escape')) {
         this.detail = undefined
-        this.message = undefined
+        this.detailOffset = 0
         return true
       }
-      if (match(data, '?')) {
-        this.help = true
+      if (matchesKey(data, 'up')) {
+        this.detailOffset = Math.max(0, this.detailOffset - 1)
         return true
       }
-      if (match(data, 'a')) {
-        if (this.canClaim(this.detail)) this.handlers.claimTask(this.detail)
-        else this.message = copy.team.taskNotClaimable(copy.team.statuses[this.taskStatusKey(this.detail)])
+      if (matchesKey(data, 'down')) {
+        this.detailOffset += 1
         return true
       }
-      if (match(data, 'c')) {
-        if (this.detail.status === 'in_progress') this.handlers.completeTask(this.detail)
-        else this.message = copy.team.taskNotCompletable(copy.team.statuses[this.taskStatusKey(this.detail)])
+      if (matchesKey(data, 'pageUp')) {
+        this.detailOffset = Math.max(0, this.detailOffset - MAX_DETAIL)
         return true
       }
-      if (match(data, 'n')) {
-        this.handlers.createTask()
+      if (matchesKey(data, 'pageDown')) {
+        this.detailOffset += MAX_DETAIL
         return true
       }
-      return true
-    }
-    if (match(data, '?')) {
-      this.help = true
       return true
     }
     if (matchesKey(data, 'tab') || matchesKey(data, 'right')) {
@@ -141,51 +136,18 @@ export class TeamPanel implements Component {
       this.move(MAX_VISIBLE)
       return true
     }
-    if (match(data, 'n')) {
-      this.handlers.createTask()
-      return true
-    }
-    if (this.tab === 'members') {
+    if (matchesKey(data, 'enter')) {
+      if (this.tab === 'tasks') {
+        const task = this.team.tasks[this.index]
+        if (task !== undefined) {
+          this.detail = task
+          this.detailOffset = 0
+        }
+        return true
+      }
       const member = this.team.members[this.index]
-      if (member !== undefined && matchesKey(data, 'enter')) {
-        if (member.phase === 'failed') {
-          this.message = copy.team.memberUnavailable(member.name)
-          return true
-        }
-        this.handlers.openMember(member)
-        return true
-      }
-      if (member !== undefined && match(data, 'm')) {
-        if (member.phase === 'failed') {
-          this.message = copy.team.memberUnavailable(member.name)
-          return true
-        }
-        this.handlers.messageMember(member)
-        return true
-      }
-    } else {
-      const task = this.team.tasks[this.index]
-      if (task !== undefined && matchesKey(data, 'enter')) {
-        this.detail = task
-        this.message = undefined
-        return true
-      }
-      if (task !== undefined && match(data, 'a')) {
-        if (!this.canClaim(task)) {
-          this.message = copy.team.taskNotClaimable(copy.team.statuses[this.taskStatusKey(task)])
-          return true
-        }
-        this.handlers.claimTask(task)
-        return true
-      }
-      if (task !== undefined && match(data, 'c')) {
-        if (task.status !== 'in_progress') {
-          this.message = copy.team.taskNotCompletable(copy.team.statuses[this.taskStatusKey(task)])
-          return true
-        }
-        this.handlers.completeTask(task)
-        return true
-      }
+      if (member !== undefined && this.memberSelectable(member)) this.handlers.openMember(member)
+      return true
     }
     if (matchesKey(data, 'escape')) {
       this.handlers.close()
@@ -195,7 +157,7 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Render readiness, tabs, the active table, and contextual keys.
+   * Render the read-only roster/task board or the selected task detail.
    * @param width - available terminal columns.
    * @returns the panel lines.
    */
@@ -204,66 +166,49 @@ export class TeamPanel implements Component {
     const team = this.team
     const lines = [truncateToWidth(palette.heading(displayText(copy.team.title)), width)]
     if (team === undefined) return lines
-    if (this.help) return this.helpLines(width)
-    lines.push(this.statusLine(team, width))
     if (team.failure !== undefined) {
-      lines.push(palette.warning(truncateToWidth(`  ${copy.team.failure}: ${displayText(team.failure)}`, width)))
+      lines.push(palette.warning(truncateToWidth(`  ${copy.team.failure(displayText(team.failure))}`, width)))
     }
     if (this.detail !== undefined) return [...lines, ...this.detailLines(this.detail, width)]
     lines.push(truncateToWidth(this.tabLine(team), width))
-    lines.push(palette.dim(truncateToWidth(`  ${this.tab === 'members' ? copy.team.membersHeader : copy.team.tasksHeader}`, width)))
-    const contentWidth = Math.max(1, width - 3)
-    const rows = this.tab === 'members'
-      ? team.members.map(member => this.memberLine(member, contentWidth))
-      : team.tasks.map(task => this.taskLine(task, contentWidth))
-    if (rows.length === 0) {
-      const empty = this.tab === 'members' ? copy.team.emptyMembers : copy.team.emptyTasks
-      lines.push(palette.dim(truncateToWidth(`  ${empty}`, width)))
-    } else {
-      const visible = Math.min(MAX_VISIBLE, rows.length)
-      const start = Math.max(0, Math.min(this.index - Math.floor(visible / 2), rows.length - visible))
-      if (start > 0) lines.push(palette.dim(`  ↑ ${copy.moreRows(start)}`))
-      for (let position = start; position < start + visible; position += 1) {
-        const row = rows[position]
-        /* v8 ignore next -- the window is clamped to the row count */
-        if (row === undefined) continue
-        const selected = position === this.index
-        const content = truncateToWidth(padEnd(row, contentWidth), contentWidth)
-        lines.push(selected
-          ? palette.inverse(truncateToWidth(padEnd(` ❯ ${content}`, width), width))
-          : truncateToWidth(`   ${content}`, width))
-      }
-      const remaining = rows.length - (start + visible)
-      if (remaining > 0) lines.push(palette.dim(`  ↓ ${copy.moreRows(remaining)}`))
-    }
-    if (this.message !== undefined) lines.push(palette.warning(truncateToWidth(`  ${this.message}`, width)))
-    lines.push(palette.dim(truncateToWidth(`  ${this.footer()}`, width)))
+    if (this.tab === 'members') lines.push(...this.memberLines(team, width))
+    else lines.push(...this.taskLines(team, width))
+    lines.push(palette.dim(truncateToWidth(`  ${copy.team.hint}`, width)))
     return lines
   }
 
-  /** No cached renderer state exists beyond the projection snapshot. */
+  /** No cached renderer state beyond the projection snapshot. */
   invalidate(): void {}
 
   /**
-   * Switch the active tab, reset the cursor, and clear transient explanations.
-   * @param tab - target tab.
+   * Whether a roster row opens a transcript.
+   * @param member - roster row.
+   * @returns whether the row is selectable.
+   */
+  private memberSelectable(member: TeamMemberProjectionRow): boolean {
+    if (member.role === 'lead') return false
+    if (member.phase !== 'active') return false
+    return true
+  }
+
+  /**
+   * Switch the active section and reset the cursor.
+   * @param tab - target section.
    */
   private switchTab(tab: TeamTab): void {
     this.tab = tab
     this.index = 0
-    this.message = undefined
   }
 
   /**
-   * Move the selection within the active tab.
+   * Move the selection within the active section.
    * @param delta - row delta.
    */
   private move(delta: number): void {
     this.index = Math.min(Math.max(0, this.rowCount() - 1), Math.max(0, this.index + delta))
-    this.message = undefined
   }
 
-  /** @returns rows the active tab currently shows. */
+  /** @returns rows the active section currently shows. */
   private rowCount(): number {
     const team = this.team
     if (team === undefined) return 0
@@ -271,44 +216,7 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Whether the selected task can be claimed from this panel.
-   * @param task - task row.
-   * @returns whether claim is available.
-   */
-  private canClaim(task: TeamTaskRow): boolean {
-    return task.status === 'pending' && task.ready && task.ownerName === undefined && task.blockedBy.length === 0
-  }
-
-  /**
-   * Map a task to its localized status label.
-   * @param task - task row.
-   * @returns status key.
-   */
-  private taskStatusKey(task: TeamTaskRow): 'ready' | 'blocked' | 'inProgress' | 'completed' {
-    if (task.status === 'completed') return 'completed'
-    if (task.status === 'in_progress') return 'inProgress'
-    return task.ready ? 'ready' : 'blocked'
-  }
-
-  /**
-   * Render the readiness and overview line.
-   * @param team - projection.
-   * @param width - terminal columns.
-   * @returns the styled line.
-   */
-  private statusLine(team: TeamProjection, width: number): string {
-    const palette = this.palette
-    const inProgress = team.tasks.filter(task => task.status === 'in_progress').length
-    const failed = team.members.filter(member => member.phase === 'failed').length
-    const degraded = team.failure !== undefined || failed > 0
-    const status = degraded ? palette.warning(copy.team.degradedStatus) : palette.success(copy.team.readyStatus)
-    const summary = copy.team.summary(team.members.length, team.tasks.length, inProgress)
-    const failures = failed === 0 ? '' : `  ${palette.warning(copy.team.failed(failed))}`
-    return truncateToWidth(` ${status}  ${palette.dim(summary)}${failures}`, width)
-  }
-
-  /**
-   * Render the tab bar with per-tab counts.
+   * Render the section tabs with native headings and counts.
    * @param team - projection.
    * @returns the styled tab line.
    */
@@ -320,110 +228,167 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Format one member row.
-   * @param member - roster row.
-   * @param width - available columns.
-   * @returns the styled text.
-   */
-  private memberLine(member: TeamMemberProjectionRow, width: number): string {
-    const palette = this.palette
-    const glyph = member.role === 'lead' ? palette.accent('★') : member.phase === 'failed' ? palette.warning('!') : palette.accent('●')
-    const name = member.role === 'lead' ? palette.heading(displayText(member.name)) : displayText(member.name)
-    const role = member.role === 'lead' ? copy.team.lead : copy.team.teammate
-    const phase = member.phase === 'failed' ? palette.warning(copy.team.phases.failed) : palette.dim(copy.team.phases[member.phase])
-    const error = member.error === undefined ? '' : `  ${palette.warning(displayText(member.error))}`
-    return truncateToWidth(`${glyph} ${name}  ${palette.dim(role)}  ${phase}${error}`, width)
-  }
-
-  /**
-   * Format one task row with aligned status, task, owner, and blockers.
-   * @param task - task view.
-   * @param width - available columns.
-   * @returns the styled text.
-   */
-  private taskLine(task: TeamTaskRow, width: number): string {
-    const palette = this.palette
-    const status = task.status === 'completed'
-      ? { glyph: '✓', label: palette.success(copy.team.statuses.completed) }
-      : task.status === 'in_progress'
-        ? { glyph: '●', label: palette.accent(copy.team.statuses.inProgress) }
-        : task.ready
-          ? { glyph: '○', label: palette.dim(copy.team.statuses.ready) }
-          : { glyph: '⊘', label: palette.warning(copy.team.statuses.blocked) }
-    const owner = task.ownerName === undefined ? '' : `  @${displayText(task.ownerName)}`
-    const blocked = task.blockedBy.length === 0 ? '' : `  ← ${task.blockedBy.join(', ')}`
-    const warnings = task.writeScopeWarnings.length === 0 ? '' : `  !${String(task.writeScopeWarnings.length)}`
-    const id = padEnd(displayText(task.id), 10)
-    const reserved = 14 + 10 + visibleWidth(owner) + visibleWidth(blocked) + visibleWidth(warnings) + 3
-    const subject = truncateToWidth(displayText(task.subject), Math.max(8, width - reserved))
-    return `${palette.accent(status.glyph)} ${status.label}${' '.repeat(Math.max(0, 14 - visibleWidth(`${status.glyph} ${status.label}`)))}${id}${subject}${owner}${blocked}${warnings}`
-  }
-
-  /**
-   * Render the compact shortcut help view.
+   * Render the member rows.
+   * @param team - projection.
    * @param width - terminal columns.
-   * @returns the help lines.
+   * @returns member lines.
    */
-  private helpLines(width: number): string[] {
-    return [
-      truncateToWidth(this.palette.heading(copy.team.shortcutsTitle), width),
-      truncateToWidth(this.palette.dim(`  ${copy.team.shortcutsMove}`), width),
-      truncateToWidth(`  ${copy.team.shortcutsTask}`, width),
-      truncateToWidth(`  ${copy.team.shortcutsMember}`, width),
-      truncateToWidth(`  ${copy.team.shortcutsNew}`, width),
-      truncateToWidth(`  ${copy.team.shortcutsClose}`, width),
-      truncateToWidth(this.palette.dim(`  ${copy.team.helpClose}`), width),
-    ]
-  }
-
-  /**
-   * Render the selected task's readiness and details.
-   * @param task - task to show.
-   * @param width - terminal columns.
-   * @returns the detail lines.
-   */
-  private detailLines(task: TeamTaskRow, width: number): string[] {
-    const palette = this.palette
-    const key = this.taskStatusKey(task)
-    const lines = [
-      truncateToWidth(palette.heading(copy.team.taskDetailTitle(task.id)), width),
-      truncateToWidth(`  ${palette.dim(copy.team.taskDetailStatus)}  ${copy.team.statuses[key]}`, width),
-      truncateToWidth(`  ${copy.team.taskDetailSubject}  ${displayText(task.subject)}`, width),
-      truncateToWidth(`  ${copy.team.taskDetailOwner}  ${task.ownerName === undefined ? copy.team.none : `@${displayText(task.ownerName)}`}`, width),
-      truncateToWidth(`  ${copy.team.taskDetailBlocked}  ${task.blockedBy.length === 0 ? copy.team.none : task.blockedBy.join(', ')}`, width),
-      truncateToWidth(`  ${copy.team.taskDetailScopes}  ${task.writeScopes.length === 0 ? copy.team.none : task.writeScopes.join(', ')}`, width),
-      truncateToWidth(`  ${copy.team.taskDetailWarnings}  ${task.writeScopeWarnings.length === 0 ? copy.team.none : String(task.writeScopeWarnings.length)}`, width),
-    ]
-    if (this.message !== undefined) lines.push(palette.warning(truncateToWidth(`  ${this.message}`, width)))
-    lines.push(palette.dim(truncateToWidth(`  ${this.footer()}`, width)))
+  private memberLines(team: TeamProjection, width: number): string[] {
+    const lines: string[] = []
+    const visible = this.window(team.members.length)
+    for (let position = visible.start; position < visible.start + visible.capacity; position += 1) {
+      const member = team.members[position]
+      /* v8 ignore next -- the window is clamped to the row count */
+      if (member === undefined) continue
+      this.pushSelectable(lines, position === this.index, this.memberLine(member, width), width)
+    }
+    this.pushIndicators(lines, team.members.length, visible, width)
     return lines
   }
 
   /**
-   * Build the compact command-center footer.
-   * @returns the footer text.
+   * Render the task rows.
+   * @param team - projection.
+   * @param width - terminal columns.
+   * @returns task lines.
    */
-  private footer(): string {
-    if (this.detail !== undefined) {
-      const action = this.canClaim(this.detail)
-        ? copy.team.footerDetailClaim
-        : this.detail.status === 'in_progress'
-          ? copy.team.footerDetailComplete
-          : copy.team.footerDetailNone
-      return `${action} · ${copy.team.footerDetailBack} · ${copy.team.footerHelp}`
+  private taskLines(team: TeamProjection, width: number): string[] {
+    const lines: string[] = []
+    if (team.tasks.length === 0) {
+      lines.push(this.palette.dim(truncateToWidth(`  ${copy.team.emptyTasks}`, width)))
+      return lines
     }
-    return `${copy.team.footerList} · ${copy.team.footerHelp}`
+    const visible = this.window(team.tasks.length)
+    for (let position = visible.start; position < visible.start + visible.capacity; position += 1) {
+      const task = team.tasks[position]
+      /* v8 ignore next -- the window is clamped to the row count */
+      if (task === undefined) continue
+      this.pushSelectable(lines, position === this.index, this.taskLine(task, width), width)
+    }
+    this.pushIndicators(lines, team.tasks.length, visible, width)
+    return lines
   }
-}
 
-/**
- * Match a single lowercase action key.
- * @param data - raw input sequence.
- * @param key - expected character.
- * @returns whether the input is that key.
- */
-function match(data: string, key: string): boolean {
-  return data === key
+  /**
+   * Push one selectable line, padding and inverting the selected row.
+   * @param lines - destination.
+   * @param selected - whether this row is selected.
+   * @param content - row content.
+   * @param width - terminal columns.
+   */
+  private pushSelectable(lines: string[], selected: boolean, content: string, width: number): void {
+    if (selected) lines.push(this.palette.inverse(truncateToWidth(padEnd(` ❯ ${content}`, width), width)))
+    else lines.push(truncateToWidth(`   ${content}`, width))
+  }
+
+  /**
+   * Render overflow indicators.
+   * @param lines - destination.
+   * @param count - total rows.
+   * @param visible - visible window.
+   * @param width - terminal columns.
+   */
+  private pushIndicators(lines: string[], count: number, visible: { start: number; capacity: number }, width: number): void {
+    if (visible.start > 0) lines.push(this.palette.dim(truncateToWidth(`  ↑ ${copy.moreRows(visible.start)}`, width)))
+    const below = count - visible.start - visible.capacity
+    if (below > 0) lines.push(this.palette.dim(truncateToWidth(`  ↓ ${copy.moreRows(below)}`, width)))
+  }
+
+  /**
+   * Compute the row window around the cursor.
+   * @param count - total rows.
+   * @returns start and capacity.
+   */
+  private window(count: number): { start: number; capacity: number } {
+    if (count <= MAX_VISIBLE) return { start: 0, capacity: count }
+    const start = Math.max(0, Math.min(this.index - Math.floor(MAX_VISIBLE / 2), count - MAX_VISIBLE))
+    return { start, capacity: MAX_VISIBLE }
+  }
+
+  /**
+   * Format one member row with status, current tag, and model.
+   * @param member - roster row.
+   * @param width - terminal columns.
+   * @returns the row content.
+   */
+  private memberLine(member: TeamMemberProjectionRow, width: number): string {
+    const palette = this.palette
+    const status = this.memberStatus(member)
+    const glyph = status === 'failed' ? palette.warning('!') : status === 'inactive' ? palette.dim('○') : palette.success('●')
+    const name = member.role === 'lead' ? palette.heading(displayText(member.name)) : displayText(member.name)
+    const current = member.role === 'lead' ? ` ${palette.dim(`[${copy.team.current}]`)}` : ''
+    const model = this.runtime(member.id).model
+    const modelText = model === undefined ? '' : ` · ${copy.team.model}: ${displayText(model)}`
+    const error = member.error === undefined ? '' : `  ${palette.warning(displayText(member.error))}`
+    return truncateToWidth(`${glyph} ${name}${current}  ${copy.team.memberStatuses[status]}${modelText}${error}`, width)
+  }
+
+  /**
+   * Derive the native member status from durable phase and live activity.
+   * @param member - roster row.
+   * @returns native member status key.
+   */
+  private memberStatus(member: TeamMemberProjectionRow): keyof typeof copy.team.memberStatuses {
+    if (member.phase === 'failed') return 'failed'
+    if (member.phase === 'provisioning') return 'provisioning'
+    return this.runtime(member.id).status
+  }
+
+  /**
+   * Format one read-only task row.
+   * @param task - task row.
+   * @param width - terminal columns.
+   * @returns the row content.
+   */
+  private taskLine(task: TeamTaskRow, width: number): string {
+    const palette = this.palette
+    const status = task.status === 'completed'
+      ? { glyph: palette.success('✓'), label: copy.team.statuses.completed }
+      : task.status === 'in_progress'
+        ? { glyph: palette.accent('●'), label: copy.team.statuses.inProgress }
+        : task.ready
+          ? { glyph: palette.dim('○'), label: copy.team.statuses.pending }
+          : { glyph: palette.warning('⊘'), label: copy.team.statuses.pending }
+    const readiness = task.status !== 'pending'
+      ? ''
+      : task.ready ? ` · ${copy.team.readyLabel}` : ` · ${copy.team.blockedLabel}`
+    const owner = ` · ${copy.team.owner}: ${task.ownerName === undefined ? copy.team.unowned : `@${displayText(task.ownerName)}`}`
+    const fixed = visibleWidth(`${status.glyph} ${status.label}${readiness}${owner}`)
+    const subject = truncateToWidth(displayText(task.subject), Math.max(8, width - fixed - 3))
+    return `${status.glyph} ${status.label}${readiness}${owner}  ${subject}`
+  }
+
+  /**
+   * Render one expanded task detail with native metadata.
+   * @param task - task row.
+   * @param width - terminal columns.
+   * @returns detail lines.
+   */
+  private detailLines(task: TeamTaskRow, width: number): string[] {
+    const palette = this.palette
+    const status = task.status === 'completed'
+      ? copy.team.statuses.completed
+      : task.status === 'in_progress' ? copy.team.statuses.inProgress : copy.team.statuses.pending
+    const readiness = task.status !== 'pending' ? '' : task.ready ? copy.team.readyLabel : copy.team.blockedLabel
+    const lines = [
+      palette.heading(truncateToWidth(displayText(task.subject), width)),
+      truncateToWidth(`  ${copy.team.taskDetailStatus}: ${status}${readiness === '' ? '' : ` · ${readiness}`}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailId}: ${displayText(task.id)}`, width),
+      truncateToWidth(`  ${copy.team.owner}: ${task.ownerName === undefined ? copy.team.unowned : `@${displayText(task.ownerName)}`}`, width),
+      ...wrapTextWithAnsi(displayText(task.description), Math.max(1, width - 2)).map(line => `  ${line}`),
+    ]
+    if (task.blockedBy.length > 0) lines.push(truncateToWidth(`  ${copy.team.blockedBy}: ${task.blockedBy.join(', ')}`, width))
+    if (task.writeScopes.length > 0) lines.push(truncateToWidth(`  ${copy.team.writeScopes}: ${task.writeScopes.join(', ')}`, width))
+    for (const warning of task.writeScopeWarnings) lines.push(palette.warning(truncateToWidth(`  ${displayText(warning)}`, width)))
+    const start = Math.min(this.detailOffset, Math.max(0, lines.length - MAX_DETAIL))
+    const visible = lines.slice(start, start + MAX_DETAIL)
+    const result = [...visible]
+    if (start > 0) result.unshift(palette.dim(`  ↑ ${copy.moreRows(start)}`))
+    const below = lines.length - (start + visible.length)
+    if (below > 0) result.push(palette.dim(`  ↓ ${copy.moreRows(below)}`))
+    result.push(palette.dim(truncateToWidth(`  ${copy.team.detailHint}`, width)))
+    return result
+  }
 }
 
 /**
