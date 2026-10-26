@@ -44,6 +44,8 @@ export class TeamPanel implements Component {
   private tab: TeamTab = 'members'
   private index = 0
   private message: string | undefined
+  private detail: TeamTaskRow | undefined
+  private help = false
 
   /**
    * @param palette - terminal style table.
@@ -67,6 +69,11 @@ export class TeamPanel implements Component {
     this.team = team
     this.index = Math.min(this.index, Math.max(0, this.rowCount() - 1))
     this.message = undefined
+    if (this.detail !== undefined) {
+      const refreshed = team?.tasks.find(task => task.id === this.detail?.id)
+      if (refreshed === undefined) this.detail = undefined
+      else this.detail = refreshed
+    }
   }
 
   /**
@@ -76,6 +83,40 @@ export class TeamPanel implements Component {
    */
   handleInput(data: string): boolean {
     if (this.team === undefined) return false
+    if (this.help) {
+      if (match(data, '?') || matchesKey(data, 'escape')) this.help = false
+      return true
+    }
+    if (this.detail !== undefined) {
+      if (matchesKey(data, 'escape')) {
+        this.detail = undefined
+        this.message = undefined
+        return true
+      }
+      if (match(data, '?')) {
+        this.help = true
+        return true
+      }
+      if (match(data, 'a')) {
+        if (this.canClaim(this.detail)) this.handlers.claimTask(this.detail)
+        else this.message = copy.team.taskNotClaimable(copy.team.statuses[this.taskStatusKey(this.detail)])
+        return true
+      }
+      if (match(data, 'c')) {
+        if (this.detail.status === 'in_progress') this.handlers.completeTask(this.detail)
+        else this.message = copy.team.taskNotCompletable(copy.team.statuses[this.taskStatusKey(this.detail)])
+        return true
+      }
+      if (match(data, 'n')) {
+        this.handlers.createTask()
+        return true
+      }
+      return true
+    }
+    if (match(data, '?')) {
+      this.help = true
+      return true
+    }
     if (matchesKey(data, 'tab') || matchesKey(data, 'right')) {
       this.switchTab('tasks')
       return true
@@ -124,6 +165,11 @@ export class TeamPanel implements Component {
       }
     } else {
       const task = this.team.tasks[this.index]
+      if (task !== undefined && matchesKey(data, 'enter')) {
+        this.detail = task
+        this.message = undefined
+        return true
+      }
       if (task !== undefined && match(data, 'a')) {
         if (!this.canClaim(task)) {
           this.message = copy.team.taskNotClaimable(copy.team.statuses[this.taskStatusKey(task)])
@@ -158,10 +204,12 @@ export class TeamPanel implements Component {
     const team = this.team
     const lines = [truncateToWidth(palette.heading(displayText(copy.team.title)), width)]
     if (team === undefined) return lines
+    if (this.help) return this.helpLines(width)
     lines.push(this.statusLine(team, width))
     if (team.failure !== undefined) {
       lines.push(palette.warning(truncateToWidth(`  ${copy.team.failure}: ${displayText(team.failure)}`, width)))
     }
+    if (this.detail !== undefined) return [...lines, ...this.detailLines(this.detail, width)]
     lines.push(truncateToWidth(this.tabLine(team), width))
     lines.push(palette.dim(truncateToWidth(`  ${this.tab === 'members' ? copy.team.membersHeader : copy.team.tasksHeader}`, width)))
     const contentWidth = Math.max(1, width - 3)
@@ -312,22 +360,59 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Build the contextual key footer for the current selection.
+   * Render the compact shortcut help view.
+   * @param width - terminal columns.
+   * @returns the help lines.
+   */
+  private helpLines(width: number): string[] {
+    return [
+      truncateToWidth(this.palette.heading(copy.team.shortcutsTitle), width),
+      truncateToWidth(this.palette.dim(`  ${copy.team.shortcutsMove}`), width),
+      truncateToWidth(`  ${copy.team.shortcutsTask}`, width),
+      truncateToWidth(`  ${copy.team.shortcutsMember}`, width),
+      truncateToWidth(`  ${copy.team.shortcutsNew}`, width),
+      truncateToWidth(`  ${copy.team.shortcutsClose}`, width),
+      truncateToWidth(this.palette.dim(`  ${copy.team.helpClose}`), width),
+    ]
+  }
+
+  /**
+   * Render the selected task's readiness and details.
+   * @param task - task to show.
+   * @param width - terminal columns.
+   * @returns the detail lines.
+   */
+  private detailLines(task: TeamTaskRow, width: number): string[] {
+    const palette = this.palette
+    const key = this.taskStatusKey(task)
+    const lines = [
+      truncateToWidth(palette.heading(copy.team.taskDetailTitle(task.id)), width),
+      truncateToWidth(`  ${palette.dim(copy.team.taskDetailStatus)}  ${copy.team.statuses[key]}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailSubject}  ${displayText(task.subject)}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailOwner}  ${task.ownerName === undefined ? copy.team.none : `@${displayText(task.ownerName)}`}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailBlocked}  ${task.blockedBy.length === 0 ? copy.team.none : task.blockedBy.join(', ')}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailScopes}  ${task.writeScopes.length === 0 ? copy.team.none : task.writeScopes.join(', ')}`, width),
+      truncateToWidth(`  ${copy.team.taskDetailWarnings}  ${task.writeScopeWarnings.length === 0 ? copy.team.none : String(task.writeScopeWarnings.length)}`, width),
+    ]
+    if (this.message !== undefined) lines.push(palette.warning(truncateToWidth(`  ${this.message}`, width)))
+    lines.push(palette.dim(truncateToWidth(`  ${this.footer()}`, width)))
+    return lines
+  }
+
+  /**
+   * Build the compact command-center footer.
    * @returns the footer text.
    */
   private footer(): string {
-    const common = copy.team.footerCommon
-    if (this.tab === 'members') {
-      const member = this.team?.members[this.index]
-      if (member === undefined) return common
-      if (member.phase === 'failed') return `${copy.team.footerNoAction} · ${common}`
-      return `${copy.team.footerMember} · ${common}`
+    if (this.detail !== undefined) {
+      const action = this.canClaim(this.detail)
+        ? copy.team.footerDetailClaim
+        : this.detail.status === 'in_progress'
+          ? copy.team.footerDetailComplete
+          : copy.team.footerDetailNone
+      return `${action} · ${copy.team.footerDetailBack} · ${copy.team.footerHelp}`
     }
-    const task = this.team?.tasks[this.index]
-    if (task === undefined) return common
-    if (this.canClaim(task)) return `${copy.team.footerClaim} · ${common}`
-    if (task.status === 'in_progress') return `${copy.team.footerComplete} · ${common}`
-    return `${copy.team.footerNoAction} · ${common}`
+    return `${copy.team.footerList} · ${copy.team.footerHelp}`
   }
 }
 

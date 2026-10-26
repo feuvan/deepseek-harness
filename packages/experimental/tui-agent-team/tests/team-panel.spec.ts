@@ -119,11 +119,11 @@ describe('TeamPanel', () => {
     expect(hasLine(lines, copy.team.phases.provisioning)).toBe(true)
     expect(hasLine(lines, '! Broken')).toBe(true)
     expect(hasLine(lines, 'spawn failed')).toBe(true)
-    expect(lines.at(-1)).toBe(`  ${copy.team.footerMember} · ${copy.team.footerCommon}`)
+    expect(lines.at(-1)).toBe(`  ${copy.team.footerList} · ${copy.team.footerHelp}`)
     expect(harness.palette.calls).toContain('warning')
   })
 
-  it('reports degraded readiness with a failure line', () => {
+  it('reports degraded readiness with a failure line and failed member count', () => {
     const harness = panelHarness(teamProjection({
       members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'Worker', role: 'teammate' })],
       failure: 'rejected record',
@@ -133,6 +133,18 @@ describe('TeamPanel', () => {
     expect(lines[1]).toContain(copy.team.degradedStatus)
     expect(lines[2]).toBe(`  ${copy.team.failure}: rejected record`)
     expect(lines[3]).toContain(` ${copy.team.membersTab} 2 `)
+
+    const failed = panelHarness(teamProjection({
+      members: [
+        teamMember(),
+        teamMember({ id: SessionId('t2'), name: 'Broken', role: 'teammate', phase: 'failed', error: 'spawn failed' }),
+      ],
+    }))
+    const failedLines = rendered(failed.panel)
+    expect(failedLines[1]).toContain(copy.team.degradedStatus)
+    expect(failedLines[1]).toContain(copy.team.failed(1))
+    expect(hasLine(failedLines, '! Broken')).toBe(true)
+    expect(hasLine(failedLines, 'spawn failed')).toBe(true)
   })
 
   it('summarizes in-progress tasks and keeps tab counts current', () => {
@@ -228,22 +240,17 @@ describe('TeamPanel', () => {
       && hasLine(lines, 'Done subject') && hasLine(lines, '!2')).toBe(true)
   })
 
-  it('shows contextual task footers for claim, complete, and no-action rows', () => {
+  it('shows the compact list footer on every row and tab', () => {
     const harness = panelHarness(teamProjection({
-      tasks: [
-        teamTask({ id: 'ready', subject: 'Ready subject' }),
-        teamTask({ id: 'running', subject: 'Running subject', status: 'in_progress', ownerName: 'Worker' }),
-        teamTask({ id: 'done', subject: 'Done subject', status: 'completed' }),
-      ],
+      members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'Worker', role: 'teammate' })],
+      tasks: [teamTask({ id: 'ready' }), teamTask({ id: 'done', status: 'completed' })],
     }))
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
+
     harness.panel.handleInput(KEY.tab)
-    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerClaim} · ${copy.team.footerCommon}`)
-
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
     harness.panel.handleInput(KEY.down)
-    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerComplete} · ${copy.team.footerCommon}`)
-
-    harness.panel.handleInput(KEY.down)
-    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerNoAction} · ${copy.team.footerCommon}`)
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
   })
 
   it('switches tabs with Tab/Right and Shift+Tab/Left and resets the cursor', () => {
@@ -345,7 +352,9 @@ describe('TeamPanel', () => {
     expect(harness.completes).toEqual([{ id: 'second', revision: 9 }])
     expect(harness.panel.handleInput('n')).toBe(true)
     expect(harness.creates).toBe(1)
-    expect(harness.panel.handleInput(KEY.enter)).toBe(false)
+    expect(harness.panel.handleInput(KEY.enter)).toBe(true)
+    expect(rendered(harness.panel)[0]).toBe(copy.team.title)
+    expect(hasLine(rendered(harness.panel), copy.team.taskDetailTitle('second'))).toBe(true)
   })
 
   it('rejects claims for blocked, owned, and completed tasks', () => {
@@ -388,7 +397,7 @@ describe('TeamPanel', () => {
     expect(harness.completes).toEqual([])
 
     const emptyLines = rendered(harness.panel)
-    expect(emptyLines.at(-1)).toBe(`  ${copy.team.footerCommon}`)
+    expect(emptyLines.at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
     expect(hasLine(emptyLines, copy.team.emptyTasks)).toBe(true)
   })
 
@@ -401,7 +410,7 @@ describe('TeamPanel', () => {
     expect(members[3]).toContain(` ${copy.team.membersTab} 0 `)
     expect(members[4]).toBe(`  ${copy.team.membersHeader}`)
     expect(members[5]).toBe(`  ${copy.team.emptyMembers}`)
-    expect(members.at(-1)).toBe(`  ${copy.team.footerCommon}`)
+    expect(members.at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
 
     harness.panel.handleInput(KEY.tab)
     expect(hasLine(rendered(harness.panel), copy.team.emptyTasks)).toBe(true)
@@ -432,7 +441,7 @@ describe('TeamPanel', () => {
     expect(lines[2]).toContain(` ${copy.team.membersTab} 2 `)
     expect(lines[3]).toBe(`  ${copy.team.membersHeader}`)
     expect(hasLine(lines, copy.team.phases.active)).toBe(true)
-    expect(lines.at(-1)).toBe(`  ${copy.team.footerMember} · ${copy.team.footerCommon}`)
+    expect(lines.at(-1)).toBe(`  ${copy.team.footerList} · ${copy.team.footerHelp}`)
   })
 
   it('truncates every line to the panel width', () => {
@@ -444,12 +453,149 @@ describe('TeamPanel', () => {
     }))
 
     for (const line of rendered(harness.panel, 16)) {
-      expect(visibleWidth(line)).toBeLessThanOrEqual(19)
+      expect(visibleWidth(line)).toBeLessThanOrEqual(16)
     }
     harness.panel.handleInput(KEY.tab)
     for (const line of rendered(harness.panel, 16)) {
-      expect(visibleWidth(line)).toBeLessThanOrEqual(35)
+      expect(visibleWidth(line)).toBeLessThanOrEqual(16)
     }
+  })
+
+  it('opens the shortcut help view from the list and detail views', () => {
+    const harness = panelHarness(teamProjection({
+      members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'Worker', role: 'teammate' })],
+      tasks: [teamTask({ id: 'ready', subject: 'Ready subject' })],
+    }))
+
+    expect(harness.panel.handleInput('?')).toBe(true)
+    const help = rendered(harness.panel)
+    expect(help[0]).toBe(copy.team.shortcutsTitle)
+    expect(help).toHaveLength(7)
+    expect(hasLine(help, copy.team.shortcutsMove)).toBe(true)
+    expect(hasLine(help, copy.team.shortcutsTask)).toBe(true)
+    expect(hasLine(help, copy.team.shortcutsMember)).toBe(true)
+    expect(hasLine(help, copy.team.shortcutsNew)).toBe(true)
+    expect(hasLine(help, copy.team.shortcutsClose)).toBe(true)
+    expect(help.at(-1)).toBe(`  ${copy.team.helpClose}`)
+    expect(harness.panel.handleInput('x')).toBe(true)
+    expect(rendered(harness.panel)[0]).toBe(copy.team.shortcutsTitle)
+    expect(harness.panel.handleInput('?')).toBe(true)
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
+
+    expect(harness.panel.handleInput('?')).toBe(true)
+    expect(harness.panel.handleInput(KEY.escape)).toBe(true)
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
+
+    harness.panel.handleInput(KEY.tab)
+    harness.panel.handleInput(KEY.enter)
+    expect(hasLine(rendered(harness.panel), copy.team.taskDetailTitle('ready'))).toBe(true)
+    expect(harness.panel.handleInput('?')).toBe(true)
+    expect(rendered(harness.panel)[0]).toBe(copy.team.shortcutsTitle)
+    expect(harness.panel.handleInput(KEY.escape)).toBe(true)
+    expect(hasLine(rendered(harness.panel), copy.team.taskDetailTitle('ready'))).toBe(true)
+    expect(harness.panel.handleInput('?')).toBe(true)
+    expect(harness.panel.handleInput('?')).toBe(true)
+    expect(hasLine(rendered(harness.panel), copy.team.taskDetailTitle('ready'))).toBe(true)
+  })
+
+  it('opens a blocked task detail with every field and the no-action footer', () => {
+    const harness = panelHarness(teamProjection({
+      tasks: [teamTask({
+        id: 'ready',
+        subject: 'Ready subject',
+        revision: 4,
+        ready: false,
+        blockedBy: ['other'],
+        writeScopes: ['src/a.ts', 'src/b.ts'],
+        writeScopeWarnings: ['src/a.ts'],
+      })],
+    }))
+    harness.panel.handleInput(KEY.tab)
+    expect(harness.panel.handleInput(KEY.enter)).toBe(true)
+    const lines = rendered(harness.panel)
+
+    expect(lines[0]).toBe(copy.team.title)
+    expect(lines[1]).toContain(copy.team.readyStatus)
+    expect(lines[2]).toBe(copy.team.taskDetailTitle('ready'))
+    expect(lines[3]).toContain(copy.team.statuses.blocked)
+    expect(hasLine(lines, `${copy.team.taskDetailSubject}  Ready subject`)).toBe(true)
+    expect(hasLine(lines, `${copy.team.taskDetailOwner}  ${copy.team.none}`)).toBe(true)
+    expect(hasLine(lines, `${copy.team.taskDetailBlocked}  other`)).toBe(true)
+    expect(hasLine(lines, `${copy.team.taskDetailScopes}  src/a.ts, src/b.ts`)).toBe(true)
+    expect(hasLine(lines, `${copy.team.taskDetailWarnings}  1`)).toBe(true)
+    expect(lines.at(-1)).toBe(`  ${copy.team.footerDetailNone} · ${copy.team.footerDetailBack} · ? help`)
+
+    expect(harness.panel.handleInput('a')).toBe(true)
+    expect(harness.claims).toEqual([])
+    expect(hasLine(rendered(harness.panel), copy.team.taskNotClaimable(copy.team.statuses.blocked))).toBe(true)
+    expect(harness.panel.handleInput(KEY.escape)).toBe(true)
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
+    expect(hasLine(rendered(harness.panel), copy.team.taskNotClaimable(copy.team.statuses.blocked))).toBe(false)
+  })
+
+  it('shows the complete footer and claims an unowned ready task from its detail', () => {
+    const ready = panelHarness(teamProjection({ tasks: [teamTask({ id: 'ready', revision: 4 })] }))
+    ready.panel.handleInput(KEY.tab)
+    ready.panel.handleInput(KEY.enter)
+    expect(rendered(ready.panel).at(-1))
+      .toBe(`  ${copy.team.footerDetailClaim} · ${copy.team.footerDetailBack} · ? help`)
+    expect(ready.panel.handleInput('a')).toBe(true)
+    expect(ready.claims).toEqual([{ id: 'ready', revision: 4 }])
+    expect(ready.panel.handleInput('c')).toBe(true)
+    expect(ready.completes).toEqual([])
+    expect(hasLine(rendered(ready.panel), copy.team.taskNotCompletable(copy.team.statuses.ready))).toBe(true)
+
+    const running = panelHarness(teamProjection({
+      tasks: [teamTask({ id: 'running', status: 'in_progress', ownerName: 'Worker', revision: 9 })],
+    }))
+    running.panel.handleInput(KEY.tab)
+    running.panel.handleInput(KEY.enter)
+    expect(rendered(running.panel).at(-1))
+      .toBe(`  ${copy.team.footerDetailComplete} · ${copy.team.footerDetailBack} · ? help`)
+    expect(hasLine(rendered(running.panel), `${copy.team.taskDetailOwner}  @Worker`)).toBe(true)
+    expect(running.panel.handleInput('a')).toBe(true)
+    expect(hasLine(rendered(running.panel), copy.team.taskNotClaimable(copy.team.statuses.inProgress))).toBe(true)
+    expect(running.panel.handleInput('c')).toBe(true)
+    expect(running.completes).toEqual([{ id: 'running', revision: 9 }])
+    expect(running.panel.handleInput('n')).toBe(true)
+    expect(running.creates).toBe(1)
+    expect(running.panel.handleInput('z')).toBe(true)
+  })
+
+  it('refreshes an open task detail by id and closes it when the task disappears', () => {
+    const harness = panelHarness(teamProjection({
+      tasks: [teamTask({ id: 'ready', subject: 'Old subject', revision: 2 })],
+    }))
+    harness.panel.handleInput(KEY.tab)
+    harness.panel.handleInput(KEY.enter)
+    expect(hasLine(rendered(harness.panel), 'Old subject')).toBe(true)
+
+    harness.panel.setTeam(teamProjection({
+      tasks: [teamTask({ id: 'ready', subject: 'New subject', status: 'in_progress', ownerName: 'Worker', revision: 3 })],
+    }))
+    expect(hasLine(rendered(harness.panel), 'New subject')).toBe(true)
+    expect(rendered(harness.panel).at(-1))
+      .toBe(`  ${copy.team.footerDetailComplete} · ${copy.team.footerDetailBack} · ? help`)
+
+    harness.panel.setTeam(teamProjection({ tasks: [] }))
+    expect(rendered(harness.panel).at(-1)).toBe(`  ${copy.team.footerList} · ? help`)
+    expect(hasLine(rendered(harness.panel), copy.team.emptyTasks)).toBe(true)
+  })
+
+  it('advertises no disabled member actions for a failed member', () => {
+    const harness = panelHarness(teamProjection({
+      members: [
+        teamMember(),
+        teamMember({ id: SessionId('t1'), name: 'Broken', role: 'teammate', phase: 'failed', error: 'spawn failed' }),
+      ],
+    }))
+    harness.panel.handleInput(KEY.down)
+    const footer = rendered(harness.panel).at(-1) ?? ''
+
+    expect(footer).toBe(`  ${copy.team.footerList} · ? help`)
+    expect(footer).not.toContain('transcript')
+    expect(footer).not.toContain('message')
+    expect(visibleWidth(rendered(harness.panel, 20).at(-1) ?? '')).toBeLessThanOrEqual(20)
   })
 
   it('reports a zero row count defensively without a projection', () => {
