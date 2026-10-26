@@ -369,6 +369,20 @@ const en = {
     title: 'Configuration',
     /** Panel subtitle shown under the heading. */
     subtitle: 'Changes save automatically',
+    /** Readiness labels for the dock header. */
+    readyStatus: '● Ready',
+    degradedStatus: '● Degraded',
+    readOnlyStatus: '● Read only',
+    /** Summary of actionable and read-only rows. */
+    summary: (total: number, actions: number): string => `${String(actions)} actions · ${String(total - actions)} read-only`,
+    /** Explanation shown when a read-only row is activated. */
+    rowReadOnly: 'This value is owned by the profile and is read-only here.',
+    /** Explanation shown when an unavailable row is activated. */
+    rowUnavailable: 'This capability is unavailable in the current composition.',
+    /** Contextual footer for an actionable row. */
+    footerAction: 'Enter open',
+    /** Contextual footer for a read-only row. */
+    footerReadOnly: 'Enter explains read-only',
     /** Value shown for an action row. */
     action: 'Configure ›',
     /** One-sentence descriptions shown in the row description column. */
@@ -441,7 +455,7 @@ const en = {
     /** Hint line. */
     hint: '↑/↓ move · Enter open or toggle · Esc close',
     /** Hint line naming the tab keys. */
-    tabHint: '←/→ group · / search · ↑/↓ move · Enter open · Esc close',
+    tabHint: '←/→ group · / search · ↑/↓ move · Esc close',
     searchHint: 'type to filter · ↑/↓ move · Enter open · Esc clear/close',
   },
   /** Model selector copy. */
@@ -701,6 +715,14 @@ export const chinese: Copy = {
   config: {
     title: '配置',
     subtitle: '修改会自动保存',
+    readyStatus: '● 就绪',
+    degradedStatus: '● 降级',
+    readOnlyStatus: '● 只读',
+    summary: (total, actions) => `${String(actions)} 个动作 · ${String(total - actions)} 个只读`,
+    rowReadOnly: '该值由 profile 配置拥有，此处只读。',
+    rowUnavailable: '当前组合中该能力不可用。',
+    footerAction: 'Enter 打开',
+    footerReadOnly: 'Enter 查看只读原因',
     action: '配置 ›',
     descriptions: {
       modelCurrent: '本会话当前使用的模型',
@@ -746,7 +768,7 @@ export const chinese: Copy = {
     failed: message => `无法读取配置：${message}`,
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
-    tabHint: '←/→ 分组 · / 搜索 · ↑/↓ 移动 · Enter 打开 · Esc 关闭',
+    tabHint: '←/→ 分组 · / 搜索 · ↑/↓ 移动 · Esc 关闭',
     searchHint: '输入筛选 · ↑/↓ 移动 · Enter 打开 · Esc 清除/关闭',
   },
   /** Agent preset 名称、描述与提示。 */

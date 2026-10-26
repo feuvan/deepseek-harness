@@ -46,6 +46,8 @@ export interface ConfigRow {
   readonly scope: ConfigScope | undefined
   /** Whether the row only displays a value and ignores Enter. */
   readonly readOnly: boolean
+  /** Whether the service or value behind this row is unavailable. */
+  readonly unavailable?: boolean
   /** One-sentence meaning shown in the description column. */
   readonly description?: string
   /** Additional localized status marker rendered after the value. */
@@ -352,7 +354,7 @@ function effortValue(model: ConfigModelState): string {
  * @returns the read-only fallback row.
  */
 function fallbackRow(section: ConfigSection, kind: ConfigFallback, label: string): ConfigRow {
-  return { id: `${section}.${kind}`, section, label, value: '', scope: undefined, readOnly: true }
+  return { id: `${section}.${kind}`, section, label, value: '', scope: undefined, readOnly: true, unavailable: true }
 }
 
 /**
@@ -500,6 +502,7 @@ export class ConfigPanel implements Component {
   private busy = false
   private searching = false
   private query = ''
+  private message: string | undefined
 
   /**
    * @param options - rows, the terminal style table, callbacks, and the body height.
@@ -519,6 +522,7 @@ export class ConfigPanel implements Component {
   handleInput(data: string): void {
     if (this.busy) return
     if (this.searching) {
+      this.message = undefined
       if (matchesKey(data, 'escape')) {
         if (this.query !== '') {
           this.query = ''
@@ -558,6 +562,7 @@ export class ConfigPanel implements Component {
       this.query = ''
       this.cursor = 0
       this.scroll = 0
+      this.message = undefined
       return
     }
     if (matchesKey(data, 'tab') || matchesKey(data, 'right')) {
@@ -597,15 +602,46 @@ export class ConfigPanel implements Component {
    * @returns the tab bar, exactly the body height of body lines, and the hint line.
    */
   render(width: number): string[] {
-    return [
+    const lines = [
       this.palette.heading(truncateToWidth(copy.config.title, width)),
       this.palette.dim(truncateToWidth(`  ${copy.config.subtitle}`, width)),
+      this.statusLine(width),
       '',
       this.tabBar(width),
       '',
       ...this.bodyLines(this.activeRows(), width),
-      this.palette.dim(truncateToWidth(`  ${this.searching ? `/${this.query}  ${copy.config.searchHint}` : copy.config.tabHint}`, width)),
     ]
+    if (this.message !== undefined) lines.push(this.palette.warning(truncateToWidth(`  ${this.message}`, width)))
+    lines.push(this.palette.dim(truncateToWidth(`  ${this.footer()}`, width)))
+    return lines
+  }
+
+  /**
+   * Render the dock readiness summary.
+   * @param width - terminal columns.
+   * @returns the styled readiness line.
+   */
+  private statusLine(width: number): string {
+    const actionable = this.rows.filter(row => row.activate !== undefined).length
+    const unavailable = this.rows.some(row => row.unavailable === true)
+    const status = unavailable
+      ? this.palette.warning(copy.config.degradedStatus)
+      : actionable > 0
+        ? this.palette.success(copy.config.readyStatus)
+        : this.palette.dim(copy.config.readOnlyStatus)
+    const summary = copy.config.summary(this.rows.length, actionable)
+    return truncateToWidth(` ${status}  ${this.palette.dim(summary)}`, width)
+  }
+
+  /**
+   * Build the contextual key footer.
+   * @returns the footer text.
+   */
+  private footer(): string {
+    if (this.searching) return `/${this.query}  ${copy.config.searchHint}`
+    const row = this.activeRows()[this.cursor]
+    const action = row?.activate === undefined ? copy.config.footerReadOnly : copy.config.footerAction
+    return `${copy.config.tabHint} · ${action}`
   }
 
   /** No cached state exists: the tab, cursor, and scroll window are read on each render. */
@@ -625,6 +661,7 @@ export class ConfigPanel implements Component {
    * @param delta - `1` for the next tab, `-1` for the previous one.
    */
   private switchSection(delta: 1 | -1): void {
+    this.message = undefined
     this.section = adjacentSection(this.section, delta)
     this.cursor = 0
     this.scroll = 0
@@ -635,6 +672,7 @@ export class ConfigPanel implements Component {
    * @param delta - `-1` up or `1` down.
    */
   private moveCursor(delta: number): void {
+    this.message = undefined
     const count = this.activeRows().length
     if (count === 0) return
     this.cursor = (this.cursor + delta + count) % count
@@ -770,7 +808,11 @@ export class ConfigPanel implements Component {
   /** Invoke the highlighted row's action and report its result. */
   private activateCurrent(): void {
     const row = this.activeRows()[this.cursor]
-    if (row?.activate === undefined) return
+    if (row === undefined) return
+    if (row.activate === undefined) {
+      this.message = row.unavailable === true ? copy.config.rowUnavailable : copy.config.rowReadOnly
+      return
+    }
     this.busy = true
     this.handlers.onActivate?.(row)
     let outcome: ConfigActionOutcome

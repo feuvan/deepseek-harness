@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在 `tui` profile 的 `/config` → 实验性能力中启用 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md)（或执行 `dsh plugin --profile tui add ...`），然后重启终端。Lead Session 有 teammate 或共享任务时状态行出现；`/team` 打开 dock。
 
-面板按键：Tab 或 ←/→ 切换 Members/Tasks；↑/↓ 与 PgUp/PgDn 移动；Members：Enter 打开只读 transcript，`m` 预填 `/team message <name> `，`n` 预填 `/team task `；Tasks：`a` 认领、`c` 完成、`n` 新建；Esc 关闭。`/team task <subject>` 与 `/team message <member> <text>` 可在编辑器中直接使用。teammate transcript 是查看器：提示通过 `/team message` 发送，不能直接输入到 transcript 中驱动对话。
+dock 打开时显示 readiness 行（`就绪`/`降级` 及成员/任务/进行中计数）、带计数的 tab、列标题，以及只列出当前行可用动作的 footer。Tab 或 ←/→ 切换 Members/Tasks；↑/↓ 与 PgUp/PgDn 移动；Members：Enter 打开只读 transcript，`m` 预填 `/team message <name> `；Tasks：`a` 认领就绪且未认领的任务，`c` 完成进行中的任务；`n` 预填新任务；Esc 关闭。不可用动作会在面板内解释原因，而不是静默失败。`/team task <subject>` 与 `/team message <member> <text>` 可在编辑器中直接使用。teammate transcript 是查看器：提示通过 `/team message` 发送，不能直接输入到 transcript 中驱动对话。
 
 <a id="understand-the-implementation"></a>
 ## 实现说明

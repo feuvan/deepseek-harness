@@ -2562,7 +2562,7 @@ describe('TerminalApp /config dock', () => {
     expect(dock).toContain(copy.config.modelSection)
     expect(dock).toContain(copy.config.permissionSection)
     expect(dock).toContain(copy.config.tabHint)
-    expect(panel?.render(100)).toHaveLength(14)
+    expect(panel?.render(100)).toHaveLength(15)
 
     harness.terminal.headless.press('\u001b')
 

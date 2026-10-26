@@ -26,7 +26,7 @@ The plugin is inert in compositions that have no terminal contribution seam, so 
 
 Enable [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.md) in the `tui` profile from `/config` → Experimental capabilities (or `dsh plugin --profile tui add ...`), then restart the terminal. The strip appears while the Lead Session has teammates or shared tasks; `/team` opens the dock.
 
-Panel keys: Tab or ←/→ switch Members/Tasks; ↑/↓ and PgUp/PgDn move; Members: Enter opens the read-only transcript, `m` pre-fills `/team message <name> `, `n` pre-fills `/team task `; Tasks: `a` claims, `c` completes, `n` creates; Esc closes. `/team task <subject>` and `/team message <member> <text>` work from the composer. The teammate transcript is a viewer: prompts are sent through `/team message`, not by typing into the transcript.
+The dock opens with a readiness line (`Ready`/`Degraded` plus member/task/in-progress counts), counted tabs, column headers, and a footer that lists only actions available for the selected row. Tab or ←/→ switch Members/Tasks; ↑/↓ and PgUp/PgDn move; Members: Enter opens the read-only transcript, `m` pre-fills `/team message <name> `; Tasks: `a` claims a ready unowned task, `c` completes an in-progress task; `n` pre-fills a new task; Esc closes. Disabled actions explain why in the panel rather than failing silently. `/team task <subject>` and `/team message <member> <text>` work from the composer. The teammate transcript is a viewer: prompts are sent through `/team message`, not by typing into the transcript.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

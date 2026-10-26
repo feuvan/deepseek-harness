@@ -304,7 +304,7 @@ function rendered(panel: ConfigPanel, width = 120): string {
  * @returns the body text joined with line feeds.
  */
 function body(panel: ConfigPanel, visibleRows = 8): string {
-  return visibleLines(panel.render(120)).slice(5, 5 + visibleRows).join('\n')
+  return visibleLines(panel.render(120)).slice(6, 6 + visibleRows).join('\n')
 }
 
 /** @returns whether the styled line for one label carries inverse selection. */
@@ -490,7 +490,7 @@ describe('ConfigPanel tab bar', () => {
     const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
     const harness = panelFor({ rows, color: true })
 
-    const line = harness.panel.render(200)[3] ?? ''
+    const line = harness.panel.render(200)[4] ?? ''
 
     const positions = [heading('model'), heading('permissions'), heading('experimental'), heading('display')]
       .map(title => line.indexOf(title))
@@ -501,7 +501,7 @@ describe('ConfigPanel tab bar', () => {
 
     harness.panel.handleInput(TAB)
 
-    const next = harness.panel.render(200)[3] ?? ''
+    const next = harness.panel.render(200)[4] ?? ''
     expect(next).toContain(COLORED.inverse(` ${heading('permissions')} `))
     expect(next).toContain(COLORED.dim(` ${heading('model')} `))
   })
@@ -614,10 +614,10 @@ describe('ConfigPanel scrolling', () => {
   it('caps the rendered lines at the configured body height', () => {
     const rows = manyRows('display', 20)
 
-    expect(panelFor({ rows }).panel.render(100)).toHaveLength(14)
-    expect(panelFor({ rows, visibleRows: 5 }).panel.render(100)).toHaveLength(11)
-    expect(panelFor({ rows, visibleRows: 99 }).panel.render(100)).toHaveLength(16)
-    expect(panelFor({ rows, visibleRows: 1 }).panel.render(100)).toHaveLength(9)
+    expect(panelFor({ rows }).panel.render(100)).toHaveLength(15)
+    expect(panelFor({ rows, visibleRows: 5 }).panel.render(100)).toHaveLength(12)
+    expect(panelFor({ rows, visibleRows: 99 }).panel.render(100)).toHaveLength(17)
+    expect(panelFor({ rows, visibleRows: 1 }).panel.render(100)).toHaveLength(10)
   })
 
   it('pads a short tab body to the configured height', async () => {
@@ -626,8 +626,8 @@ describe('ConfigPanel scrolling', () => {
 
     const lines = harness.panel.render(100)
 
-    expect(lines).toHaveLength(14)
-    expect(lines.slice(9, 13)).toEqual(['', '', '', ''])
+    expect(lines).toHaveLength(15)
+    expect(lines.slice(10, 14)).toEqual(['', '', '', ''])
   })
 })
 
@@ -695,7 +695,7 @@ describe('ConfigPanel rendering', () => {
     const lines = harness.panel.render(20)
 
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(20)
-    expect(lines).toHaveLength(14)
+    expect(lines).toHaveLength(15)
   })
 
   it('renders the header, subtitle, blank lines, tab bar, and footer hint', () => {
@@ -704,16 +704,18 @@ describe('ConfigPanel rendering', () => {
 
     expect(lines[0]).toBe(copy.config.title)
     expect(lines[1]).toBe(`  ${copy.config.subtitle}`)
-    expect(lines[2]).toBe('')
-    expect(lines[3]).toContain(copy.config.modelSection)
-    expect(lines[4]).toBe('')
-    expect(lines.at(-1)).toBe(`  ${copy.config.tabHint}`)
-    expect(lines).toHaveLength(14)
+    expect(lines[2]).toContain(copy.config.readyStatus)
+    expect(lines[2]).toContain(copy.config.summary(1, 1))
+    expect(lines[3]).toBe('')
+    expect(lines[4]).toContain(copy.config.modelSection)
+    expect(lines[5]).toBe('')
+    expect(lines.at(-1)).toBe(`  ${copy.config.tabHint} · ${copy.config.footerAction}`)
+    expect(lines).toHaveLength(15)
   })
 
   it('separates tabs with three spaces', () => {
     const harness = panelFor({ rows: [actionRow('alpha', () => {})], color: true })
-    const line = harness.panel.render(200)[3] ?? ''
+    const line = harness.panel.render(200)[4] ?? ''
 
     expect(line).toContain(
       `${COLORED.inverse(` ${heading('model')} `)}   ${COLORED.dim(` ${heading('permissions')} `)}`,
@@ -833,6 +835,104 @@ describe('ConfigPanel rendering', () => {
     panel.handleInput(ESCAPE)
     panel.handleInput(ESCAPE)
     expect(harness.cancels).toHaveLength(1)
+  })
+
+  it('reports ready, degraded, and read-only readiness with summary counts', () => {
+    const ready = panelFor({ rows: [actionRow('open', () => {}), plainRow('model', 'read')] })
+    const readyLines = visibleLines(ready.panel.render(120))
+    expect(readyLines[2]).toContain(copy.config.readyStatus)
+    expect(readyLines[2]).toContain(copy.config.summary(2, 1))
+
+    const degraded = panelFor({
+      rows: [
+        actionRow('open', () => {}),
+        { id: 'plugin.unavailable', section: 'model', label: 'Missing', value: '', scope: undefined, readOnly: true, unavailable: true },
+      ],
+    })
+    expect(visibleLines(degraded.panel.render(120))[2]).toContain(copy.config.degradedStatus)
+
+    const readOnly = panelFor({ rows: [plainRow('model', 'a'), plainRow('model', 'b')] })
+    const readOnlyLines = visibleLines(readOnly.panel.render(120))
+    expect(readOnlyLines[2]).toContain(copy.config.readOnlyStatus)
+    expect(readOnlyLines[2]).toContain(copy.config.summary(2, 0))
+
+    const empty = panelFor({ rows: [] })
+    const emptyLines = visibleLines(empty.panel.render(120))
+    expect(emptyLines[2]).toContain(copy.config.readOnlyStatus)
+    expect(emptyLines[2]).toContain(copy.config.summary(0, 0))
+    expect(emptyLines.at(-1)).toBe(`  ${copy.config.tabHint} · ${copy.config.footerReadOnly}`)
+  })
+
+  it('styles the readiness line through the palette', () => {
+    const ready = panelFor({ rows: [actionRow('open', () => {})], color: true })
+    expect(ready.panel.render(120)[2]).toContain(COLORED.success(copy.config.readyStatus))
+
+    const degraded = panelFor({
+      rows: [{ id: 'plugin.unavailable', section: 'model', label: 'Missing', value: '', scope: undefined, readOnly: true, unavailable: true }],
+      color: true,
+    })
+    expect(degraded.panel.render(120)[2]).toContain(COLORED.warning(copy.config.degradedStatus))
+
+    const readOnly = panelFor({ rows: [plainRow('model', 'a')], color: true })
+    expect(readOnly.panel.render(120)[2]).toContain(COLORED.dim(copy.config.readOnlyStatus))
+  })
+
+  it('explains read-only and unavailable activation and clears the message', () => {
+    const harness = panelFor({
+      rows: [
+        plainRow('model', 'read-only-row'),
+        { id: 'capability.unavailable', section: 'model', label: 'Unavailable row', value: '', scope: undefined, readOnly: true, unavailable: true },
+        actionRow('open', () => {}),
+      ],
+    })
+
+    harness.panel.handleInput(ENTER)
+    let lines = visibleLines(harness.panel.render(120))
+    expect(lines.at(-2)).toContain(copy.config.rowReadOnly)
+    expect(lines.at(-1)).toBe(`  ${copy.config.tabHint} · ${copy.config.footerReadOnly}`)
+    expect(lines).toHaveLength(16)
+
+    harness.panel.handleInput(DOWN)
+    lines = visibleLines(harness.panel.render(120))
+    expect(lines.some(line => line.includes(copy.config.rowReadOnly))).toBe(false)
+    expect(lines).toHaveLength(15)
+
+    harness.panel.handleInput(ENTER)
+    lines = visibleLines(harness.panel.render(120))
+    expect(lines.at(-2)).toContain(copy.config.rowUnavailable)
+
+    harness.panel.handleInput(UP)
+    expect(visibleLines(harness.panel.render(120))).toHaveLength(15)
+
+    harness.panel.handleInput(ENTER)
+    harness.panel.handleInput(TAB)
+    expect(visibleLines(harness.panel.render(120))).toHaveLength(15)
+
+    harness.panel.handleInput(ENTER)
+    harness.panel.handleInput('/')
+    expect(visibleLines(harness.panel.render(120))).toHaveLength(15)
+    harness.panel.handleInput('a')
+    expect(visibleLines(harness.panel.render(120))).toHaveLength(15)
+
+    const empty = panelFor({ rows: [] })
+    empty.panel.handleInput(ENTER)
+    expect(visibleLines(empty.panel.render(120))).toHaveLength(15)
+  })
+
+  it('uses a contextual footer for actionable and read-only rows and search mode', () => {
+    const harness = panelFor({ rows: [actionRow('open', () => {}), plainRow('model', 'read')] })
+
+    expect(visibleLines(harness.panel.render(120)).at(-1))
+      .toBe(`  ${copy.config.tabHint} · ${copy.config.footerAction}`)
+
+    harness.panel.handleInput(DOWN)
+    expect(visibleLines(harness.panel.render(120)).at(-1))
+      .toBe(`  ${copy.config.tabHint} · ${copy.config.footerReadOnly}`)
+
+    harness.panel.handleInput('/')
+    expect(visibleLines(harness.panel.render(120)).at(-1)).toBe(`  /  ${copy.config.searchHint}`)
+    harness.panel.handleInput('a')
+    expect(visibleLines(harness.panel.render(120)).at(-1)).toBe(`  /a  ${copy.config.searchHint}`)
   })
 
   it('invalidates without cached state', () => {
