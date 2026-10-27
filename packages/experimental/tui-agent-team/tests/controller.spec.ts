@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import type { DockComponent } from '../src/types.ts'
 import { TeamController } from '../src/controller.ts'
 import { copy, setCopyLocale } from '../src/copy.ts'
@@ -60,6 +61,28 @@ describe('TeamController install', () => {
     install({ locale: 'zh' })
 
     expect(copy.team.membersTab).toBe('成员')
+  })
+
+  it('resolves member runtime services without requiring child injection', async () => {
+    const harness = controllerHarness({
+      projection: teamProjection({
+        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
+      }),
+    })
+    harness.ctx.provide('terminalUi', harness.ui as never)
+    let child: Context | undefined
+    const fiber = await harness.ctx.inject(['terminalUi'], (injected) => { child = injected })
+    if (child === undefined) throw new Error('terminalUi injection did not run')
+    const controller = new TeamController(child, harness.ui)
+    const dispose = controller.install()
+
+    void harness.ui.commands.get('team')?.run(undefined)
+    const dock = harness.ui.docks.at(-1)
+    if (dock === undefined) throw new Error('no dock was presented')
+    expect(() => dock.component.render(200)).not.toThrow()
+
+    dispose()
+    await fiber.dispose()
   })
 })
 

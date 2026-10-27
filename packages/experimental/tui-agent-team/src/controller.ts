@@ -79,8 +79,10 @@ export class TeamController {
    */
   private memberRuntime(id: string): TeamMemberRuntime {
     const sessionId = SessionId(id)
-    const live = this.ctx.agents.get(sessionId)
-    const session = this.ctx.sessions.get(sessionId)
+    const agents = this.ctx.get('agents')
+    const sessions = this.ctx.get('sessions')
+    const live = agents?.get(sessionId)
+    const session = sessions?.get(sessionId)
     const values = session === undefined ? undefined : this.ctx.get('sessionProjections')?.snapshot(session).values
     const model = (values as { modelSelection?: { next?: { model?: string } } } | undefined)?.modelSelection?.next?.model
       ?? live?.options.model
