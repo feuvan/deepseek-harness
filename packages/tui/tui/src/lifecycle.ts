@@ -82,6 +82,7 @@ export class TerminalApp {
   private completion: CompletionController | undefined
   private configPanel: ConfigPanel | undefined
   private dockOverlay: DockSurface | undefined
+  private dockVisible = false
   private pendingImages: import('@deepseek-ai/dsh-llm').ContentBlock[] = []
   private markdownTheme: MarkdownTheme | undefined
   private started = false
@@ -1038,7 +1039,6 @@ export class TerminalApp {
     this.dockOverlay = surface
     this.syncDock()
     this.tui?.requestRender()
-    if (surface === undefined) this.reanchorInline()
   }
 
   /**
@@ -1073,25 +1073,25 @@ export class TerminalApp {
     }
   }
 
-  /** Mirror the active bottom surface into the dock slot. */
+  /** Mirror the active bottom surface into the dock slot and re-anchor when it disappears. */
   private syncDock(): void {
     if (this.dockOverlay !== undefined) {
       this.bottom?.setContent(this.dockOverlay.component)
-      return
-    }
-    if (this.configPanel !== undefined) {
+    } else if (this.configPanel !== undefined) {
       this.bottom?.setContent(this.configPanel)
-      return
-    }
-    if (this.bottomList?.active === true) {
+    } else if (this.bottomList?.active === true) {
       this.bottom?.setContent(this.bottomList)
-      return
-    }
-    if (this.completion?.active === true) {
+    } else if (this.completion?.active === true) {
       this.bottom?.setContent(this.completion)
-      return
+    } else {
+      this.bottom?.setContent(undefined)
     }
-    this.bottom?.setContent(undefined)
+    const visible = this.dockOverlay !== undefined
+      || this.configPanel !== undefined
+      || this.bottomList?.active === true
+      || this.completion?.active === true
+    if (this.dockVisible && !visible) this.reanchorInline()
+    this.dockVisible = visible
   }
 
   /** Present the configuration panel over the composed services. */
@@ -1218,7 +1218,6 @@ export class TerminalApp {
     this.configPanel = undefined
     this.syncDock()
     this.tui?.requestRender()
-    this.reanchorInline()
   }
 
   /**

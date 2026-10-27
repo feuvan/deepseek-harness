@@ -5382,6 +5382,44 @@ describe('TerminalApp inline dock reanchor', () => {
     vi.restoreAllMocks()
   })
 
+  it('reanchors when a permission chooser closes', async () => {
+    const harness = await lifecycleHarness({
+      screen: 'inline',
+      services: {
+        permissionPresets: {
+          catalog: () => ({
+            options: [
+              { value: 'read-only', name: 'Read Only' },
+              { value: 'workspace-write', name: 'Workspace Write' },
+            ],
+          }),
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const anchor = privateValue(harness.app, 'inlineAnchor') as { reanchor(): void }
+    const reanchor = vi.spyOn(anchor, 'reanchor')
+    const clear = vi.spyOn(harness.terminal.session.tui, 'setClearOnShrink')
+    const render = vi.spyOn(harness.terminal.session.tui, 'renderNow')
+    await submitLine(harness, '/permission')
+    await waitForDock(harness, copy.prompt.permissionTitle)
+    reanchor.mockClear()
+    clear.mockClear()
+    render.mockClear()
+
+    harness.terminal.headless.press('\r')
+    await awaitDockClosed(harness)
+
+    expect(reanchor).toHaveBeenCalledOnce()
+    expect(clear.mock.calls.map(call => call[0])).toEqual([true, false])
+    expect(render).toHaveBeenCalled()
+    const lines = await screenLines(harness.terminal.headless)
+    expect(lines.some(line => line.includes('dsh>'))).toBe(true)
+    expect(lines.some(line => line.includes(copy.prompt.permissionTitle))).toBe(false)
+    vi.restoreAllMocks()
+  })
+
   it('reanchors when the configuration dock closes', async () => {
     const harness = await lifecycleHarness({ screen: 'inline' })
     harness.start()
