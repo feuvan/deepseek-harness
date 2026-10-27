@@ -2639,6 +2639,7 @@ describe('TerminalApp /config dock', () => {
 
     await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-b')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.restartRequired) })
+    expect(harness.transcriptText().split(copy.config.restartRequired)).toHaveLength(2)
     await vi.waitFor(() => { expect(dockText(harness.app)).toContain(copy.config.restartMarker) })
 
     await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-c')

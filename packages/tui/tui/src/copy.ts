@@ -422,6 +422,8 @@ const en = {
     none: 'none',
     /** Short row marker for a change that needs a restart. */
     restartMarker: 'restart',
+    /** Short row marker for a toggle whose write is in flight. */
+    saving: 'saving',
     /** Label when the owning service is not composed. */
     unavailable: (service: string): string => `${service} unavailable`,
     /** Heading for the model and effort category. */
@@ -752,6 +754,8 @@ export const chinese: Copy = {
     noMatches: '无匹配项',
     none: '无',
     restartMarker: '重启后生效',
+    /** 正在写入的开关的简短行标记。 */
+    saving: '保存中',
     unavailable: service => `${service} 不可用`,
     modelSection: '模型与推理强度',
     permissionSection: '权限',

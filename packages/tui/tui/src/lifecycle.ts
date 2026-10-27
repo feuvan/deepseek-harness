@@ -1072,11 +1072,11 @@ export class TerminalApp {
         if (pluginManager === undefined) return { notice: copy.config.failed(copy.config.unavailable('pluginManager')) }
         try {
           const result = await pluginManager.setBundleEnabled(name, enabled)
-          if (result.application === 'restart-required') return { restartRequired: true, notice: copy.config.restartRequired }
+          if (result.application === 'restart-required') return { restartRequired: true }
           if (result.application === 'applied') return undefined
-          return { notice: copy.config.writeFailed(result.application) }
+          return { failed: true, notice: copy.config.writeFailed(result.application) }
         } catch (error: unknown) {
-          return { notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
+          return { failed: true, notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
         }
       },
       toggleCards: () => { this.setCardsMode(undefined); return undefined },

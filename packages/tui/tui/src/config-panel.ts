@@ -27,6 +27,8 @@ export interface ConfigActionResult {
   readonly notice?: string
   /** Whether the change takes effect only after a restart. */
   readonly restartRequired?: boolean
+  /** Whether the change was rejected and the displayed value must revert. */
+  readonly failed?: boolean
 }
 
 /** A row activation's result, either settled synchronously or as a promise. */
@@ -52,8 +54,10 @@ export interface ConfigRow {
   readonly description?: string
   /** Additional localized status marker rendered after the value. */
   readonly marker?: string
+  /** Whether the value is an On/Off toggle that flips before the action settles. */
+  readonly toggle?: boolean
   /** Action invoked by Enter; absent for read-only rows. */
-  readonly activate?: () => ConfigActionOutcome
+  readonly activate?: (nextValue?: string) => ConfigActionOutcome
 }
 
 /** The model route and reasoning-effort facts the model section shows. */
@@ -403,7 +407,13 @@ async function experimentalRows(deps: ConfigPanelDeps): Promise<ConfigRow[]> {
     readOnly: bundle.readOnlyReason !== undefined,
     description: bundle.readOnlyReason ?? copy.config.descriptions.bundle,
     ...(bundle.readOnlyReason === undefined
-      ? { activate: () => deps.actions.setBundle(bundle.name, !bundle.enabled) }
+      ? {
+        toggle: true,
+        activate: (next?: string) => deps.actions.setBundle(
+          bundle.name,
+          (next ?? (bundle.enabled ? copy.config.off : copy.config.on)) === copy.config.on,
+        ),
+      }
       : { marker: bundle.readOnlyReason }),
   }))
 }
@@ -496,6 +506,9 @@ export class ConfigPanel implements Component {
   private readonly handlers: ConfigPanelHandlers
   private readonly bodyHeight: number
   private readonly restartMarkers = new Map<string, string>()
+  private readonly values = new Map<string, string>()
+  private readonly saved = new Map<string, string>()
+  private readonly saving = new Set<string>()
   private section: ConfigSection = 'model'
   private cursor = 0
   private scroll = 0
@@ -784,11 +797,12 @@ export class ConfigPanel implements Component {
     const description = displayText(row.description ?? '')
     const labelWidth = Math.min(22, Math.max(4, visibleWidth(label)))
     const valueWidth = Math.min(20, Math.max(4, visibleWidth(value)))
+    const markers = this.markersOf(row)
+    const markerWidth = visibleWidth(markers)
     const gap = 2
     const cursor = selected ? this.palette.accent('❯') : ' '
-    const descriptionWidth = Math.max(0, width - 4 - labelWidth - valueWidth - (gap * 2))
-    let line = `  ${cursor} ${padEnd(label, labelWidth)}${' '.repeat(gap)}${padEnd(value, valueWidth)}${' '.repeat(gap)}${truncateToWidth(description, descriptionWidth)}`
-    line += this.markersOf(row)
+    const descriptionWidth = Math.max(0, width - 4 - labelWidth - valueWidth - markerWidth - (gap * 2))
+    let line = `  ${cursor} ${padEnd(label, labelWidth)}${' '.repeat(gap)}${padEnd(value, valueWidth)}${markers}${' '.repeat(gap)}${truncateToWidth(description, descriptionWidth)}`
     line = truncateToWidth(line, width)
     return selected ? this.palette.inverse(padEnd(line, width)) : line
   }
@@ -799,10 +813,12 @@ export class ConfigPanel implements Component {
    * @returns the display value.
    */
   private displayValue(row: ConfigRow): string {
-    if (row.activate !== undefined && row.value === '') return copy.config.action
-    if (row.activate !== undefined && row.value === copy.config.on) return '[x] On'
-    if (row.activate !== undefined && row.value === copy.config.off) return '[ ] Off'
-    return row.value
+    const value = this.valueOf(row)
+    if (row.activate !== undefined && this.isToggle(row)) {
+      return value === copy.config.on ? '[x] On' : '[ ] Off'
+    }
+    if (row.activate !== undefined && value === '') return copy.config.action
+    return value
   }
 
   /** Invoke the highlighted row's action and report its result. */
@@ -813,34 +829,107 @@ export class ConfigPanel implements Component {
       this.message = row.unavailable === true ? copy.config.rowUnavailable : copy.config.rowReadOnly
       return
     }
+    const toggle = this.isToggle(row)
+    const nextValue = toggle ? this.nextToggleValue(row) : ''
+    if (toggle) {
+      this.saving.add(row.id)
+      this.values.set(row.id, nextValue)
+    }
     this.busy = true
     this.handlers.onActivate?.(row)
     let outcome: ConfigActionOutcome
     try {
-      outcome = row.activate()
+      outcome = row.activate(toggle ? nextValue : undefined)
     } catch (error: unknown) {
+      this.restoreToggle(row, toggle)
       this.busy = false
       this.handlers.onNotice?.(copy.config.writeFailed(errorMessage(error)))
       return
     }
     void Promise.resolve(outcome).then(
-      (result) => { this.report(result, row.id) },
-      (error: unknown) => { this.handlers.onNotice?.(copy.config.writeFailed(errorMessage(error))) },
+      (result) => { this.report(result, row, toggle, nextValue) },
+      (error: unknown) => {
+        this.restoreToggle(row, toggle)
+        this.handlers.onNotice?.(copy.config.writeFailed(errorMessage(error)))
+      },
     ).finally(() => { this.busy = false })
+  }
+
+  /**
+   * Whether a row renders and behaves as an On/Off toggle.
+   * @param row - configuration row.
+   * @returns whether the row is a toggle.
+   */
+  private isToggle(row: ConfigRow): boolean {
+    return row.activate !== undefined
+      && (row.toggle === true || row.value === copy.config.on || row.value === copy.config.off)
+  }
+
+  /**
+   * Compute the next On/Off value for one toggle row.
+   * @param row - toggle row.
+   * @returns the value the action receives.
+   */
+  private nextToggleValue(row: ConfigRow): string {
+    return this.valueOf(row) === copy.config.on ? copy.config.off : copy.config.on
+  }
+
+  /**
+   * Read the displayed value, preferring an optimistic toggle update.
+   * @param row - configuration row.
+   * @returns the current display value.
+   */
+  private valueOf(row: ConfigRow): string {
+    return this.values.get(row.id) ?? this.saved.get(row.id) ?? row.value
+  }
+
+  /**
+   * Drop an optimistic toggle update and restore the last saved value.
+   * @param row - toggle row.
+   * @param toggle - whether the row is a toggle.
+   */
+  private restoreToggle(row: ConfigRow, toggle: boolean): void {
+    this.saving.delete(row.id)
+    if (toggle) this.values.delete(row.id)
   }
 
   /**
    * Surface one settled action result.
    * @param result - the result, or void for a silent action.
-   * @param rowId - identity of the activated row.
+   * @param row - activated row.
+   * @param toggle - whether the row is an On/Off toggle.
+   * @param nextValue - toggle value passed to the action.
    */
-  private report(result: ConfigActionResult | void, rowId: string): void {
-    if (result === undefined) return
+  private report(result: ConfigActionResult | void, row: ConfigRow, toggle: boolean, nextValue: string): void {
+    this.saving.delete(row.id)
+    if (result === undefined) {
+      if (toggle) {
+        this.commitToggle(row, nextValue)
+        this.restartMarkers.delete(row.id)
+      }
+      return
+    }
+    if (result.failed === true) {
+      this.restoreToggle(row, toggle)
+    } else if (toggle) {
+      this.commitToggle(row, nextValue)
+      if (result.restartRequired !== true) this.restartMarkers.delete(row.id)
+    }
     if (result.notice !== undefined) this.handlers.onNotice?.(result.notice)
     if (result.restartRequired === true) {
-      this.restartMarkers.set(rowId, copy.config.restartMarker)
+      this.restartMarkers.set(row.id, copy.config.restartMarker)
       this.handlers.onRestartNotice(copy.config.restartRequired)
     }
+  }
+
+  /**
+   * Mark the optimistic toggle value as saved.
+   * @param row - toggle row.
+   * @param value - value accepted by the action.
+   */
+  private commitToggle(row: ConfigRow, value: string): void {
+    this.saved.set(row.id, value)
+    this.values.delete(row.id)
   }
 
   /**
@@ -854,8 +943,13 @@ export class ConfigPanel implements Component {
     if (row.readOnly) markers.push(copy.config.readOnly)
     const restart = this.restartMarkers.get(row.id)
     if (restart !== undefined) markers.push(restart)
+    if (this.saving.has(row.id)) markers.push(copy.config.saving)
     if (row.marker !== undefined) markers.push(row.marker)
     if (markers.length === 0) return ''
-    return `  ${this.palette.dim(`(${markers.join(' · ')})`)}`
+    const text = `(${markers.join(' · ')})`
+    const style = restart !== undefined
+      ? this.palette.warning(text)
+      : this.saving.has(row.id) ? this.palette.accent(text) : this.palette.dim(text)
+    return `  ${style}`
   }
 }

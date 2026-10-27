@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-plugin-manager'
 import {
   ConfigPanel,
   loadConfigRows,
+  type ConfigActionResult,
   type ConfigActionOutcome,
   type ConfigBundleInfo,
   type ConfigDisplayState,
@@ -997,6 +998,55 @@ describe('ConfigPanel activation results', () => {
     })
     expect(harness.notices).toEqual(['changed'])
     expect(harness.restarts).toEqual([copy.config.restartRequired])
+  })
+
+  it('flips a toggle optimistically and keeps the new state after a restart requirement', async () => {
+    const calls: string[] = []
+    const pending = Promise.withResolvers<ConfigActionResult>()
+    let outcome: ConfigActionOutcome = pending.promise
+    const { panel } = panelFor({
+      rows: [{
+        id: 'toggle', section: 'model', label: 'Toggle', value: copy.config.on,
+        scope: 'session', readOnly: false, toggle: true,
+        activate: (next) => { calls.push(next ?? 'none'); return outcome },
+      }],
+    })
+
+    panel.handleInput(ENTER)
+    expect(calls).toEqual([copy.config.off])
+    expect(rendered(panel)).toContain('[ ] Off')
+    expect(rendered(panel)).toContain(copy.config.saving)
+
+    pending.resolve({ restartRequired: true })
+    await settle()
+    expect(rendered(panel)).toContain('[ ] Off')
+    expect(rendered(panel)).toContain(copy.config.restartMarker)
+    expect(rendered(panel)).not.toContain(copy.config.saving)
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+
+    const second = Promise.withResolvers<ConfigActionResult>()
+    outcome = second.promise
+    panel.handleInput(ENTER)
+    expect(calls).toEqual([copy.config.off, copy.config.on])
+    second.resolve({})
+    await settle()
+    expect(rendered(panel)).toContain('[x] On')
+    expect(rendered(panel)).not.toContain(copy.config.restartMarker)
+  })
+
+  it('reverts a rejected toggle to its saved value', async () => {
+    const { panel, notices } = panelFor({
+      rows: [{
+        id: 'toggle', section: 'model', label: 'Toggle', value: copy.config.off,
+        scope: 'session', readOnly: false, toggle: true,
+        activate: () => ({ failed: true, notice: 'rejected' }),
+      }],
+    })
+
+    panel.handleInput(ENTER)
+    await vi.waitFor(() => { expect(notices).toEqual(['rejected']) })
+    expect(rendered(panel)).toContain('[ ] Off')
+    expect(rendered(panel)).not.toContain(copy.config.saving)
   })
 
   it('reports a failed synchronous action', async () => {
