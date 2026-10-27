@@ -69,8 +69,8 @@ export interface ComposerDeps {
   readonly local: LocalCommands
   /** Append a terminal-only notice. */
   readonly notice: (text: string) => void
-  /** Delivery mode plain Enter uses while the Agent runs. */
-  readonly busyEnter: BusyEnter
+  /** Delivery mode plain Enter uses while the Agent runs; a getter keeps live config changes. */
+  readonly busyEnter: BusyEnter | (() => BusyEnter)
   /**
    * Expand `@` mentions of one prompt into user-message content. Omitted when
    * the composition has no attachment or file-reference services.
@@ -212,7 +212,8 @@ export class Composer {
       agent.followup(message)
       return
     }
-    const steer = mode === 'auto' ? this.deps.busyEnter === 'steer' : mode === 'steer'
+    const configured = typeof this.deps.busyEnter === 'function' ? this.deps.busyEnter() : this.deps.busyEnter
+    const steer = mode === 'auto' ? configured === 'steer' : mode === 'steer'
     if (steer) {
       agent.steer(message)
       this.deps.notice(copy.queue.steered)

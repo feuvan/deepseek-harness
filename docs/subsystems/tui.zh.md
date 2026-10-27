@@ -60,7 +60,7 @@ kind: "subsystem"
 
 终端层输入钩子在渲染器之前把每个按键交给当前 dock surface：面板占用 dock 时，翻页键滚动面板而不是 transcript，下方编辑器也不会被编辑。只有补全窗口打开时未处理的字符才会落回编辑器，用于继续输入过滤。
 
-`/config` 在这个 dock 中打开按 tab 组织的配置面板，数据来自实时服务而不是静态配置文件：每个分类一个 tab，Tab/←/→ 切换，↑/↓ 与 PageUp/PageDown 滚动当前 tab，Enter 激活，Esc 关闭。模型与强度行激活已有的选择器与选择面板；权限行通过已注册的 `/permission` 命令写入本会话预设；实验性行读取 `ctx.pluginManager.listBundles()`，只切换随附的可选组合包，并报告 manager 结果（由于终端组合包禁用 HMR，通常为 `restart-required`，或显示只读原因）；显示行展示已解析的 profile 值，保持只读并标注归属层。写入从不绕过归属服务，失败会直接显示而不是盲目重试。
+`/config` 在这个 dock 中打开按 tab 组织的配置面板，数据来自实时服务而不是静态配置文件：每个分类一个 tab，Tab/←/→ 切换，↑/↓ 与 PageUp/PageDown 滚动当前 tab，Enter 激活，Esc 关闭。模型与强度行激活已有的选择器与选择面板；权限行通过已注册的 `/permission` 命令写入本会话预设；实验性行读取 `ctx.pluginManager.listBundles()`，只切换随附的可选组合包，并通过 profile HMR 应用；显示行通过 settings 服务编辑 profile 的 volatile 终端字段；切换、循环与行内输入产生的已提交 volatile 更新无需重启终端即可生效，`screen` 渲染模式保持只读。写入从不绕过归属服务，失败会直接显示而不是盲目重试。
 
 终端也会在 transcript 之外报告自身状态：运行中通过 OSC 9;4 报告进度，通过 OSC 7501 报告程序状态（`working`；问题或审批面板等待时为 `blocked`；其他情况为 `idle`），dispose 时清除。界面文案提供中英文；`locale` 显式选择字典，`auto` 跟随启动环境，页脚、面板、通知、帮助与诊断会一起切换。鼠标上报已启用，滚轮可滚动 transcript，拖拽选择通过 OSC 52 复制，滚动视图显示跳到末尾指示；`Ctrl+Shift+F` 打开 transcript 搜索。
 

@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-tui-app` 是让 `dsh tui` 成为产品界面的 patch 层。它叠放在 [`dsh-base`](../base/README.zh.md) 之上，解析应用自己的 `--resume` 与 `--help`，创建或恢复唯一的进程级根 Agent，并挂载只负责呈现的终端插件。它不打开端口、不运行浏览器或 Host 层，也不读取配置 HMR；`dsh tui` 在构造上就是单会话的。
+`dsh-tui-app` 是让 `dsh tui` 成为产品界面的 patch 层。它叠放在 [`dsh-base`](../base/README.zh.md) 之上，解析应用自己的 `--resume` 与 `--help`，创建或恢复唯一的进程级根 Agent，并挂载只负责呈现的终端插件。它不打开端口、不运行浏览器或 Host 层；配置 HMR 来自 `dsh-base`，因此 profile patch 与插件开关会应用到运行中的终端。`dsh tui` 在构造上就是单会话的。
 
 ## 目录
 
@@ -37,7 +37,7 @@ dsh tui --resume session-<id>
 
 `dsh tui --help` 打印应用自己的帮助并在占用终端前退出。非交互启动会在进入屏幕前失败，并指出 `dsh --profile headless "<task>"`。
 
-该 profile 继承 `dsh-base` 的 host 平面，并用与 Web profile 相同的四个 preset 声明替换其 agent 平面，因此在任一界面创建的 preset 会话都能在另一界面恢复。与 base 的差别只有部署 persona、被禁用的配置 HMR 条目与终端相关条目。
+该 profile 继承 `dsh-base` 的 host 平面，并用与 Web profile 相同的四个 preset 声明替换其 agent 平面，因此在任一界面创建的 preset 会话都能在另一界面恢复。与 base 的差别只有部署 persona 与终端相关条目。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -91,7 +91,7 @@ patch 按顺序插入五个条目。`tui-startup`（`./startup` 入口）解析�
 
 - **Schedule 工具需要 Web host。** preset 声明逐字复制自 Web，而 Web 的 `schedule` host 条目依赖 API session controller；终端不组装该 controller，因此 preset 的 `tool-schedule` 条目在这里不会注册工具。
 - **preset 组装是副本。** `presets/` 下的四个声明是 Web bundle 文件的逐字节副本；一旦漂移，parity 测试会失败。
-- **没有配置 HMR。** 组装在每次启动时读取一次；编辑 profile patch 后请重启终端。
+- **终端配置可热更新。** Profile patch 与插件开关通过 HMR 生效；volatile 终端设置（`color`、`animation`、`previewLines`、`windowBlocks`、`title`、`locale`、`busyEnter`）可在 `/config` 中编辑并更新运行中的终端；`screen` 保持只读，在 profile 中修改时会重新挂载终端表面。
 - **没有自动会话选择器。** 恢复需要精确的会话标识。
 - **Windows 未由随附验收通道验证。** PTY profile 验收运行在 POSIX 主机上。
 

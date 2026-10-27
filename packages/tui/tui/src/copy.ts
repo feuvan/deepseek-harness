@@ -392,7 +392,7 @@ const en = {
       effortCurrent: 'Current reasoning effort',
       effortChange: 'Choose how much reasoning the model shows',
       permission: 'Choose what the Agent may do in this workspace',
-      bundle: 'Optional experimental capability; enabling it requires a restart',
+      bundle: 'Optional experimental capability; applies through profile HMR',
       cards: 'Cycle collapsed, expanded, and hidden tool cards',
       reasoning: 'Cycle compact, standard, detailed, and verbose reasoning',
       display: {
@@ -459,6 +459,9 @@ const en = {
     /** Hint line naming the tab keys. */
     tabHint: '←/→ group · / search · ↑/↓ move · Esc close',
     searchHint: 'type to filter · ↑/↓ move · Enter open · Esc clear/close',
+    editPrompt: (label: string, value: string): string => `${label}: ${value}▌`,
+    editHint: 'Enter save · Esc cancel',
+    invalidValue: (field: string): string => `Invalid value for ${field}`,
   },
   /** Model selector copy. */
   model: {
@@ -732,7 +735,7 @@ export const chinese: Copy = {
       effortCurrent: '当前推理强度',
       effortChange: '选择模型展示多少推理',
       permission: '选择 Agent 在此工作区可以做什么',
-      bundle: '可选的实验性能力；启用后需要重启',
+      bundle: '可选的实验性能力；通过 profile HMR 应用',
       cards: '循环折叠、展开与隐藏工具卡',
       reasoning: '循环 compact、standard、detailed、verbose 推理显示',
       display: {
@@ -774,6 +777,9 @@ export const chinese: Copy = {
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
     tabHint: '←/→ 分组 · / 搜索 · ↑/↓ 移动 · Esc 关闭',
     searchHint: '输入筛选 · ↑/↓ 移动 · Enter 打开 · Esc 清除/关闭',
+    editPrompt: (label: string, value: string): string => `${label}: ${value}▌`,
+    editHint: 'Enter 保存 · Esc 取消',
+    invalidValue: (field: string): string => `字段 ${field} 的值无效`,
   },
   /** Agent preset 名称、描述与提示。 */
   preset: {

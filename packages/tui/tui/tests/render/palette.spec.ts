@@ -5,7 +5,7 @@ const ESC = '\u001b'
 
 /** A named style and the SGR pair it must emit when color is enabled. */
 interface StyleCase {
-  readonly name: keyof Omit<Palette, 'color'>
+  readonly name: keyof Omit<Palette, 'color' | 'setColor'>
   readonly open: string
   readonly close: string
 }

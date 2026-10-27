@@ -318,6 +318,60 @@ describe('TerminalApp startup', () => {
   })
 })
 
+describe('TerminalApp live configuration', () => {
+  it('updates display fields in place without recreating the terminal', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const terminal = harness.terminal.session
+    const title = vi.spyOn(terminal.tui.terminal, 'setTitle')
+    const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
+    const stopAnimation = Reflect.get(harness.app, 'stopAnimation') as () => void
+    stopAnimation.call(harness.app)
+
+    harness.app.applyConfig(terminalConfig({
+      color: true,
+      animation: true,
+      previewLines: 8,
+      windowBlocks: 120,
+      title: 'Live terminal',
+      busyEnter: 'steer',
+    }))
+
+    expect(privateValue(harness.app, 'config')).toMatchObject({
+      color: true,
+      animation: true,
+      previewLines: 8,
+      windowBlocks: 120,
+      title: 'Live terminal',
+      busyEnter: 'steer',
+    })
+    expect(privateValue(harness.app, 'palette')).toMatchObject({ color: true })
+    expect(title).toHaveBeenLastCalledWith('Live terminal')
+    expect(Reflect.get(transcript, 'deps')).toMatchObject({ previewLines: 8, windowBlocks: 120 })
+    expect(Reflect.get(harness.app, 'animation')).toBeDefined()
+
+    harness.app.applyConfig(terminalConfig({ title: 'Live terminal', locale: 'zh', screen: 'inline' }))
+
+    expect(privateValue(harness.app, 'config')).toMatchObject({ color: false, animation: false, locale: 'zh' })
+    expect(copy.config.title).toBe('配置')
+    setCopyLocale('en')
+    expect(Reflect.get(harness.app, 'animation')).toBeUndefined()
+    expect(privateValue(harness.app, 'palette')).toMatchObject({ color: false })
+  })
+
+  it('ignores an update for another Session identity', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const before = privateValue(harness.app, 'config')
+
+    harness.app.applyConfig(terminalConfig({ sessionId: 'other-session', title: 'Ignored' }))
+
+    expect(privateValue(harness.app, 'config')).toBe(before)
+  })
+})
+
 describe('TerminalApp initial model selection', () => {
   it('restores the logged request route and effort', async () => {
     const harness = await lifecycleHarness()
@@ -1866,6 +1920,110 @@ describe('TerminalApp effort seeding and status', () => {
     press(selector, '\r')
 
     await vi.waitFor(() => { expect(footerText(harness.app)).toContain('m-1 · high') })
+  })
+})
+
+describe('TerminalApp live display settings', () => {
+  it('persists display toggles and prompted values through settings', async () => {
+    const updates: Array<{ namespace: string; patch: Record<string, unknown> }> = []
+    const harness = await lifecycleHarness({
+      services: {
+        settings: {
+          update: async (namespace: string, patch: Record<string, unknown>) => {
+            updates.push({ namespace, patch })
+          },
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+
+    focusConfigRow(panel, 'display', 'display.color')
+    harness.terminal.headless.press('\r')
+    await vi.waitFor(() => { expect(updates).toEqual([{ namespace: 'terminal-ui', patch: { color: true } }]) })
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+
+    focusConfigRow(panel, 'display', 'display.previewLines')
+    harness.terminal.headless.press('\r')
+    for (const key of ['\x7f', '\x7f', '5', '\r']) harness.terminal.headless.press(key)
+    await vi.waitFor(() => { expect(updates.at(-1)).toEqual({ namespace: 'terminal-ui', patch: { previewLines: 5 } }) })
+  })
+
+  it('validates every display field and reports write failures', async () => {
+    let writes = 0
+    const harness = await lifecycleHarness({
+      services: {
+        settings: {
+          update: async () => {
+            writes += 1
+            throw writes === 1 ? new Error('write failed') : 'string write failed'
+          },
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const displayValue = Reflect.get(harness.app, 'displayValue') as (field: string, value: string) => unknown
+
+    expect(displayValue.call(harness.app, 'color', copy.config.on)).toBe(true)
+    expect(displayValue.call(harness.app, 'animation', copy.config.off)).toBe(false)
+    expect(displayValue.call(harness.app, 'previewLines', '12')).toBe(12)
+    expect(displayValue.call(harness.app, 'previewLines', '0')).toBeUndefined()
+    expect(displayValue.call(harness.app, 'windowBlocks', '300')).toBe(300)
+    expect(displayValue.call(harness.app, 'title', 'Live title')).toBe('Live title')
+    expect(displayValue.call(harness.app, 'title', '  ')).toBeUndefined()
+    expect(displayValue.call(harness.app, 'locale', 'zh')).toBe('zh')
+    expect(displayValue.call(harness.app, 'busyEnter', 'steer')).toBe('steer')
+    expect(displayValue.call(harness.app, 'screen', 'fullscreen')).toBeUndefined()
+
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    await pressConfigRow(harness, panel, 'display', 'display.color')
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed'))
+    })
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+    await pressConfigRow(harness, panel, 'display', 'display.animation')
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.config.writeFailed('string write failed'))
+    })
+  })
+
+  it('reports unavailable settings and invalid display values', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+
+    await pressConfigRow(harness, panel, 'display', 'display.color')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.failed(copy.config.unavailable('settings'))) })
+
+    const configured = await lifecycleHarness({
+      services: {
+        settings: { update: async () => {} },
+      },
+    })
+    configured.start()
+    await configured.awaitStarted()
+    await submitLine(configured, '/config')
+    await waitForDock(configured, copy.config.modelSection)
+    const configuredPanel = configPanelOf(configured.app)
+    if (configuredPanel === undefined) throw new Error('configuration panel was not presented')
+    focusConfigRow(configuredPanel, 'display', 'display.previewLines')
+    configured.terminal.headless.press('\r')
+    for (const key of ['\x7f', '\x7f', 'a', 'b', 'c', '\r']) configured.terminal.headless.press(key)
+    await vi.waitFor(() => {
+      expect(configured.transcriptText()).toContain(copy.config.writeFailed(copy.config.invalidValue('previewLines')))
+    })
   })
 })
 

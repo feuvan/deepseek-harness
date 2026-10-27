@@ -13,11 +13,6 @@
     personaPrefix: >-
       You are a coding agent powered by the {{model}} model.
 
-# Configuration HMR is a Web-surface concern; the terminal reads its
-# composition once per launch.
-- id: hmr
-  disabled: true
-
 # ── the terminal application ─────────────────────────────────────────────────
 
 - insert:

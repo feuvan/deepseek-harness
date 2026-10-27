@@ -25,7 +25,7 @@ export interface BlockContext {
   /** Markdown theme derived from {@link palette}. */
   readonly markdown: MarkdownTheme
   /** Collapsed body line budget for tool cards. */
-  readonly previewLines: number
+  previewLines: number
   /** Current global card mode, read on every render. */
   readonly cardMode: () => CardMode
 }

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tui-app` is the patch layer that makes `dsh tui` a product surface. It rides over [`dsh-base`](../base/README.md), parses the app's own `--resume` and `--help`, creates or resumes the one process-wide root Agent, and mounts the presentation-only terminal plugin. It opens no port, runs no browser or Host layer, and reads no configuration HMR; `dsh tui` is single-session by construction.
+`dsh-tui-app` is the patch layer that makes `dsh tui` a product surface. It rides over [`dsh-base`](../base/README.md), parses the app's own `--resume` and `--help`, creates or resumes the one process-wide root Agent, and mounts the presentation-only terminal plugin. It opens no port and runs no browser or Host layer; configuration HMR comes from `dsh-base`, so profile patches and plugin toggles apply to the running terminal. `dsh tui` is single-session by construction.
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@ The first launch initializes the `tui` profile under `$DSH_HOME/profiles/tui` fr
 
 `dsh tui --help` prints the app's own help and exits without claiming the terminal. Non-interactive launches fail before the screen is entered and name `dsh --profile headless "<task>"`.
 
-The profile inherits `dsh-base`'s host plane and replaces its agent plane with the same four preset declarations the Web profile ships, so a preset Session created in either surface can be resumed in the other. Only the deployment persona, the disabled configuration HMR row, and the terminal rows differ from base.
+The profile inherits `dsh-base`'s host plane and replaces its agent plane with the same four preset declarations the Web profile ships, so a preset Session created in either surface can be resumed in the other. Only the deployment persona and the terminal rows differ from base.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -91,7 +91,7 @@ The section is stable across requests in one composition, so it does not invalid
 
 - **Schedule tools need the Web host.** The preset declarations are copied verbatim from Web, whose `schedule` host row depends on the API session controller; the terminal does not compose that controller, so the preset's `tool-schedule` row registers no tools here.
 - **Preset composition is a copy.** The four declarations under `presets/` are byte-identical copies of the Web bundle's files; a parity test fails when they drift.
-- **No configuration HMR.** Composition is read once per launch; restart the terminal after editing profile patches.
+- **Live terminal configuration.** Profile patches and plugin toggles apply through HMR; volatile terminal settings (`color`, `animation`, `previewLines`, `windowBlocks`, `title`, `locale`, `busyEnter`) edit from `/config` and update the running terminal, while `screen` remains read-only and remounts the surface when changed in the profile.
 - **No automatic session picker.** Resume requires the exact Session identity.
 - **Windows is unverified by the shipped acceptance lane.** The PTY profile acceptance runs on POSIX hosts.
 

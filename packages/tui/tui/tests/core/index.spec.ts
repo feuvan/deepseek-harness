@@ -168,6 +168,19 @@ describe('apply', () => {
       .toThrow(/stdout must both be TTYs/u)
   })
 
+  it('applies volatile configuration updates without remounting', () => {
+    const restoreStdin = stubTty(process.stdin, true)
+    const restoreStdout = stubTty(process.stdout, true)
+    onTestFinished(() => { restoreStdin(); restoreStdout() })
+    const ctx = freshContext({ appExit: appExitDouble().exit })
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+
+    expect(() => {
+      apply(ctx, terminalConfig())
+      ctx.emit('loader/volatile-update', [['title']])
+    }).not.toThrow()
+  })
+
   it('rejects a config without a session identity', () => {
     const restoreStdin = stubTty(process.stdin, true)
     const restoreStdout = stubTty(process.stdout, true)

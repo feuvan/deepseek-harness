@@ -45,14 +45,23 @@ describe('resolveConfig', () => {
 
   it('exposes schema defaults for every presentation field', () => {
     const parsed = Config({ sessionId: 'session-test' })
-    expect(parsed).toEqual({
+    expect(parsed.sessionId).toBe('session-test')
+    expect(parsed.color.get()).toBe(true)
+    expect(parsed.animation.get()).toBe(true)
+    expect(parsed.previewLines.get()).toBe(10)
+    expect(parsed.locale.get()).toBe('auto')
+    expect(parsed.windowBlocks.get()).toBe(200)
+    expect(parsed.title.get()).toBe('DeepSeek Harness')
+    expect(parsed.busyEnter.get()).toBe('queue')
+    expect(parsed.screen).toBe('inline')
+    expect(resolveConfig(parsed)).toMatchObject({
       sessionId: 'session-test',
       color: true,
       animation: true,
       previewLines: 10,
-      locale: 'auto',
       windowBlocks: 200,
       title: 'DeepSeek Harness',
+      locale: 'auto',
       busyEnter: 'queue',
       screen: 'inline',
     })
@@ -73,7 +82,7 @@ describe('resolveConfig', () => {
 
     expect(resolved.busyEnter).toBe('steer')
     expect(resolved.screen).toBe('fullscreen')
-    expect(Config({ sessionId: 'session-test', busyEnter: 'steer' }).busyEnter).toBe('steer')
+    expect(Config({ sessionId: 'session-test', busyEnter: 'steer' }).busyEnter.get()).toBe('steer')
     expect(Config({ sessionId: 'session-test', screen: 'fullscreen' }).screen).toBe('fullscreen')
   })
 })

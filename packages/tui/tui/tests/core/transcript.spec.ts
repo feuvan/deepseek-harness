@@ -131,6 +131,27 @@ describe('parseToolArguments', () => {
   })
 })
 
+describe('TerminalTranscript live budgets', () => {
+  it('updates preview and window budgets in place', () => {
+    const requestRender = vi.fn()
+    const deps = transcriptDeps({ requestRender, previewLines: 4, windowBlocks: 200 })
+    const transcript = new TerminalTranscript(deps)
+    transcript.notice('first')
+    transcript.notice('second')
+
+    transcript.setPreviewLines(2)
+
+    expect(deps.previewLines).toBe(2)
+    expect(requestRender).toHaveBeenCalled()
+
+    transcript.setWindowBlocks(1)
+
+    expect(deps.windowBlocks).toBe(1)
+    expect(transcript.stats()).toEqual({ blocks: 2, archived: 1 })
+    expect(requestRender).toHaveBeenCalled()
+  })
+})
+
 describe('TerminalTranscript.append user messages', () => {
   it('appends human and question-reply prompts', () => {
     const { transcript } = transcriptHarness()

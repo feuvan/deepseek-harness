@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import { Config, resolveConfig } from './config.ts'
+import { resolveConfig, type Config } from './config.ts'
 import { resolveLocale } from './locale.ts'
 import { setCopyLocale } from './copy.ts'
 import { TerminalApp } from './lifecycle.ts'
@@ -68,6 +68,7 @@ export function apply(ctx: Context, config: Config): void {
     notice: (text) => { app.notice(text) },
   }
   ctx.provide(TERMINAL_UI_SERVICE, contribution)
+  ctx.on('loader/volatile-update', () => { app.applyConfig(resolveConfig(config)) })
   ctx.effect(() => () => { app.dispose() }, 'terminal-ui: terminal lifecycle')
   app.start()
 }

@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `tui` profile 的 `/config` → 实验性能力中启用 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md)（或执行 `dsh plugin --profile tui add ...`），然后重启终端。Lead Session 有 teammate 或共享任务时状态行出现；`/team` 打开 dock。
+在 `tui` profile 的 `/config` → 实验性能力中启用 [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.zh.md)（或执行 `dsh plugin --profile tui add ...`）；HMR 会将其应用到运行中的终端。Lead Session 有 teammate 或共享任务时状态行出现；`/team` 打开 dock。
 
 dock 与 native 面板一致，是只读视图：带计数的 Members / Shared tasks 区块、成员运行状态/模型/当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Tab 或 ←/→ 切换区块；↑/↓ 与 PgUp/PgDn 移动。Enter 打开 teammate 的只读 transcript，或展开任务的完整描述与元数据；Esc 返回或关闭。面板没有 spawn/消息/认领/完成/编辑控件；这些操作仍由 Team 工具与会话完成。teammate transcript 是查看器，不驱动对话。
 

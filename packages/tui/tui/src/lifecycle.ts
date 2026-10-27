@@ -19,7 +19,7 @@ import {
   ScrollView, VStack, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
-import { copy } from './copy.ts'
+import { copy, setCopyLocale } from './copy.ts'
 import { Composer } from './commands.ts'
 import { Banner } from './components/banner.ts'
 import { Footer } from './components/footer.ts'
@@ -31,6 +31,7 @@ import { nextReasoningLevel, parseReasoningLevel, REASONING_LEVELS } from './rea
 import { CARD_MODES, nextCardMode, parseCardMode } from './cards.ts'
 import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer, type InteractionDock } from './interactions.ts'
 import { StatusModel } from './status.ts'
+import { resolveLocale } from './locale.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
 import { createPalette, type Palette } from './palette.ts'
@@ -44,13 +45,24 @@ import { ContributedStrips } from './components/contributed-strips.ts'
 import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
-import { ConfigPanel, loadConfigRows, type ConfigPanelActions } from './config-panel.ts'
+import { ConfigPanel, loadConfigRows, type ConfigPanelActions, type DisplayField } from './config-panel.ts'
 import { PromptEditor } from './components/editor.ts'
+
+/** The subset of SettingsForms the terminal display rows use. */
+interface SettingsService {
+  /**
+   * Persist volatile fields of one plugin configuration.
+   * @param namespace - plugin configuration namespace.
+   * @param patch - fields to write.
+   * @returns completion after Loader reconciliation.
+   */
+  update(namespace: string, patch: Record<string, unknown>): Promise<void>
+}
 
 /** A startup or in-flight failure the terminal reports before exiting. */
 export class TerminalApp {
   private readonly ctx: Context
-  private readonly config: ResolvedConfig
+  private config: ResolvedConfig
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -105,6 +117,35 @@ export class TerminalApp {
     this.appExit = appExit
     this.createTerminal = createTerminal ?? (() => createTerminalSession(undefined, { screen: config.screen }))
     this.palette = createPalette(config.color)
+  }
+
+  /**
+   * Apply a committed volatile configuration update without restarting the terminal.
+   * The Session identity and renderer mode are fixed for one launch; every other
+   * display field updates in place.
+   * @param next - fresh resolved configuration.
+   */
+  applyConfig(next: ResolvedConfig): void {
+    if (this.disposed || next.sessionId !== this.config.sessionId) return
+    const previous = this.config
+    this.config = next
+    if (next.color !== previous.color) this.palette.setColor(next.color)
+    if (next.animation !== previous.animation) {
+      if (next.animation) this.startAnimation()
+      else this.stopAnimation()
+    }
+    this.transcript?.setPreviewLines(next.previewLines)
+    this.transcript?.setWindowBlocks(next.screen === 'inline' ? Number.MAX_SAFE_INTEGER : next.windowBlocks)
+    if (next.locale !== previous.locale) setCopyLocale(resolveLocale(next.locale))
+    if (next.title !== previous.title) this.tui?.terminal.setTitle(this.titleLine())
+    this.tui?.requestRender()
+  }
+
+  /** Stop the running-status clock, if started. */
+  private stopAnimation(): void {
+    if (this.animation === undefined) return
+    clearInterval(this.animation)
+    this.animation = undefined
   }
 
   /**
@@ -376,7 +417,7 @@ export class TerminalApp {
       ctx: this.ctx,
       agent: () => this.agent,
       notice: (text) => { this.transcript?.notice(text) },
-      busyEnter: this.config.busyEnter,
+      busyEnter: () => this.config.busyEnter,
       expandPrompt: text => this.expandPrompt(text),
       choices: {
         efforts: () => this.effortChoices(),
@@ -623,7 +664,7 @@ export class TerminalApp {
 
   /** Start the running-status clock when animation is enabled. */
   private startAnimation(): void {
-    if (!this.config.animation) return
+    if (!this.config.animation || this.animation !== undefined) return
     this.animation = setInterval(() => {
       if (this.agent?.status !== 'running') return
       this.footer?.invalidate()
@@ -1081,6 +1122,18 @@ export class TerminalApp {
       },
       toggleCards: () => { this.setCardsMode(undefined); return undefined },
       toggleReasoning: () => { this.setReasoningVisibility(undefined); return undefined },
+      setDisplay: async (field, value) => {
+        const settings = this.ctx.get('settings') as SettingsService | undefined
+        if (settings === undefined) return { failed: true, notice: copy.config.failed(copy.config.unavailable('settings')) }
+        const next = this.displayValue(field, value)
+        if (next === undefined) return { failed: true, notice: copy.config.writeFailed(copy.config.invalidValue(field)) }
+        try {
+          await settings.update('terminal-ui', { [field]: next })
+          return undefined
+        } catch (error: unknown) {
+          return { failed: true, notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
+        }
+      },
     }
     const display = {
       color: this.config.color,
@@ -1124,6 +1177,7 @@ export class TerminalApp {
         onCancel: () => { this.closeConfigPanel() },
         onNotice: (message) => { this.transcript?.notice(message) },
         onRestartNotice: (message) => { this.transcript?.notice(message) },
+        onChanged: () => { this.tui?.requestRender() },
       },
     })
     this.completion?.close()
@@ -1131,6 +1185,32 @@ export class TerminalApp {
     this.configPanel = panel
     this.syncDock()
     this.tui?.requestRender()
+  }
+
+  /**
+   * Convert one display row value into the terminal-ui configuration value.
+   * @param field - terminal-ui configuration field.
+   * @param value - display value entered or selected by the user.
+   * @returns the configured value, or undefined when invalid.
+   */
+  private displayValue(field: DisplayField, value: string): boolean | number | string | undefined {
+    switch (field) {
+      case 'color':
+      case 'animation':
+        return value === copy.config.on
+      case 'previewLines':
+      case 'windowBlocks': {
+        const parsed = Number(value)
+        return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
+      }
+      case 'title':
+        return value.trim() === '' ? undefined : value
+      case 'locale':
+      case 'busyEnter':
+        return value
+      case 'screen':
+        return undefined
+    }
   }
 
   /** Close the bottom-dock configuration panel. */

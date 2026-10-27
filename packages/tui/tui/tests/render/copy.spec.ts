@@ -168,7 +168,7 @@ describe('copy dictionaries', () => {
     expect(copy.config.descriptions.effortCurrent).toBe('Current reasoning effort')
     expect(copy.config.descriptions.effortChange).toBe('Choose how much reasoning the model shows')
     expect(copy.config.descriptions.permission).toContain('workspace')
-    expect(copy.config.descriptions.bundle).toContain('restart')
+    expect(copy.config.descriptions.bundle).toContain('HMR')
     expect(copy.config.descriptions.cards).toContain('Cycle')
     expect(copy.config.descriptions.reasoning).toContain('compact')
     for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
@@ -189,7 +189,7 @@ describe('copy dictionaries', () => {
     expect(copy.config.subtitle).toBe('修改会自动保存')
     expect(copy.config.action).toBe('配置 ›')
     expect(copy.config.descriptions.modelCurrent).toBe('本会话当前使用的模型')
-    expect(copy.config.descriptions.bundle).toContain('重启')
+    expect(copy.config.descriptions.bundle).toContain('HMR')
     for (const key of ['color', 'animation', 'previewLines', 'windowBlocks', 'title', 'locale', 'busyEnter', 'screen'] as const) {
       expect(copy.config.descriptions.display[key].length, key).toBeGreaterThan(0)
     }

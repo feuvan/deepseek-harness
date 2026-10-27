@@ -4259,7 +4259,7 @@ export type ToolPresentationMode = 'native' | 'ptc'
 ## `@deepseek-ai/dsh-tui`
 
 - `inject`: `agents` · `approval` · `commands` · `llm` · `sessionProjections` · `sessionQuery` · `sessions` · `tools` · `userQuestions`
-- `source`: [`packages/tui/tui/src/config.ts:22`](../packages/tui/tui/src/config.ts)
+- `source`: [`packages/tui/tui/src/config.ts:23`](../packages/tui/tui/src/config.ts)
 
 ```ts config-catalog
 /**

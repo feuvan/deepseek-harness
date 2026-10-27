@@ -24,7 +24,7 @@ The plugin is inert in compositions that have no terminal contribution seam, so 
 <a id="use-this-package"></a>
 ## Use this package
 
-Enable [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.md) in the `tui` profile from `/config` → Experimental capabilities (or `dsh plugin --profile tui add ...`), then restart the terminal. The strip appears while the Lead Session has teammates or shared tasks; `/team` opens the dock.
+Enable [`@deepseek-ai/dsh-experimental-agent-team-profile`](../agent-team-profile/README.md) in the `tui` profile from `/config` → Experimental capabilities (or `dsh plugin --profile tui add ...`); HMR applies the bundle to the running terminal. The strip appears while the Lead Session has teammates or shared tasks; `/team` opens the dock.
 
 The dock mirrors the native panel as a read-only view: counted Members and Shared tasks sections, member runtime status/model/current-chat tag, and task status, readiness, owner, blockers, write scopes, and warnings. Tab or ←/→ switch sections; ↑/↓ and PgUp/PgDn move. Enter opens a teammate's read-only transcript or expands a task's full description and metadata; Esc returns or closes. The panel has no spawn/message/claim/complete/edit controls; those stay in the Team tools and the conversation. The teammate transcript is a viewer, not a driven conversation.
 

@@ -103,7 +103,7 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 
 ### 配置
 
-`/config` 在编辑器下方打开结构化配置 dock：标题/副标题、readiness 行（`就绪`、`降级` 或 `只读`）、每个分类一个 tab，以及 label/value/description 三列行；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 移动，Enter 打开或切换（只读行会解释原因），`/` 开始筛选（Esc 清除），Esc 关闭。footer 只列出当前行可用的动作。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并提示需要重启（终端 profile 不做配置热重载）；profile patch 无法修改的行会显示只读原因。终端显示值（样式、动画、卡片行数、transcript 窗口、标题、语言、屏幕模式）只读展示，因为它们由 profile patch 拥有；如需修改，请编辑 profile 中的 `terminal-ui` 行。
+`/config` 在编辑器下方打开结构化配置 dock：标题/副标题、readiness 行（`就绪`、`降级` 或 `只读`）、每个分类一个 tab，以及 label/value/description 三列行；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 移动，Enter 打开或切换（只读行会解释原因），`/` 开始筛选（Esc 清除），Esc 关闭。footer 只列出当前行可用的动作。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并通过 profile HMR 应用；profile patch 无法修改的行会显示只读原因。终端显示值可编辑：样式与动画切换，语言与 busy-Enter 循环，卡片行数、transcript 窗口与标题使用行内输入。写入会持久化到 profile 的 volatile `terminal-ui` 字段并应用到运行中的终端；`screen` 保持只读，因为切换渲染模式会重新挂载终端表面。
 
 ### 界面语言
 
@@ -121,7 +121,7 @@ dsh tui --preset ptc
 
 ## Agent Teams
 
-在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`），然后重启终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开与 native 面板一致的只读智能体团队视图：Members 与 Shared tasks 两个区块及计数、成员运行状态/模型/当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Tab 或 ←/→ 切换区块，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭。在成员上按 Enter 打开只读 transcript；在任务上按 Enter 展开完整描述与元数据，Esc 返回。任务板没有修改控件；任务与消息通过 Team 工具和会话创建/更新。面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
+在 `/config` → 实验性能力中启用实验性 Agent Teams bundle（或执行 `dsh plugin --profile tui add @deepseek-ai/dsh-experimental-agent-team-profile`）；HMR 会将其应用到运行中的终端。Lead Session 运行 Team 时，编辑器上方会显示一行状态：teammate、运行中的成员与共享任务计数。`/team` 打开与 native 面板一致的只读智能体团队视图：Members 与 Shared tasks 两个区块及计数、成员运行状态/模型/当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Tab 或 ←/→ 切换区块，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭。在成员上按 Enter 打开只读 transcript；在任务上按 Enter 展开完整描述与元数据，Esc 返回。任务板没有修改控件；任务与消息通过 Team 工具和会话创建/更新。面板打开期间数据随 Lead Session 的 `agentTeam` projection 实时更新。
 
 Members 中 Enter 打开选中 teammate 的只读 transcript（↑/↓ 滚动，Esc 返回）。Tasks 中 Enter 打开只读任务详情，显示完整描述、状态、owner、依赖、写作用域与警告；↑/↓ 滚动，Esc 返回。面板不会 spawn、发送消息、认领、完成或编辑任何内容。
 

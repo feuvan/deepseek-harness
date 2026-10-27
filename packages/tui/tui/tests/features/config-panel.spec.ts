@@ -112,6 +112,7 @@ function recordingActions(overrides: Partial<ConfigPanelActions> = {}): ActionRe
     setBundle: (name: string, enabled: boolean) => { calls.push(`setBundle:${name}:${String(enabled)}`) },
     toggleCards: () => { calls.push('toggleCards') },
     toggleReasoning: () => { calls.push('toggleReasoning') },
+    setDisplay: (field: string, value: string) => { calls.push(`setDisplay:${field}:${value}`) },
   }, overrides)
   return { actions, calls }
 }
@@ -230,6 +231,24 @@ interface PanelHarnessHandlers {
   readonly onNotice: (message: string) => void
   /** Restart-notice observer. */
   readonly onRestartNotice: (message: string) => void
+  /** Settled-write observer. */
+  readonly onChanged?: () => void
+}
+
+
+/**
+ * Point the panel at one display row.
+ * @param panel - panel under test.
+ * @param id - display row identity.
+ */
+function focusDisplayRow(panel: ConfigPanel, id: string): void {
+  const rows = Reflect.get(panel, 'rows') as readonly ConfigRow[]
+  const section = rows.filter(row => row.section === 'display')
+  const index = section.findIndex(row => row.id === id)
+  if (index < 0) throw new Error(`display row ${id} is missing`)
+  Reflect.set(panel, 'section', 'display')
+  Reflect.set(panel, 'cursor', index)
+  Reflect.set(panel, 'scroll', 0)
 }
 
 /**
@@ -382,7 +401,8 @@ describe('loadConfigRows', () => {
       label: 'color',
       value: copy.config.on,
       scope: 'profile',
-      readOnly: true,
+      readOnly: false,
+      toggle: true,
     })
     expect(findRow(first.rows, 'display.animation').value).toBe(copy.config.off)
     expect(findRow(first.rows, 'display.previewLines').value).toBe('10')
@@ -403,8 +423,11 @@ describe('loadConfigRows', () => {
       label: 'busyEnter',
       value: 'queue',
       scope: 'profile',
-      readOnly: true,
+      readOnly: false,
+      cycle: ['queue', 'steer'],
     })
+    expect(findRow(first.rows, 'display.screen')).toMatchObject({ readOnly: true })
+    expect(findRow(first.rows, 'display.previewLines')).toMatchObject({ prompt: true, readOnly: false })
 
     const second = await loadRows({ display: { ...DISPLAY, color: false, animation: true } })
     expect(findRow(second.rows, 'display.color').value).toBe(copy.config.off)
@@ -649,8 +672,8 @@ describe('ConfigPanel rendering', () => {
     expect(rendered(harness.panel)).toContain('management-required')
 
     harness.panel.handleInput(RIGHT)
-    expect(rendered(harness.panel)).toContain(`(${copy.config.scopeProfile} · ${copy.config.readOnly})`)
-    expect(rendered(harness.panel)).toContain(copy.config.on)
+    expect(rendered(harness.panel)).toContain(`(${copy.config.scopeProfile})`)
+    expect(rendered(harness.panel)).toContain('[x] On')
   })
 
   it('renders a bare row without markers', () => {
@@ -756,11 +779,11 @@ describe('ConfigPanel rendering', () => {
         { id: 'open', section: 'model', label: 'Open', value: '', scope: undefined, readOnly: false, activate: () => {} },
         {
           id: 'on', section: 'model', label: 'On toggle', value: copy.config.on, scope: undefined,
-          readOnly: false, activate: () => {},
+          readOnly: false, toggle: true, activate: () => {},
         },
         {
           id: 'off', section: 'model', label: 'Off toggle', value: copy.config.off, scope: undefined,
-          readOnly: false, activate: () => {},
+          readOnly: false, toggle: true, activate: () => {},
         },
         { id: 'read', section: 'model', label: 'Read only', value: copy.config.on, scope: undefined, readOnly: true },
       ],
@@ -1032,6 +1055,62 @@ describe('ConfigPanel activation results', () => {
     await settle()
     expect(rendered(panel)).toContain('[x] On')
     expect(rendered(panel)).not.toContain(copy.config.restartMarker)
+  })
+
+  it('edits display toggles, cycles, and prompted values', async () => {
+    const { rows, calls } = await loadRows({ display: { ...DISPLAY, color: true, animation: false, locale: 'auto', busyEnter: 'queue' } })
+    const harness = panelFor({ rows })
+
+    focusDisplayRow(harness.panel, 'display.color')
+    harness.panel.handleInput(ENTER)
+    await settle()
+    expect(calls).toEqual(['setDisplay:color:off'])
+    expect(rendered(harness.panel)).toContain('[ ] Off')
+
+    focusDisplayRow(harness.panel, 'display.locale')
+    harness.panel.handleInput(ENTER)
+    await settle()
+    expect(calls[1]).toBe('setDisplay:locale:en')
+    expect(rendered(harness.panel)).toContain('en')
+
+    focusDisplayRow(harness.panel, 'display.previewLines')
+    harness.panel.handleInput(ENTER)
+    expect(rendered(harness.panel)).toContain(copy.config.editHint)
+    harness.panel.handleInput('\t')
+    harness.panel.handleInput(ESCAPE)
+    expect(rendered(harness.panel)).not.toContain(copy.config.editHint)
+    harness.panel.handleInput(ENTER)
+    for (const character of '\x7f\x7f12') harness.panel.handleInput(character)
+    harness.panel.handleInput(ENTER)
+    await settle()
+    expect(calls[2]).toBe('setDisplay:previewLines:12')
+    expect(rendered(harness.panel)).toContain('12')
+
+    focusDisplayRow(harness.panel, 'display.screen')
+    harness.panel.handleInput(ENTER)
+    expect(rendered(harness.panel)).toContain(copy.config.rowReadOnly)
+  })
+
+  it('reverts a rejected display update and repaints', async () => {
+    let changed = 0
+    const { rows, calls } = await loadRows({
+      display: { ...DISPLAY, color: true },
+      actions: { setDisplay: () => ({ failed: true, notice: 'rejected' }) },
+    })
+    const harness = panelFor({
+      rows,
+      handlers: {
+        onChanged: () => { changed += 1 },
+      },
+    })
+
+    focusDisplayRow(harness.panel, 'display.color')
+    harness.panel.handleInput(ENTER)
+
+    await vi.waitFor(() => { expect(harness.notices).toEqual(['rejected']) })
+    expect(calls).toEqual([])
+    expect(rendered(harness.panel)).toContain('[x] On')
+    expect(changed).toBeGreaterThan(0)
   })
 
   it('reverts a rejected toggle to its saved value', async () => {

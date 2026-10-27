@@ -29,9 +29,9 @@ export interface TerminalTranscriptDeps {
   /** Markdown theme. */
   readonly markdown: MarkdownTheme
   /** Collapsed tool-card body budget. */
-  readonly previewLines: number
+  previewLines: number
   /** Maximum blocks kept rendered. */
-  readonly windowBlocks: number
+  windowBlocks: number
   /** Ask the renderer for a frame. */
   readonly requestRender: () => void
   /**
@@ -129,6 +129,32 @@ export class TerminalTranscript {
     this.pendingTools.clear()
     this.turnStart = undefined
     this.component.clear()
+    this.deps.requestRender()
+  }
+
+  /**
+   * Update the collapsed tool-card body budget and repaint existing cards.
+   * @param lines - new body line budget.
+   */
+  setPreviewLines(lines: number): void {
+    this.deps.previewLines = lines
+    this.context.previewLines = lines
+    for (const block of this.blocks) block.invalidate()
+    this.deps.requestRender()
+  }
+
+  /**
+   * Update the maximum block window and trim the active view.
+   * @param blocks - new maximum rendered block count.
+   */
+  setWindowBlocks(blocks: number): void {
+    this.deps.windowBlocks = blocks
+    while (this.blocks.length - this.windowStart > blocks) {
+      const removed = this.blocks[this.windowStart]
+      /* v8 ignore next -- the loop condition proves the indexed block exists */
+      if (removed !== undefined) this.component.removeChild(removed)
+      this.windowStart += 1
+    }
     this.deps.requestRender()
   }
 

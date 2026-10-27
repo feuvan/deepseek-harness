@@ -56,6 +56,10 @@ export interface ConfigRow {
   readonly marker?: string
   /** Whether the value is an On/Off toggle that flips before the action settles. */
   readonly toggle?: boolean
+  /** Ordered values the row cycles through; mutually exclusive with toggle and prompt. */
+  readonly cycle?: readonly string[]
+  /** Whether activation opens an inline text prompt for the value. */
+  readonly prompt?: boolean
   /** Action invoked by Enter; absent for read-only rows. */
   readonly activate?: (nextValue?: string) => ConfigActionOutcome
 }
@@ -73,7 +77,7 @@ export interface ConfigModelState {
 }
 
 /** Fields shown in the terminal-display section. */
-type DisplayField = 'color' | 'animation' | 'previewLines' | 'windowBlocks' | 'title' | 'locale' | 'busyEnter' | 'screen'
+export type DisplayField = 'color' | 'animation' | 'previewLines' | 'windowBlocks' | 'title' | 'locale' | 'busyEnter' | 'screen'
 
 /** The terminal display values the profile configuration owns. */
 export interface ConfigDisplayState {
@@ -170,6 +174,13 @@ export interface ConfigPanelActions {
    * @returns an optional result the panel reports.
    */
   toggleReasoning(): ConfigActionOutcome
+  /**
+   * Persist one terminal-display field through the active profile.
+   * @param field - terminal-ui configuration field.
+   * @param value - display value entered or selected by the user.
+   * @returns an optional result the panel reports.
+   */
+  setDisplay(field: DisplayField, value: string): ConfigActionOutcome
 }
 
 /** The values {@link loadConfigRows} reads. */
@@ -198,6 +209,8 @@ export interface ConfigPanelHandlers {
   readonly onNotice?: (message: string) => void
   /** Called when an action's change takes effect only after a restart. */
   readonly onRestartNotice: (message: string) => void
+  /** Called after an asynchronous action settles, so the panel repaints. */
+  readonly onChanged?: () => void
 }
 
 /** Constructor values for {@link ConfigPanel}. */
@@ -439,18 +452,52 @@ function displayRow(field: DisplayField, value: string): ConfigRow {
 /**
  * Rows for the terminal-display section.
  * @param deps - the values the loader reads.
- * @returns the read-only profile values followed by the in-session toggles.
+ * @returns editable profile values followed by the in-session toggles.
  */
 function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
   const display = deps.display
+  const action = (field: DisplayField) => (next = '') => deps.actions.setDisplay(field, next)
+  const bool = (field: 'color' | 'animation', enabled: boolean): ConfigRow => ({
+    id: `display.${field}`,
+    section: 'display',
+    label: field,
+    value: enabled ? copy.config.on : copy.config.off,
+    scope: 'profile',
+    readOnly: false,
+    description: copy.config.descriptions.display[field],
+    toggle: true,
+    activate: action(field),
+  })
+  const cycle = (field: 'locale' | 'busyEnter', value: string, values: readonly string[]): ConfigRow => ({
+    id: `display.${field}`,
+    section: 'display',
+    label: field,
+    value,
+    scope: 'profile',
+    readOnly: false,
+    description: copy.config.descriptions.display[field],
+    cycle: values,
+    activate: action(field),
+  })
+  const prompt = (field: 'previewLines' | 'windowBlocks' | 'title', value: string): ConfigRow => ({
+    id: `display.${field}`,
+    section: 'display',
+    label: field,
+    value,
+    scope: 'profile',
+    readOnly: false,
+    description: copy.config.descriptions.display[field],
+    prompt: true,
+    activate: action(field),
+  })
   return [
-    displayRow('color', display.color ? copy.config.on : copy.config.off),
-    displayRow('animation', display.animation ? copy.config.on : copy.config.off),
-    displayRow('previewLines', String(display.previewLines)),
-    displayRow('windowBlocks', String(display.windowBlocks)),
-    displayRow('title', display.title),
-    displayRow('locale', display.locale),
-    displayRow('busyEnter', display.busyEnter),
+    bool('color', display.color),
+    bool('animation', display.animation),
+    prompt('previewLines', String(display.previewLines)),
+    prompt('windowBlocks', String(display.windowBlocks)),
+    prompt('title', display.title),
+    cycle('locale', display.locale, ['auto', 'en', 'zh']),
+    cycle('busyEnter', display.busyEnter, ['queue', 'steer']),
     displayRow('screen', display.screen),
     {
       id: 'display.cards',
@@ -515,6 +562,7 @@ export class ConfigPanel implements Component {
   private busy = false
   private searching = false
   private query = ''
+  private editing: { readonly row: ConfigRow; buffer: string } | undefined
   private message: string | undefined
 
   /**
@@ -534,6 +582,10 @@ export class ConfigPanel implements Component {
    */
   handleInput(data: string): void {
     if (this.busy) return
+    if (this.editing !== undefined) {
+      this.handleEditing(data)
+      return
+    }
     if (this.searching) {
       this.message = undefined
       if (matchesKey(data, 'escape')) {
@@ -625,6 +677,12 @@ export class ConfigPanel implements Component {
       ...this.bodyLines(this.activeRows(), width),
     ]
     if (this.message !== undefined) lines.push(this.palette.warning(truncateToWidth(`  ${this.message}`, width)))
+    if (this.editing !== undefined) {
+      lines.push(this.palette.accent(truncateToWidth(
+        `  ${copy.config.editPrompt(displayText(this.editing.row.label), displayText(this.editing.buffer))}`,
+        width,
+      )))
+    }
     lines.push(this.palette.dim(truncateToWidth(`  ${this.footer()}`, width)))
     return lines
   }
@@ -651,6 +709,7 @@ export class ConfigPanel implements Component {
    * @returns the footer text.
    */
   private footer(): string {
+    if (this.editing !== undefined) return copy.config.editHint
     if (this.searching) return `/${this.query}  ${copy.config.searchHint}`
     const row = this.activeRows()[this.cursor]
     const action = row?.activate === undefined ? copy.config.footerReadOnly : copy.config.footerAction
@@ -829,9 +888,24 @@ export class ConfigPanel implements Component {
       this.message = row.unavailable === true ? copy.config.rowUnavailable : copy.config.rowReadOnly
       return
     }
-    const toggle = this.isToggle(row)
-    const nextValue = toggle ? this.nextToggleValue(row) : ''
-    if (toggle) {
+    if (row.prompt === true) {
+      this.editing = { row, buffer: this.valueOf(row) }
+      this.message = undefined
+      return
+    }
+    const optimistic = row.toggle === true || row.cycle !== undefined
+    const nextValue = row.cycle === undefined ? this.nextToggleValue(row) : this.nextCycleValue(row, row.cycle)
+    this.executeRow(row, optimistic ? nextValue : undefined, optimistic)
+  }
+
+  /**
+   * Run one row action, tracking an optimistic value when the row has one.
+   * @param row - activated row.
+   * @param nextValue - value passed to the action.
+   * @param optimistic - whether the displayed value changes before settlement.
+   */
+  private executeRow(row: ConfigRow, nextValue: string | undefined, optimistic: boolean): void {
+    if (optimistic && nextValue !== undefined) {
       this.saving.add(row.id)
       this.values.set(row.id, nextValue)
     }
@@ -839,20 +913,48 @@ export class ConfigPanel implements Component {
     this.handlers.onActivate?.(row)
     let outcome: ConfigActionOutcome
     try {
-      outcome = row.activate(toggle ? nextValue : undefined)
+      outcome = row.activate?.(nextValue)
     } catch (error: unknown) {
-      this.restoreToggle(row, toggle)
+      this.restoreOptimistic(row, optimistic)
       this.busy = false
       this.handlers.onNotice?.(copy.config.writeFailed(errorMessage(error)))
+      this.handlers.onChanged?.()
       return
     }
     void Promise.resolve(outcome).then(
-      (result) => { this.report(result, row, toggle, nextValue) },
+      (result) => { this.report(result, row, optimistic, nextValue ?? '') },
       (error: unknown) => {
-        this.restoreToggle(row, toggle)
+        this.restoreOptimistic(row, optimistic)
         this.handlers.onNotice?.(copy.config.writeFailed(errorMessage(error)))
       },
-    ).finally(() => { this.busy = false })
+    ).finally(() => {
+      this.busy = false
+      this.handlers.onChanged?.()
+    })
+  }
+
+  /**
+   * Handle one sequence while the inline value prompt owns input.
+   * @param data - raw terminal input.
+   */
+  private handleEditing(data: string): void {
+    const editing = this.editing
+    /* v8 ignore next -- handleInput dispatches only while editing is set */
+    if (editing === undefined) return
+    if (matchesKey(data, 'escape')) {
+      this.editing = undefined
+      return
+    }
+    if (matchesKey(data, 'enter')) {
+      this.editing = undefined
+      this.executeRow(editing.row, editing.buffer, true)
+      return
+    }
+    if (matchesKey(data, 'backspace')) {
+      editing.buffer = editing.buffer.slice(0, -1)
+      return
+    }
+    if (data.length === 1 && data >= ' ' && data !== '\x7f') editing.buffer += data
   }
 
   /**
@@ -861,8 +963,7 @@ export class ConfigPanel implements Component {
    * @returns whether the row is a toggle.
    */
   private isToggle(row: ConfigRow): boolean {
-    return row.activate !== undefined
-      && (row.toggle === true || row.value === copy.config.on || row.value === copy.config.off)
+    return row.activate !== undefined && row.toggle === true
   }
 
   /**
@@ -875,7 +976,20 @@ export class ConfigPanel implements Component {
   }
 
   /**
-   * Read the displayed value, preferring an optimistic toggle update.
+   * Compute the next value for one cycling row.
+   * @param row - cycling row.
+   * @param values - ordered values the row cycles through.
+   * @returns the next configured value.
+   */
+  private nextCycleValue(row: ConfigRow, values: readonly string[]): string {
+    const current = this.valueOf(row)
+    const index = values.indexOf(current)
+    /* v8 ignore next -- display cycles are non-empty by construction */
+    return values[(index + 1) % values.length] ?? current
+  }
+
+  /**
+   * Read the displayed value, preferring an optimistic update.
    * @param row - configuration row.
    * @returns the current display value.
    */
@@ -884,35 +998,35 @@ export class ConfigPanel implements Component {
   }
 
   /**
-   * Drop an optimistic toggle update and restore the last saved value.
-   * @param row - toggle row.
-   * @param toggle - whether the row is a toggle.
+   * Drop an optimistic update and restore the last saved value.
+   * @param row - row with an optimistic value.
+   * @param optimistic - whether the row has an optimistic value.
    */
-  private restoreToggle(row: ConfigRow, toggle: boolean): void {
+  private restoreOptimistic(row: ConfigRow, optimistic: boolean): void {
     this.saving.delete(row.id)
-    if (toggle) this.values.delete(row.id)
+    if (optimistic) this.values.delete(row.id)
   }
 
   /**
    * Surface one settled action result.
    * @param result - the result, or void for a silent action.
    * @param row - activated row.
-   * @param toggle - whether the row is an On/Off toggle.
-   * @param nextValue - toggle value passed to the action.
+   * @param optimistic - whether the row has an optimistic value.
+   * @param nextValue - value passed to the action.
    */
-  private report(result: ConfigActionResult | void, row: ConfigRow, toggle: boolean, nextValue: string): void {
+  private report(result: ConfigActionResult | void, row: ConfigRow, optimistic: boolean, nextValue: string): void {
     this.saving.delete(row.id)
     if (result === undefined) {
-      if (toggle) {
-        this.commitToggle(row, nextValue)
+      if (optimistic) {
+        this.commitValue(row, nextValue)
         this.restartMarkers.delete(row.id)
       }
       return
     }
     if (result.failed === true) {
-      this.restoreToggle(row, toggle)
-    } else if (toggle) {
-      this.commitToggle(row, nextValue)
+      this.restoreOptimistic(row, optimistic)
+    } else if (optimistic) {
+      this.commitValue(row, nextValue)
       if (result.restartRequired !== true) this.restartMarkers.delete(row.id)
     }
     if (result.notice !== undefined) this.handlers.onNotice?.(result.notice)
@@ -923,11 +1037,11 @@ export class ConfigPanel implements Component {
   }
 
   /**
-   * Mark the optimistic toggle value as saved.
-   * @param row - toggle row.
+   * Mark an optimistic value as saved.
+   * @param row - row with an optimistic value.
    * @param value - value accepted by the action.
    */
-  private commitToggle(row: ConfigRow, value: string): void {
+  private commitValue(row: ConfigRow, value: string): void {
     this.saved.set(row.id, value)
     this.values.delete(row.id)
   }

@@ -12,8 +12,10 @@
  * color is disabled.
  */
 export interface Palette {
-  /** Whether styling is enabled; a disabled palette returns every input unchanged. */
+  /** Whether styling is currently enabled; a disabled palette returns every input unchanged. */
   readonly color: boolean
+  /** Enable or disable styling for subsequent renders. */
+  setColor(color: boolean): void
   /** Terminal default foreground; the identity style. */
   text(text: string): string
   /** Recessed secondary text. */
@@ -84,11 +86,13 @@ const SGR = {
  * @returns the style table every terminal component uses.
  */
 export function createPalette(color: boolean): Palette {
+  let enabled = color
   const wrap = (sgr: Sgr) => (text: string): string =>
-    color ? `\u001b[${sgr.open}m${text}\u001b[${sgr.close}m` : text
+    enabled ? `\u001b[${sgr.open}m${text}\u001b[${sgr.close}m` : text
   const identity = (text: string): string => text
   return {
-    color,
+    get color(): boolean { return enabled },
+    setColor(next: boolean): void { enabled = next },
     text: identity,
     dim: wrap(SGR.dim),
     bold: wrap(SGR.bold),

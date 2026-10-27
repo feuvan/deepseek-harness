@@ -101,7 +101,7 @@ describe('dsh-tui-app bundle', () => {
   })
 
   it('runs the terminal-specific composition choices over base', () => {
-    expect(patches.find(patch => patch.id === 'hmr')).toMatchObject({ disabled: true })
+    expect(patches.find(patch => patch.id === 'hmr')).toBeUndefined()
     expect(patches.find(patch => patch.id === 'system-prompt')?.config?.['personaPrefix'])
       .toBe('You are a coding agent powered by the {{model}} model.')
   })
