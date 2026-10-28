@@ -24,7 +24,7 @@ The first launch initializes the `tui` profile under your Harness home, exactly 
 
 ### Model credentials
 
-The terminal uses the composed `dsh-base` credential chain: the launch environment, then `.env` in the directory you started from, then `.env` under the Harness home. A key or sign-in saved from the Web UI is stored in the managed credential store, which the base composition also reads, so an already configured model usually works unchanged. A fresh terminal with no usable credential opens first-run setup: sign in with a DeepSeek account through the browser, paste an API key, or skip and use `/login` later.
+The terminal uses the composed `dsh-base` credential chain: the launch environment, then `.env` in the directory you started from, then `.env` under the Harness home. A key or sign-in saved from the Web UI is stored in the managed credential store, which the base composition also reads, so an already configured model usually works unchanged. A fresh terminal with no usable credential opens first-run setup: sign in with a DeepSeek account through the browser, paste an API key, or skip and use `/login` later. `/account` shows the signed-in profile, recharge and bonus wallets, usage and top-up links, and offers refresh, re-login, and confirmed sign-out.
 
 ## What you see
 

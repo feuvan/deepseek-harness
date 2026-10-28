@@ -28,7 +28,6 @@
     "./presets/*.patch.yml": "./presets/*.patch.yml"
   },
   "files": [
-    "locale/*.json",
     "lib/index.js",
     "lib/startup.js",
     "cordis.patch.yml",

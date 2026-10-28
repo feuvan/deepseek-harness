@@ -12,7 +12,7 @@
 import { spawn } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
-import type { AccountProfile, AccountView, SignInAttemptView, DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
+import type { AccountClientMetadata, AccountProfile, AccountView, SignInAttemptView, DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot'
@@ -64,6 +64,16 @@ export class AccountLoginError extends Error {
     this.name = 'AccountLoginError'
   }
 }
+
+/**
+ * Open one authorization URL with the platform's system browser.
+ * @param url - URL to hand to the platform opener.
+ */
+/* v8 ignore start -- launching a system browser is a platform side effect exercised outside unit tests */
+export function openBrowserUrl(url: string): void {
+  openExternalBrowser(url)
+}
+/* v8 ignore stop */
 
 /** Default browser opener for one platform. */
 /* v8 ignore start -- platform URL handlers are launched only on a real desktop; tests inject openBrowser */
@@ -118,6 +128,19 @@ async function wait(ms: number, signal: AbortSignal | undefined): Promise<void> 
   })
 }
 
+/**
+ * Build the account client identity used by browser sign-in and account queries.
+ * @param locale - active interface locale.
+ * @returns the provider-facing client metadata.
+ */
+export function accountClientMetadata(locale?: string): AccountClientMetadata {
+  return {
+    version: getDshRuntimeVersion(),
+    locale: locale ?? 'en-US',
+    timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
+  }
+}
+
 /** Read the profile without turning a profile-query failure into a failed sign-in. */
 async function readProfile(account: DeepSeekAccount, client: {
   readonly version: string
@@ -161,11 +184,7 @@ export async function signInWithAccount(ctx: Context, options: AccountLoginOptio
     }
     if (signal?.aborted === true) throw new AccountLoginError('cancelled', 'the DeepSeek account sign-in was cancelled')
     const origin = server.getOrigin()
-    const client = {
-      version: getDshRuntimeVersion(),
-      locale: options.locale ?? 'en-US',
-      timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
-    }
+    const client = accountClientMetadata(options.locale)
     let openedUrl: string | undefined
     options.onUpdate?.({ phase: 'starting' })
     await account.startSignIn(client, origin, 'web')

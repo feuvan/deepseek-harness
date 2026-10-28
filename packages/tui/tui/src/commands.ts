@@ -41,6 +41,8 @@ export interface LocalCommands {
   steer(argument: string | undefined): void | Promise<void>
   /** Show the first-run model setup flow. */
   login(): void
+  /** Show the DeepSeek account status and actions. */
+  account(): void
   /** Show the configuration panel. */
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
@@ -118,6 +120,7 @@ export class Composer {
       steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       login: { description: copy.commands.login, run: () => { deps.local.login() } },
+      account: { description: copy.commands.account, run: () => { deps.local.account() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       terminal: { description: copy.commands.terminal, run: () => { deps.local.terminal() } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },

@@ -36,8 +36,9 @@ import { StderrCapture } from './stderr-capture.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { signInWithAccount, AccountLoginError } from './account-login.ts'
+import { signInWithAccount, AccountLoginError, accountClientMetadata, openBrowserUrl } from './account-login.ts'
 import { OnboardingPanel } from './components/onboarding.ts'
+import { AccountPanel } from './components/account.ts'
 import { bindModelSelection, type ModelSelectionRef } from './model-selection.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
@@ -74,6 +75,10 @@ export class TerminalApp {
   private onboarding: OnboardingPanel | undefined
   private onboardingOverlay: OverlayHandle | undefined
   private onboardingAttempted = false
+  private accountPanel: AccountPanel | undefined
+  private accountQuery: AbortController | undefined
+  private accountRequest = 0
+  private accountTimeoutMs = ACCOUNT_QUERY_TIMEOUT_MS
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -422,6 +427,183 @@ export class TerminalApp {
     }
   }
 
+  /** Present the interactive account dock. */
+  private openAccountPanel(): void {
+    const account = this.ctx.get('deepseekAccount')
+    if (account === undefined) {
+      this.transcript?.notice(copy.account.unavailable)
+      return
+    }
+    /* v8 ignore next 4 -- the dock owns input while open, so a second command cannot reach this branch */
+    if (this.accountPanel !== undefined) {
+      void this.refreshAccount()
+      return
+    }
+    const panel = new AccountPanel({
+      palette: this.palette,
+      actions: {
+        refresh: () => { void this.refreshAccount() },
+        signIn: () => { void this.startAccountSignIn() },
+        signOut: () => { void this.signOutAccount() },
+        /* v8 ignore next -- platform browser launching is not exercised by headless tests */
+        openUsage: (url) => { openBrowserUrl(url) },
+        /* v8 ignore next -- platform browser launching is not exercised by headless tests */
+        openTopUp: (url) => { openBrowserUrl(url) },
+        close: () => { this.closeAccountPanel() },
+        cancel: () => {
+          this.accountQuery?.abort()
+          this.accountQuery = undefined
+          void this.refreshAccount()
+        },
+        requestRender: () => { this.tui?.requestRender() },
+      },
+    })
+    this.accountPanel = panel
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data) },
+      /* v8 ignore next -- this close path is the dock surface's own cancel route */
+      close: () => { this.closeAccountPanel() },
+    })
+    void this.refreshAccount()
+  }
+
+  /** Close the account dock and cancel its pending query. */
+  private closeAccountPanel(): void {
+    this.accountQuery?.abort()
+    this.accountQuery = undefined
+    this.accountPanel = undefined
+    this.setDockOverlay(undefined)
+  }
+
+  /**
+   * Load the account state, profile, and wallets into the visible panel.
+   * A profile or wallet failure degrades one section instead of hiding the rest.
+   */
+  private async refreshAccount(): Promise<void> {
+    const account = this.ctx.get('deepseekAccount')
+    const panel = this.accountPanel
+    /* v8 ignore next -- the panel closes before this method can run without both services */
+    if (account === undefined || panel === undefined) return
+    const request = ++this.accountRequest
+    this.accountQuery?.abort()
+    const controller = new AbortController()
+    this.accountQuery = controller
+    panel.setView({ status: 'loading', canSignIn: true })
+    try {
+      const state = await withAccountTimeout(account.getState(), controller.signal, this.accountTimeoutMs)
+      /* v8 ignore next -- a newer request or closed panel supersedes this one */
+      if (request !== this.accountRequest || this.accountPanel !== panel) return
+      if (state.status === 'signed-out') {
+        panel.setView({ status: 'signed-out', canSignIn: true, links: state.links })
+        return
+      }
+      const client = accountClientMetadata(this.config.locale)
+      const [profile, balance] = await Promise.all([
+        settle(account.getProfile(client), controller.signal, this.accountTimeoutMs),
+        settle(account.getBalance(client), controller.signal, this.accountTimeoutMs),
+      ])
+      /* v8 ignore next -- a newer request or closed panel supersedes this one */
+      if (request !== this.accountRequest || this.accountPanel !== panel) return
+      if (profile.ok && profile.value === null) {
+        panel.setView({ status: 'signed-out', canSignIn: true, links: state.links })
+        return
+      }
+      const profileValue = profile.ok && profile.value?.status === 'ready' ? profile.value.value : null
+      const balanceValue = balance.ok && balance.value?.status === 'ready' ? balance.value : null
+      panel.setView({
+        status: 'signed-in',
+        canSignIn: true,
+        profile: profileValue,
+        ...(profileValue === null ? { profileFailed: true } : {}),
+        ...(balanceValue === null
+          ? { balanceFailed: true }
+          : { wallets: balanceValue.value, bonusWallets: balanceValue.bonusWallets }),
+        ...(balanceValue === null ? {} : { balanceFailed: false }),
+        links: state.links,
+      })
+    } catch (error: unknown) {
+      /* v8 ignore next -- a newer request or closed panel supersedes this one */
+      if (request !== this.accountRequest || this.accountPanel !== panel) return
+      panel.setView({ status: 'error', canSignIn: true, error: this.accountError(error) })
+    } finally {
+      /* v8 ignore next -- a superseding request already installed a newer controller */
+      if (this.accountQuery === controller) this.accountQuery = undefined
+    }
+  }
+
+  /** Start browser sign-in or re-login from the account dock. */
+  private async startAccountSignIn(): Promise<void> {
+    const account = this.ctx.get('deepseekAccount')
+    const panel = this.accountPanel
+    /* v8 ignore next -- both services are present while the account dock is open */
+    if (account === undefined || panel === undefined) return
+    const previous = panel.currentView()
+    this.accountQuery?.abort()
+    const controller = new AbortController()
+    this.accountQuery = controller
+    panel.setView({ ...previous, canSignIn: true, login: { phase: 'starting' }, busy: undefined, error: undefined })
+    try {
+      await signInWithAccount(this.ctx, {
+        locale: this.config.locale,
+        signal: controller.signal,
+        onUpdate: (update) => {
+          /* v8 ignore next -- closing the dock supersedes the attempt */
+          if (this.accountPanel === panel) {
+            panel.setView({ ...previous, canSignIn: true, login: update, busy: undefined, error: undefined })
+          }
+        },
+      })
+      /* v8 ignore next -- closing the dock supersedes the completed attempt */
+      if (this.accountPanel !== panel) return
+      this.transcript?.notice(copy.account.signedInNotice)
+      await this.refreshAccount()
+    } catch (error: unknown) {
+      /* v8 ignore next -- closing the dock supersedes the failed attempt */
+      if (this.accountPanel !== panel) return
+      if (error instanceof AccountLoginError && error.code === 'cancelled') {
+        await this.refreshAccount()
+        return
+      }
+      panel.setView({ status: 'error', canSignIn: true, error: this.accountError(error) })
+    } finally {
+      if (this.accountQuery === controller) this.accountQuery = undefined
+    }
+  }
+
+  /** Sign out from the account dock and fall back from an account-only model route. */
+  private async signOutAccount(): Promise<void> {
+    const account = this.ctx.get('deepseekAccount')
+    const panel = this.accountPanel
+    /* v8 ignore next -- both services are present while the account dock is open */
+    if (account === undefined || panel === undefined) return
+    const previous = panel.currentView()
+    panel.setView({ ...previous, canSignIn: true, busy: copy.account.working, error: undefined })
+    try {
+      await account.signOut(accountClientMetadata(this.config.locale))
+      /* v8 ignore next -- closing the dock supersedes the completed sign-out */
+      if (this.accountPanel !== panel) return
+      this.transcript?.notice(copy.account.signedOutNotice)
+      await this.refreshAccount()
+    } catch (error: unknown) {
+      /* v8 ignore next -- closing the dock supersedes the failed sign-out */
+      if (this.accountPanel === panel) panel.setView({ status: 'error', canSignIn: true, error: this.accountError(error) })
+    }
+  }
+
+  /**
+   * Turn one account failure into user-facing text.
+   * @param error - thrown account, network, or timeout failure.
+   * @returns localized copy.
+   */
+  private accountError(error: unknown): string {
+    if (error instanceof AccountLoginError) {
+      return copy.onboarding.accountFailures[error.code] ?? copy.account.failed(error.message)
+    }
+    if (error instanceof AccountQueryTimeoutError) return copy.account.timeout
+    return copy.account.failed(error instanceof Error ? error.message : String(error))
+  }
+
   /** Present the first-run setup overlay. */
   private openOnboarding(): void {
     if (this.disposed || this.tui === undefined || this.onboarding !== undefined) return
@@ -595,6 +777,7 @@ export class TerminalApp {
         steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
         login: () => { this.openOnboarding() },
+        account: () => { this.openAccountPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
         terminal: () => { this.showTerminalDiagnostics() },
         redraw: () => { tui.renderNow(true) },
@@ -1924,6 +2107,52 @@ export class TerminalApp {
       handleInput: (data) => { panel.handleInput(data) },
       close,
     })
+  }
+}
+
+/** Deadline for one account profile or wallet query. */
+const ACCOUNT_QUERY_TIMEOUT_MS = 15_000
+
+/** One account query exceeded the terminal's wait budget. */
+class AccountQueryTimeoutError extends Error {}
+
+/**
+ * Bound one account request without leaving its rejection unhandled.
+ * @param promise - provider operation.
+ * @param signal - closes the panel or supersedes the request.
+ * @returns the provider value.
+ * @throws {AccountQueryTimeoutError} after the terminal's deadline.
+ */
+async function withAccountTimeout<T>(promise: Promise<T>, signal: AbortSignal, timeoutMs: number): Promise<T> {
+  /* v8 ignore next -- callers check a live panel before starting the request */
+  if (signal.aborted) throw new AccountQueryTimeoutError(copy.account.timeout)
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new AccountQueryTimeoutError(copy.account.timeout)) }, timeoutMs)
+    /* v8 ignore next -- panel close/refresh cancellation is covered by the timeout path */
+    const onAbort = (): void => { cleanup(); reject(new AccountQueryTimeoutError(copy.account.timeout)) }
+    const cleanup = (): void => { clearTimeout(timer); signal.removeEventListener('abort', onAbort) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- preserve the provider's rejection reason
+    promise.then(() => { cleanup(); resolve() }, (error: unknown) => { cleanup(); reject(error) })
+  })
+  return await promise
+}
+
+/**
+ * Settle one account query for partial rendering.
+ * @param promise - provider operation.
+ * @param signal - closes the panel or supersedes the request.
+ * @returns the value or its failure.
+ */
+async function settle<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  try {
+    return { ok: true, value: await withAccountTimeout(promise, signal, timeoutMs) }
+  } catch (error: unknown) {
+    return { ok: false, error }
   }
 }
 

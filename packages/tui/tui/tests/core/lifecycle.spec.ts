@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import type { MockInstance } from 'vitest'
+import type { Mock, MockInstance } from 'vitest'
 import type { Component } from '@earendil-works/pi-tui'
 import type { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
 import { CommandId } from '@deepseek-ai/dsh-commands'
@@ -726,6 +726,256 @@ describe('TerminalApp first-run configured provider', () => {
     await harness.awaitStarted()
     await vi.waitFor(() => { expect(Reflect.get(harness.app, 'onboardingAttempted')).toBe(true) })
     expect(Reflect.get(harness.app, 'onboarding')).toBeUndefined()
+  })
+})
+
+describe('TerminalApp /account', () => {
+  const profile = { id: null, name: 'Account User', contact: 'a***@example.com' }
+  const links = { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' }
+  const readyProfile = { status: 'ready' as const, value: profile }
+  const readyBalance = { status: 'ready' as const, value: [{ currency: 'CNY' as const, balance: '12.50' }], bonusWallets: [] }
+  const signedInState = { status: 'credential-stored' as const, attempt: null, links }
+  const signedOutState = { status: 'signed-out' as const, attempt: null, links }
+
+  function accountDouble(initial: boolean): {
+    stored: { value: boolean }
+    signOut: Mock<() => Promise<void>>
+    startSignIn: Mock<() => Promise<typeof signedInState | typeof signedOutState>>
+    getState: Mock<() => Promise<typeof signedInState | typeof signedOutState>>
+    getProfile: Mock<() => Promise<typeof readyProfile | null>>
+    getBalance: Mock<() => Promise<typeof readyBalance | null>>
+  } {
+    const stored = { value: initial }
+    return {
+      stored,
+      signOut: vi.fn(async () => { stored.value = false }),
+      startSignIn: vi.fn(async () => { stored.value = true; return signedInState }),
+      getState: vi.fn(async () => (stored.value ? signedInState : signedOutState)),
+      getProfile: vi.fn(async () => readyProfile),
+      getBalance: vi.fn(async () => readyBalance),
+    }
+  }
+
+  it('shows account identity and wallet balances', async () => {
+    const account = accountDouble(true)
+    const harness = await lifecycleHarness({ services: { deepseekAccount: account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.title)
+    await waitForDock(harness, 'Account User')
+    const text = dockText(harness.app)
+    expect(text).toContain('CNY 12.50')
+    expect(text).toContain(copy.account.signOut)
+  })
+
+  it('starts sign-in from the signed-out account dock', async () => {
+    const account = accountDouble(false)
+    const harness = await lifecycleHarness({
+      services: { deepseekAccount: account, webServer: { getOrigin: () => 'http://127.0.0.1:4321' } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.signedOut)
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, 'Account User')
+    expect(account.startSignIn).toHaveBeenCalledOnce()
+  })
+
+  it('signs out after confirmation', async () => {
+    const account = accountDouble(true)
+    const harness = await lifecycleHarness({ services: { deepseekAccount: account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, 'Account User')
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, copy.account.confirmSignOut)
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, copy.account.signedOut)
+
+    expect(account.signOut).toHaveBeenCalledOnce()
+    expect(harness.transcriptText()).toContain(copy.account.signedOutNotice)
+  })
+
+  it('reports and retries an account query failure', async () => {
+    const account = accountDouble(true)
+    let offline = false
+    account.getState.mockImplementation(() => offline
+      ? Promise.reject(new Error('account offline'))
+      : Promise.resolve(signedInState))
+    const harness = await lifecycleHarness({ services: { deepseekAccount: account } })
+    harness.start()
+    await harness.awaitStarted()
+    offline = true
+    await submitLine(harness, '/account')
+    await waitForDock(harness, 'account offline')
+    offline = false
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, 'Account User')
+  })
+
+  it('times out an account query and retries it', async () => {
+    const account = accountDouble(true)
+    let pending = true
+    account.getState.mockImplementation(() => pending
+      ? new Promise(() => {})
+      : Promise.resolve(signedInState))
+    const harness = await lifecycleHarness({ services: { deepseekAccount: account } })
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'accountTimeoutMs', 5)
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.timeout)
+    pending = false
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, 'Account User')
+  })
+
+  it('closes the account dock and reports an unavailable service', async () => {
+    const first = await lifecycleHarness({ services: { deepseekAccount: accountDouble(true) } })
+    first.start()
+    await first.awaitStarted()
+    await submitLine(first, '/account')
+    await waitForDock(first, copy.account.title)
+    first.terminal.headless.press('\u001b')
+    await vi.waitFor(() => { expect(dockText(first.app)).not.toContain(copy.account.title) })
+
+    const second = await lifecycleHarness()
+    second.start()
+    await second.awaitStarted()
+    await submitLine(second, '/account')
+    await vi.waitFor(() => { expect(second.transcriptText()).toContain(copy.account.unavailable) })
+  })
+})
+
+describe('TerminalApp /account edge paths', () => {
+  const profile = { id: null, name: 'Edge User', contact: null }
+  const links = { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' }
+  const signedIn = { status: 'credential-stored' as const, attempt: null, links }
+  const signedOut = { status: 'signed-out' as const, attempt: null, links }
+  const ready = { status: 'ready' as const, value: profile }
+  const balance = { status: 'ready' as const, value: [], bonusWallets: [] }
+
+  interface AccountMock {
+    readonly startSignIn: Mock<() => Promise<typeof signedIn | typeof signedOut>>
+    readonly signOut: Mock<() => Promise<void>>
+    readonly getState: Mock<() => Promise<typeof signedIn | typeof signedOut>>
+    readonly getProfile: Mock<() => Promise<typeof ready | null>>
+    readonly getBalance: Mock<() => Promise<typeof bindBalance | null>>
+  }
+  const bindBalance = balance
+
+  function account(): { stored: { value: boolean }; account: AccountMock } {
+    const stored = { value: true }
+    return {
+      stored,
+      account: {
+        startSignIn: vi.fn(async () => signedIn),
+        signOut: vi.fn(async () => { stored.value = false }),
+        getState: vi.fn(async () => (stored.value ? signedIn : signedOut)),
+        getProfile: vi.fn(async () => ready),
+        getBalance: vi.fn(async () => bindBalance),
+      },
+    }
+  }
+
+  it('refreshes an already-open account dock', async () => {
+    const fixture = account()
+    const harness = await lifecycleHarness({ services: { deepseekAccount: fixture.account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, 'Edge User')
+    await submitLine(harness, '/account')
+    await waitForDock(harness, 'Edge User')
+    expect(fixture.account.getState).toHaveBeenCalled()
+  })
+
+  it('treats a null profile as signed out', async () => {
+    const fixture = account()
+    fixture.account.getProfile.mockResolvedValue(null)
+    const harness = await lifecycleHarness({ services: { deepseekAccount: fixture.account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.signedOut)
+  })
+
+  it('shows partial profile and balance failures', async () => {
+    const fixture = account()
+    fixture.account.getProfile.mockRejectedValue(new Error('profile query failed'))
+    fixture.account.getBalance.mockRejectedValue(new Error('balance query failed'))
+    const harness = await lifecycleHarness({ services: { deepseekAccount: fixture.account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.profileUnavailable)
+    expect(dockText(harness.app)).toContain(copy.account.balanceUnavailable)
+  })
+
+  it('cancels a pending account login', async () => {
+    const fixture = account()
+    fixture.stored.value = false
+    fixture.account.startSignIn.mockResolvedValue(signedOut)
+    const harness = await lifecycleHarness({
+      services: { deepseekAccount: fixture.account, webServer: { getOrigin: () => 'http://127.0.0.1:4321' } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.signedOut)
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, copy.account.loginWaiting)
+    harness.terminal.headless.press('\u001b')
+    await waitForDock(harness, copy.account.signedOut)
+    expect(fixture.account.startSignIn).toHaveBeenCalledOnce()
+  })
+
+  it('reports account login failures and retries', async () => {
+    const fixture = account()
+    fixture.stored.value = false
+    fixture.account.startSignIn.mockRejectedValueOnce(new AccountLoginError('network', 'network down'))
+    const harness = await lifecycleHarness({
+      services: { deepseekAccount: fixture.account, webServer: { getOrigin: () => 'http://127.0.0.1:4321' } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, copy.account.signedOut)
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, copy.onboarding.accountFailures.network!)
+  })
+
+  it('reports a sign-out failure', async () => {
+    const fixture = account()
+    fixture.account.signOut.mockRejectedValueOnce(new Error('sign out failed'))
+    const harness = await lifecycleHarness({ services: { deepseekAccount: fixture.account } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/account')
+    await waitForDock(harness, 'Edge User')
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\r')
+    harness.terminal.headless.press('\r')
+    await waitForDock(harness, 'sign out failed')
+  })
+})
+
+describe('TerminalApp account error copy', () => {
+  it('maps account, timeout, Error, and non-Error failures', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const accountError = (Reflect.get(harness.app, 'accountError') as (error: unknown) => string).bind(harness.app)
+    expect(accountError(new AccountLoginError('network', 'network'))).toBe(copy.onboarding.accountFailures.network)
+    expect(accountError(new AccountLoginError('weird' as never, 'unknown'))).toContain('unknown')
+    expect(accountError(new Error('plain'))).toContain('plain')
+    expect(accountError('string failure')).toContain('string failure')
   })
 })
 

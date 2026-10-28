@@ -267,6 +267,7 @@ const en = {
     steer: 'Steer a message into the running turn, or steer all queued messages',
     config: 'Show and change the configuration',
     login: 'Sign in or configure a model',
+    account: 'Show DeepSeek account status',
     preset: 'Show or switch the agent preset',
     terminal: 'Show terminal, input, and rendering diagnostics',
     /** The Agent is not live yet. */
@@ -564,6 +565,73 @@ const en = {
     /** Hint shown after a recoverable failure. */
     retryHint: 'Enter retry · Esc back',
   },
+  /** DeepSeek account status and actions. */
+  account: {
+    /** Dock heading. */
+    title: 'DeepSeek account',
+    /** Signed-in status. */
+    signedIn: (name: string): string => `Signed in as ${name}`,
+    /** Unknown display-name status. */
+    signedInUnknown: 'Signed in',
+    /** Signed-out status. */
+    signedOut: 'Not signed in',
+    /** Loading status. */
+    loading: 'Loading account…',
+    /** Profile label. */
+    profileLabel: 'Profile',
+    /** Contact label. */
+    contactLabel: 'Contact',
+    /** Balance label. */
+    balanceLabel: 'Balance',
+    /** Bonus label. */
+    bonusLabel: 'Bonus',
+    /** Unavailable profile value. */
+    profileUnavailable: 'Profile unavailable',
+    /** Unavailable balance value. */
+    balanceUnavailable: 'Balance unavailable',
+    /** Account service missing. */
+    unavailable: 'DeepSeek account is not composed in this terminal.',
+    /** Sign-in action. */
+    signIn: 'Sign in with DeepSeek',
+    /** Re-login action. */
+    reLogin: 'Sign in again',
+    /** Sign-out action. */
+    signOut: 'Sign out',
+    /** Refresh action. */
+    refresh: 'Refresh',
+    /** Retry action after a query failure. */
+    retry: 'Retry',
+    /** Open the usage page. */
+    usage: 'Open usage page',
+    /** Open the top-up page. */
+    topUp: 'Open top-up page',
+    /** Close action. */
+    close: 'Close',
+    /** Sign-out confirmation question. */
+    confirmSignOut: 'Sign out of this DeepSeek account?',
+    /** Confirmation yes. */
+    confirmYes: 'Sign out',
+    /** Confirmation no. */
+    confirmNo: 'Cancel',
+    /** Successful sign-out notice. */
+    signedOutNotice: 'Signed out of DeepSeek.',
+    /** Successful sign-in notice. */
+    signedInNotice: 'Signed in to DeepSeek.',
+    /** Query failure. */
+    failed: (message: string): string => `Account request failed: ${message}`,
+    /** Query timeout. */
+    timeout: 'The account service did not respond in time. Try again.',
+    /** Waiting for browser approval. */
+    loginWaiting: 'Waiting for browser approval…',
+    /** Browser URL fallback. */
+    loginUrl: 'If the browser did not open, visit this URL:',
+    /** Login cancellation hint. */
+    loginCancel: 'Esc cancels sign-in',
+    /** Busy action label. */
+    working: 'Working…',
+    /** Action hint. */
+    hint: '↑/↓ move · Enter select · Esc close',
+  },
   /** Terminal-level program status messages. */
   activity: {
     /** One-line status while a turn runs. */
@@ -714,6 +782,7 @@ export const chinese: Copy = {
     steer: '把消息插话到运行中的轮次；不带参数时插话全部排队消息',
     config: '显示并修改配置',
     login: '登录或配置模型',
+    account: '查看 DeepSeek 账号状态',
     preset: '显示或切换 agent preset',
     terminal: '显示终端、输入与渲染诊断信息',
     agentNotReady: 'Agent 尚未就绪。',
@@ -906,6 +975,41 @@ export const chinese: Copy = {
     },
     working: '处理中…',
     retryHint: 'Enter 重试 · Esc 返回',
+  },
+  /** DeepSeek account status and actions. */
+  account: {
+    title: 'DeepSeek 账号',
+    signedIn: name => `已登录：${name}`,
+    signedInUnknown: '已登录',
+    signedOut: '未登录',
+    loading: '正在加载账号…',
+    profileLabel: '资料',
+    contactLabel: '联系方式',
+    balanceLabel: '余额',
+    bonusLabel: '赠送余额',
+    profileUnavailable: '资料不可用',
+    balanceUnavailable: '余额不可用',
+    unavailable: '当前终端未组合 DeepSeek 账号服务。',
+    signIn: '使用 DeepSeek 账号登录',
+    reLogin: '重新登录',
+    signOut: '退出登录',
+    refresh: '刷新',
+    retry: '重试',
+    usage: '打开用量页面',
+    topUp: '打开充值页面',
+    close: '关闭',
+    confirmSignOut: '要退出当前 DeepSeek 账号吗？',
+    confirmYes: '退出登录',
+    confirmNo: '取消',
+    signedOutNotice: '已退出 DeepSeek 账号。',
+    signedInNotice: '已登录 DeepSeek。',
+    failed: message => `账号请求失败：${message}`,
+    timeout: '账号服务没有及时响应，请重试。',
+    loginWaiting: '等待浏览器授权…',
+    loginUrl: '如果浏览器没有自动打开，请访问：',
+    loginCancel: 'Esc 取消登录',
+    working: '处理中…',
+    hint: '↑/↓ 移动 · Enter 选择 · Esc 关闭',
   },
   /** 工具卡可见性文案。 */
   cards: {
