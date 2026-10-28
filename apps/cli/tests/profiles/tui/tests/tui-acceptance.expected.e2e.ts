@@ -134,6 +134,7 @@ describe('dsh --profile tui under a PTY', () => {
         DSH_AGENTS_HOME: join(root, 'agents'),
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
+        DEEPSEEK_API_KEY: 'acceptance-key',
         DSH_TUI_ACCEPTANCE_MARKER: markerPath,
         DSH_TUI_ACCEPTANCE_READY: readyPath,
       },
