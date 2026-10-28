@@ -9,6 +9,21 @@
   ],
   "references": [
     {
+      "path": "../../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../../packages/core/agent-default-model"
+    },
+    {
+      "path": "../../../packages/credentials/credentials"
+    },
+    {
+      "path": "../../../packages/credentials/deepseek-account"
+    },
+    {
+      "path": "../../../packages/host/webserver"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

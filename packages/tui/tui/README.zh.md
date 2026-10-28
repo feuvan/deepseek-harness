@@ -53,6 +53,10 @@ kind: "package-reference"
 
 默认 `screen: inline` 把界面渲染到终端普通屏幕与 scrollback：首帧底部对齐，后续 transcript 向下增长；由于应用不捕获鼠标，滚轮、scrollback 与文本选择都由终端负责。`screen: fullscreen` 使用 alternate screen，提供应用自管滚动视图、鼠标捕获、更早历史翻页、回到底部提示与 transcript 搜索。在 profile 的 `cordis.yml`/patch 中设置 `config.screen`；HMR 会重新挂载终端表面，`/terminal` 会显示当前模式。
 
+### 首次启动设置
+
+当 profile 既没有可用的 API Key 凭据，也没有已保存的账号模型路由时，终端会在正常界面之上打开全屏设置流程，提供 **使用 DeepSeek 账号登录**、**使用 API Key** 与 **暂时跳过**。账号登录复用 Desktop/Web 的账号 provider，只在登录尝试期间启动仅绑定 loopback 的 OAuth 回调服务，并把授权结果写入共享凭据库。API Key 输入会掩码显示，通过 `credentials.set` 保存而不是写入 profile patch，随后列出已发现的模型路由，选中的模型会同时成为当前 Session 选择和后续 Session 的默认值。已有可用模型路由，或组合中没有 credentials/account seam 时不会显示设置流程；之后可用 `/login` 重新打开。
+
 ### 交互界面
 
 当组合包挂载实验性 Agent Teams bundle 时，其 `@deepseek-ai/dsh-experimental-tui-agent-team` 插件通过 seam 在编辑器上方贡献一行 Team 状态（teammate 与共享任务计数），`/team` 在 dock 中打开只读的 Members / Shared tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭）。数据来自 Lead Session 的 `agentTeam` projection，并与 native 智能体团队面板展示同一套事实：成员运行/未运行/准备中/失败状态、模型、当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Enter 打开选中 teammate 的 transcript，或展开选中任务的完整描述；任务和成员变更仍由 Team 工具与会话完成。未启用 bundle 的 profile 既没有状态行也没有面板，`/team` 会说明如何启用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
@@ -84,7 +88,9 @@ kind: "package-reference"
 | 文件 | 角色 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：配置、TTY 校验、应用生命周期 |
-| [`src/lifecycle.ts`](src/lifecycle.ts) | Agent 等待、模型选择、历史回放、布局、输入、退出 |
+| [`src/lifecycle.ts`](src/lifecycle.ts) | Agent 等待、模型选择、历史回放、首次启动设置、布局、输入、退出 |
+| [`src/account-login.ts`](src/account-login.ts) | 带临时 loopback 回调服务的浏览器账号登录 |
+| [`src/components/onboarding.ts`](src/components/onboarding.ts) | 全屏账号/API Key/模型设置面板 |
 | [`src/transcript.ts`](src/transcript.ts) | 将持久事件与实时助手帧折叠为有序块 |
 | [`src/components/`](src/components) | 横幅、页脚、编辑器、transcript 块、对话框 |
 | [`src/interactions.ts`](src/interactions.ts) | 在底部 dock 中呈现的问题与审批应答者 |

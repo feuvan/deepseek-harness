@@ -16,7 +16,7 @@ import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepsee
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScrollView, VStack, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type TUI,
+  ScrollView, VStack, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type OverlayHandle, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
 import { copy, setCopyLocale } from './copy.ts'
@@ -33,6 +33,11 @@ import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer, type Int
 import { StatusModel } from './status.ts'
 import { resolveLocale } from './locale.ts'
 import { StderrCapture } from './stderr-capture.ts'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-deepseek-account'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { signInWithAccount, AccountLoginError } from './account-login.ts'
+import { OnboardingPanel } from './components/onboarding.ts'
 import { bindModelSelection, type ModelSelectionRef } from './model-selection.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
@@ -66,6 +71,9 @@ export class TerminalApp {
   private readonly ctx: Context
   private config: ResolvedConfig
   private stderrCapture: StderrCapture | undefined
+  private onboarding: OnboardingPanel | undefined
+  private onboardingOverlay: OverlayHandle | undefined
+  private onboardingAttempted = false
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -324,11 +332,12 @@ export class TerminalApp {
     await this.observeHistory(agent)
     if (this.isDisposed()) return
     this.started = true
-    this.stderrCapture = new StderrCapture(line => { this.transcript?.notice(line) })
+    this.stderrCapture = new StderrCapture((line) => { this.transcript?.notice(line) })
     this.stderrCapture.install()
     this.tui?.start()
     this.updateActivity()
     if (this.editor !== undefined) this.tui?.setFocus(this.editor)
+    void this.maybeOnboard()
   }
 
   /**
@@ -364,6 +373,150 @@ export class TerminalApp {
   private bindAgent(agent: Agent): void {
     this.agent = agent
     this.transcript?.setAgent(agent)
+  }
+
+  /**
+   * Open the first-run setup flow when no usable model credential exists.
+   *
+   * Compositions without the credential or account seam (including headless
+   * tests) never see the flow.
+   */
+  private async maybeOnboard(): Promise<void> {
+    if (this.onboardingAttempted || this.disposed) return
+    this.onboardingAttempted = true
+    const credentials = this.ctx.get('credentials')
+    const account = this.ctx.get('deepseekAccount')
+    if (credentials === undefined && account === undefined) return
+    if (account !== undefined) {
+      try {
+        if ((await account.getState()).status === 'credential-stored' && await this.selectStoredAccountModel()) return
+      } catch {
+        // The account view is advisory here; the flow reports the real failure.
+      }
+    }
+    if (credentials !== undefined) {
+      try {
+        if (await credentials.resolve(credentialRef('DEEPSEEK_API_KEY')) !== undefined) return
+      } catch {
+        // A broken credential file is a setup problem; offer the flow instead of exiting.
+      }
+    }
+    const catalog = await this.ensureCatalog()
+    if (catalog !== undefined && catalog.rows.length > 0) return
+    this.openOnboarding()
+  }
+
+  /**
+   * Select the stored account route when its model catalog is available.
+   * @returns whether one model was selected.
+   */
+  private async selectStoredAccountModel(): Promise<boolean> {
+    try {
+      const catalog = await loadTuiModelCatalog(this.ctx)
+      const row = preferredRows(catalog.rows, 'deepseek-account')[0]
+      if (row === undefined) return false
+      await this.applyOnboardingModel(row)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Present the first-run setup overlay. */
+  private openOnboarding(): void {
+    if (this.disposed || this.tui === undefined || this.onboarding !== undefined) return
+    const credentials = this.ctx.get('credentials')
+    const account = this.ctx.get('deepseekAccount')
+    const panel = new OnboardingPanel({
+      palette: this.palette,
+      /* v8 ignore next -- the TUI is created before any setup overlay opens */
+      rows: () => this.tui?.terminal.rows ?? 24,
+      actions: {
+        canSignIn: account !== undefined,
+        signIn: async (update, signal) => {
+          try {
+            const result = await signInWithAccount(this.ctx, { locale: this.config.locale, onUpdate: update, signal })
+            const rows = await this.loadOnboardingModels('deepseek-account')
+            if (result.profile?.name !== null && result.profile?.name !== undefined) {
+              this.transcript?.notice(copy.onboarding.accountSuccess(result.profile.name))
+            } else {
+              this.transcript?.notice(copy.onboarding.accountSuccessUnknown)
+            }
+            return rows
+          } catch (error: unknown) {
+            if (error instanceof AccountLoginError) throw error
+            throw new AccountLoginError('failed', error instanceof Error ? error.message : String(error))
+          }
+        },
+        saveApiKey: async (key) => {
+          if (credentials === undefined) throw new Error('the credential store is not composed')
+          await credentials.set(credentialRef('DEEPSEEK_API_KEY'), key)
+          return await this.loadOnboardingModels('deepseek-official')
+        },
+        chooseModel: async (row) => {
+          await this.applyOnboardingModel(row)
+          this.closeOnboarding()
+        },
+        skip: () => { this.closeOnboarding() },
+        requestRender: () => { this.tui?.requestRender() },
+      },
+    })
+    this.onboarding = panel
+    this.onboardingOverlay = this.tui.showOverlay(panel, {
+      width: '100%',
+      maxHeight: '100%',
+      anchor: 'center',
+      margin: 0,
+      nonCapturing: true,
+    })
+    this.tui.requestRender()
+  }
+
+  /**
+   * Load the models of one provider, preferring DeepSeek Flash.
+   * @param provider - provider route to list.
+   * @returns ordered rows; throws when the provider exposes none.
+   */
+  private async loadOnboardingModels(provider: string): Promise<readonly TuiModelRow[]> {
+    this.catalog = undefined
+    const catalog = await loadTuiModelCatalog(this.ctx)
+    this.catalog = catalog
+    const rows = preferredRows(catalog.rows, provider)
+    if (rows.length === 0) {
+      const failure = catalog.failures.find(item => item.provider === provider)
+      throw new Error(failure?.message ?? copy.onboarding.apiKeyInvalid)
+    }
+    return rows
+  }
+
+  /**
+   * Select one discovered model and persist it as the default for later sessions.
+   * @param row - chosen catalog row.
+   */
+  private async applyOnboardingModel(row: TuiModelRow): Promise<void> {
+    const selection: ModelSelection = {
+      provider: row.provider,
+      model: row.model,
+      ...(row.defaultEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(row.defaultEffort) }),
+    }
+    /* v8 ignore next -- setup runs only after run() installs the selection */
+    if (this.selection !== undefined) this.selection.current = selection
+    const defaults = this.ctx.get('agentDefaultModel')
+    if (defaults !== undefined) await defaults.saveSelection(selection)
+    this.catalog = undefined
+    this.footer?.invalidate()
+    this.transcript?.notice(copy.onboarding.connected(row.providerName, row.name))
+    this.tui?.requestRender()
+  }
+
+  /** Hide the setup overlay and restore input focus to the composer. */
+  private closeOnboarding(): void {
+    this.onboardingOverlay?.hide()
+    this.onboardingOverlay = undefined
+    this.onboarding = undefined
+    /* v8 ignore next -- startTerminal creates the editor before setup opens */
+    if (this.editor !== undefined) this.tui?.setFocus(this.editor)
+    this.tui?.requestRender()
   }
 
   /**
@@ -441,6 +594,7 @@ export class TerminalApp {
         queue: argument => this.queuePrompt(argument),
         steer: argument => this.steerPrompt(argument),
         config: () => { void this.openConfigPanel() },
+        login: () => { this.openOnboarding() },
         preset: (argument) => { void this.pickPreset(argument) },
         terminal: () => { this.showTerminalDiagnostics() },
         redraw: () => { tui.renderNow(true) },
@@ -501,6 +655,11 @@ export class TerminalApp {
       tui.addChild(anchor)
     }
     this.disposers.push(tui.addInputListener((data: string) => {
+      if (this.onboarding !== undefined) {
+        this.onboarding.handleInput(data)
+        this.tui?.requestRender()
+        return { consume: true }
+      }
       if (matchesKey(data, 'ctrl+c')) {
         this.handleInterrupt()
         return { consume: true }
@@ -1752,6 +1911,7 @@ export class TerminalApp {
       this.palette,
       (selection) => {
         /* v8 ignore next -- the selector opens only after run() installed the selection */
+        /* v8 ignore next -- setup runs only after run() installs the selection */
         if (this.selection !== undefined) this.selection.current = selection
         this.footer?.invalidate()
         this.tui?.requestRender()
@@ -1768,7 +1928,17 @@ export class TerminalApp {
 }
 
 /**
- * Label one effective effort for the transcript notice.
+ * Order one provider's rows with DeepSeek Flash first.
+ * @param rows - catalog rows.
+ * @param provider - provider route to keep.
+ * @returns the provider's rows, preferred model first.
+ */
+function preferredRows(rows: readonly TuiModelRow[], provider: string): readonly TuiModelRow[] {
+  return rows.filter(row => row.provider === provider)
+    .sort((left, right) => Number(right.model === 'deepseek-flash') - Number(left.model === 'deepseek-flash'))
+}
+
+/** Label one effective effort for the transcript notice.
  * @param selected - the explicitly selected effort, when any.
  * @param row - the current model row, when the catalog loaded.
  * @returns the selected level, the advertised default, or `default`.

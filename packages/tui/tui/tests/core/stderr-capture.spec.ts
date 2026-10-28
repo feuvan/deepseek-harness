@@ -10,14 +10,14 @@ describe('StderrCapture', () => {
     const original = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const lines: string[] = []
     const callbacks: (Error | null | undefined)[] = []
-    const capture = new StderrCapture(line => { lines.push(line) })
+    const capture = new StderrCapture((line) => { lines.push(line) })
 
     capture.install()
-    process.stderr.write('first\nsecond', 'utf8', error => { callbacks.push(error) })
-    process.stderr.write(new Uint8Array([10]), 'utf8', error => { callbacks.push(error) })
+    process.stderr.write('first\nsecond', 'utf8', (error) => { callbacks.push(error) })
+    process.stderr.write(new Uint8Array([10]), 'utf8', (error) => { callbacks.push(error) })
     process.stderr.write('third\n')
-    process.stderr.write('fourth\n', error => { callbacks.push(error) })
-    process.stderr.write(new Uint8Array([120, 10]), error => { callbacks.push(error) })
+    process.stderr.write('fourth\n', (error) => { callbacks.push(error) })
+    process.stderr.write(new Uint8Array([120, 10]), (error) => { callbacks.push(error) })
     expect(lines).toEqual(['first', 'second', 'third', 'fourth', 'x'])
     expect(callbacks).toEqual([undefined, undefined, undefined, undefined])
     expect(original).not.toHaveBeenCalled()
@@ -30,7 +30,7 @@ describe('StderrCapture', () => {
 
   it('truncates an unterminated overlong line and ignores blank lines', () => {
     const lines: string[] = []
-    const capture = new StderrCapture(line => { lines.push(line) })
+    const capture = new StderrCapture((line) => { lines.push(line) })
 
     capture.install()
     process.stderr.write('\n  \n')
@@ -51,6 +51,7 @@ describe('StderrCapture', () => {
     capture.uninstall()
     capture.uninstall()
 
+    // oxlint-disable-next-line typescript/unbound-method -- identity comparison of the restored stream method
     expect(process.stderr.write).toBe(original)
   })
 })

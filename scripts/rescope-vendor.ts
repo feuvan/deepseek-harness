@@ -131,6 +131,15 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/client/ui-workspace/tests/workspaces-service.client.spec.ts', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
+  // The terminal docs and tests name the built-in `cordis` agent preset, not a package.
+  { file: 'docs/upgrade-guide/v0.2.1-rc.2/tui-agent-presets/guide.md', upstream: ['cordis'] },
+  { file: 'docs/upgrade-guide/v0.2.1-rc.2/tui-agent-presets/guide.zh.md', upstream: ['cordis'] },
+  { file: 'docs/user/guide/terminal.md', upstream: ['cordis'] },
+  { file: 'docs/user/guide/terminal.zh.md', upstream: ['cordis'] },
+  { file: 'packages/bundle/tui-app/tests/tui-app.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/bundle/tui-app/tests/tui-session.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/tui/tui/tests/core/harness.ts', upstream: ['cordis'] },
+  { file: 'packages/tui/tui/tests/render/copy.spec.ts', upstream: ['cordis'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
   { file: 'scripts/gen-module-graph.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-doc-graphs.ts', upstream: ['cordis'] },
@@ -667,7 +676,8 @@ function main(): void {
   const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
   const reverse = args.includes('--reverse')
   const all = patterns(reverse)
-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
+  // The repository index is larger than Node's default 1 MiB spawn buffer.
+  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\0')
     .filter(file => file !== '' && !isRescopeExcluded(file))
 

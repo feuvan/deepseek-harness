@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tui-app",
   "description": "The dsh TUI bundle: terminal startup arguments and the single process-wide agent over dsh-base",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -28,6 +28,7 @@
     "./presets/*.patch.yml": "./presets/*.patch.yml"
   },
   "files": [
+    "locale/*.json",
     "lib/index.js",
     "lib/startup.js",
     "cordis.patch.yml",

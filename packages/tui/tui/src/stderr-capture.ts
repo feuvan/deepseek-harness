@@ -26,6 +26,7 @@ export class StderrCapture {
   /** Install the redirect; repeated calls are no-ops. */
   install(): void {
     if (this.original !== undefined) return
+    // oxlint-disable-next-line typescript/unbound-method -- restoring the exact stream method preserves its identity
     this.original = process.stderr.write
     const capture = (
       chunk: string | Uint8Array,
@@ -40,7 +41,7 @@ export class StderrCapture {
       done?.()
       return true
     }
-    process.stderr.write = capture as typeof process.stderr.write
+    process.stderr.write = capture
   }
 
   /** Restore the process stream and emit any unterminated final line. */

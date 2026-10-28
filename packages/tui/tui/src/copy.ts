@@ -266,6 +266,7 @@ const en = {
     queue: 'Queue a message, or edit the queue without an argument',
     steer: 'Steer a message into the running turn, or steer all queued messages',
     config: 'Show and change the configuration',
+    login: 'Sign in or configure a model',
     preset: 'Show or switch the agent preset',
     terminal: 'Show terminal, input, and rendering diagnostics',
     /** The Agent is not live yet. */
@@ -497,6 +498,72 @@ const en = {
     /** Scrolling hint for long dock panels. */
     scrollHint: '↑/↓ scroll · Esc or Enter closes',
   },
+  /** First-run model connection flow. */
+  onboarding: {
+    /** Headline above the setup choices. */
+    title: 'Connect a model',
+    /** Explanation of the first-run block. */
+    subtitle: 'The terminal needs a model route before it can answer. Nothing is sent until you choose one.',
+    /** Account sign-in choice. */
+    account: 'Sign in with DeepSeek',
+    /** Account sign-in detail. */
+    accountDescription: 'Use your DeepSeek account through the browser.',
+    /** API-key choice. */
+    apiKey: 'Use an API key',
+    /** API-key detail. */
+    apiKeyDescription: 'Paste a DeepSeek API key. It is stored in the shared credential file.',
+    /** Skip choice. */
+    skip: 'Skip for now',
+    /** Skip detail. */
+    skipDescription: 'Start the terminal without a model; use /login later.',
+    /** Choice hint. */
+    selectHint: '↑/↓ move · Enter select · Esc skip',
+    /** Account waiting heading. */
+    accountTitle: 'Sign in with DeepSeek',
+    /** Account waiting detail. */
+    accountWaiting: 'Opening your browser. Approve the sign-in to continue.',
+    /** Account URL fallback detail. */
+    accountUrl: 'If the browser does not open, visit this URL:',
+    /** Account cancelling hint. */
+    accountCancel: 'Esc cancels the sign-in',
+    /** Account success. */
+    accountSuccess: (name: string): string => `Signed in as ${name}.`,
+    /** Account success without a readable display name. */
+    accountSuccessUnknown: 'Signed in to DeepSeek.',
+    /** API-key heading. */
+    apiKeyTitle: 'Use an API key',
+    /** API-key input hint. */
+    apiKeyHint: 'Paste the key and press Enter. Esc goes back.',
+    /** API-key validation failure. */
+    apiKeyInvalid: 'No DeepSeek model was returned for that key. Check the key and try again.',
+    /** Model heading. */
+    modelTitle: 'Choose a model',
+    /** Model hint. */
+    modelHint: '↑/↓ move · Enter use · Esc back',
+    /** Default model choice label. */
+    modelDefault: 'default',
+    /** Setup completed notice. */
+    connected: (provider: string, model: string): string => `Connected ${provider}/${model}.`,
+    /** Setup skipped notice. */
+    skipped: 'Model setup skipped. Use /login when you are ready.',
+    /** Generic setup failure. */
+    failed: (message: string): string => `Setup failed: ${message}`,
+    /** Account sign-in failures keyed by stable provider code. */
+    accountFailures: {
+      unavailable: 'DeepSeek account sign-in is not available in this build.',
+      cancelled: 'Sign-in cancelled.',
+      expired: 'The sign-in request expired. Try again.',
+      failed: 'The sign-in failed. Try again.',
+      protocol: 'The account response was invalid. Try again.',
+      'no-response': 'The account service did not respond. Check your network and try again.',
+      network: 'The account service could not be reached. Check your network and try again.',
+      storage: 'The credential could not be stored. Check the Harness home permissions.',
+    } as Readonly<Record<string, string>>,
+    /** Hint shown while an async setup step runs. */
+    working: 'Working…',
+    /** Hint shown after a recoverable failure. */
+    retryHint: 'Enter retry · Esc back',
+  },
   /** Terminal-level program status messages. */
   activity: {
     /** One-line status while a turn runs. */
@@ -646,6 +713,7 @@ export const chinese: Copy = {
     queue: '排队一条消息；不带参数时编辑队列',
     steer: '把消息插话到运行中的轮次；不带参数时插话全部排队消息',
     config: '显示并修改配置',
+    login: '登录或配置模型',
     preset: '显示或切换 agent preset',
     terminal: '显示终端、输入与渲染诊断信息',
     agentNotReady: 'Agent 尚未就绪。',
@@ -799,6 +867,45 @@ export const chinese: Copy = {
     locked: '本会话已经开始，agent preset 不能再切换。',
     unavailable: '当前终端没有组装 agent preset。',
     failed: (message: string): string => `agent preset 未更改：${message}`,
+  },
+  /** First-run model connection flow. */
+  onboarding: {
+    title: '连接模型',
+    subtitle: '终端需要模型路由才能回答问题。选择之前不会发送任何内容。',
+    account: '使用 DeepSeek 账号登录',
+    accountDescription: '在浏览器中完成 DeepSeek 账号登录。',
+    apiKey: '使用 API Key',
+    apiKeyDescription: '粘贴 DeepSeek API Key，并保存到共享凭据文件。',
+    skip: '暂时跳过',
+    skipDescription: '不连接模型直接进入终端，之后可用 /login。',
+    selectHint: '↑/↓ 移动 · Enter 选择 · Esc 跳过',
+    accountTitle: '使用 DeepSeek 账号登录',
+    accountWaiting: '正在打开浏览器，请完成授权。',
+    accountUrl: '如果浏览器没有自动打开，请访问：',
+    accountCancel: 'Esc 取消登录',
+    accountSuccess: name => `已登录：${name}。`,
+    accountSuccessUnknown: '已登录 DeepSeek。',
+    apiKeyTitle: '使用 API Key',
+    apiKeyHint: '粘贴 Key 后按 Enter；Esc 返回。',
+    apiKeyInvalid: '该 Key 没有返回 DeepSeek 模型，请检查后重试。',
+    modelTitle: '选择模型',
+    modelHint: '↑/↓ 移动 · Enter 使用 · Esc 返回',
+    modelDefault: '默认',
+    connected: (provider, model) => `已连接 ${provider}/${model}。`,
+    skipped: '已跳过模型设置，需要时使用 /login。',
+    failed: message => `设置失败：${message}`,
+    accountFailures: {
+      unavailable: '当前构建不支持 DeepSeek 账号登录。',
+      cancelled: '登录已取消。',
+      expired: '登录请求已过期，请重试。',
+      failed: '登录失败，请重试。',
+      protocol: '账号服务返回了无效响应，请重试。',
+      'no-response': '账号服务没有响应，请检查网络后重试。',
+      network: '无法连接账号服务，请检查网络后重试。',
+      storage: '无法保存凭据，请检查 Harness home 权限。',
+    },
+    working: '处理中…',
+    retryHint: 'Enter 重试 · Esc 返回',
   },
   /** 工具卡可见性文案。 */
   cards: {

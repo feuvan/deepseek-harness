@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-tui-agent-team",
   "description": "Terminal Agent Teams surface: team strip, dock panel, teammate transcript, and task actions over ctx.terminalUi",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -22,6 +22,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "locale/*.json",
     "lib/index.js",
     "lib/types/**/*.d.ts"
   ],

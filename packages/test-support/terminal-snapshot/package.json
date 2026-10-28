@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-terminal-snapshot",
   "description": "Test harness for terminal front doors: a pi-tui-compatible headless terminal, a semantic state projection, and a PTY driver",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },

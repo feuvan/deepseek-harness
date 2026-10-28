@@ -39,6 +39,8 @@ export interface LocalCommands {
   queue(argument: string | undefined): void | Promise<void>
   /** Steer one message into the running turn, or steer every queued message. */
   steer(argument: string | undefined): void | Promise<void>
+  /** Show the first-run model setup flow. */
+  login(): void
   /** Show the configuration panel. */
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
@@ -115,6 +117,7 @@ export class Composer {
       queue: { description: copy.commands.queue, run: (argument) => { void deps.local.queue(argument) } },
       steer: { description: copy.commands.steer, run: (argument) => { void deps.local.steer(argument) } },
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
+      login: { description: copy.commands.login, run: () => { deps.local.login() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       terminal: { description: copy.commands.terminal, run: () => { deps.local.terminal() } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },

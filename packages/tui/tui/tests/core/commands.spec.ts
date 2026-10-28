@@ -81,6 +81,7 @@ async function composerHarness(options: {
     queue: (argument) => { local.push('queue'); queueArgs.push(argument) },
     steer: (argument) => { local.push('steer'); steerArgs.push(argument) },
     config: () => { local.push('config'); configures.push('config') },
+    login: record('login'),
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
     terminal: () => { local.push('terminal') },
     exit: record('exit'),
@@ -380,7 +381,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'preset', 'terminal', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'login', 'preset', 'terminal', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -450,7 +451,7 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, terminal: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, preset: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
@@ -747,7 +748,7 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, preset: () => {}, terminal: () => {}, exit: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, preset: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',

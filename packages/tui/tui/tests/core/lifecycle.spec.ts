@@ -9,6 +9,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalApp } from '../../src/lifecycle.ts'
+import { AccountLoginError } from '../../src/account-login.ts'
 import type { BusyEnter } from '../../src/config.ts'
 import { TerminalTranscript } from '../../src/transcript.ts'
 import type { ScreenMode, TerminalSession } from '../../src/terminal.ts'
@@ -324,6 +325,407 @@ describe('TerminalApp startup', () => {
     await Promise.resolve()
 
     expect(harness.terminal.start).not.toHaveBeenCalled()
+  })
+})
+
+describe('TerminalApp first-run setup', () => {
+  it('stores an API key, selects a discovered model, and closes setup', async () => {
+    const stored = new Map<string, string>()
+    const credentials = {
+      resolve: async (ref: string) => stored.has(ref)
+        ? { value: stored.get(ref) ?? '', source: 'file' as const }
+        : undefined,
+      set: async (ref: string, value: string) => { stored.set(ref, value) },
+    }
+    const saved: { provider: string; model: string }[] = []
+    const defaults = {
+      saveSelection: async (selection: { provider: string; model: string }) => { saved.push(selection) },
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
+      listModels: async () => stored.has('DEEPSEEK_API_KEY')
+        ? [
+          { provider: 'deepseek-official', id: 'deepseek-v4-pro', name: 'DeepSeek Pro' },
+          { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek Flash', defaultEffort: 'high' },
+        ]
+        : [],
+      resolveModelInfo: async (provider, model) => model === 'deepseek-flash'
+        ? { provider, id: model, name: 'DeepSeek Flash', reasoning: { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }], defaultEffort: ReasoningEffortId('high') } }
+        : { provider, id: model, name: 'DeepSeek Flash' },
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: { credentials, agentDefaultModel: defaults },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKeyTitle)
+    for (const character of 'sk-test') harness.terminal.headless.press(character)
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.modelTitle)
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => {
+      expect(stored.get('DEEPSEEK_API_KEY')).toBe('sk-test')
+      expect(saved).toEqual([{ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: ReasoningEffortId('high') }])
+      expect(harness.agent.agent.model.current()).toEqual({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: ReasoningEffortId('high') })
+    })
+    expect(harness.transcriptText()).toContain(copy.onboarding.connected('DeepSeek', 'DeepSeek Flash'))
+  })
+
+  it('selects an existing account model without showing setup', async () => {
+    const account = {
+      getState: async () => ({ status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }),
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+      listModels: async () => [{ provider: 'deepseek-account', id: 'deepseek-flash', name: 'DeepSeek Flash' }],
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: 'DeepSeek Flash' }),
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: { credentials: { resolve: async () => undefined }, deepseekAccount: account },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    await vi.waitFor(() => {
+      expect(harness.agent.agent.model.current()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
+    })
+    expect(Reflect.get(harness.app, 'onboarding')).toBeUndefined()
+  })
+})
+
+describe('TerminalApp first-run setup paths', () => {
+  it('skips setup when a key is already resolved', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        credentials: { resolve: async () => ({ value: 'sk-existing', source: 'env' }) },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await vi.waitFor(() => { expect(Reflect.get(harness.app, 'onboardingAttempted')).toBe(true) })
+    expect(Reflect.get(harness.app, 'onboarding')).toBeUndefined()
+  })
+
+  it('opens setup manually with /login and skips it', async () => {
+    const harness = await lifecycleHarness({
+      services: {
+        credentials: { resolve: async () => ({ value: 'sk-existing', source: 'env' }) },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/login')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+    harness.terminal.headless.press('\u001b')
+    await vi.waitFor(() => { expect(Reflect.get(harness.app, 'onboarding')).toBeUndefined() })
+  })
+
+  it('offers setup when an account is stored without a model route', async () => {
+    const account = {
+      getState: async () => ({ status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }),
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+      listModels: async () => [],
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: { credentials: { resolve: async () => undefined }, deepseekAccount: account },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.title)
+    expect(Reflect.get(harness.app, 'onboarding')).toBeDefined()
+  })
+
+  it('runs account sign-in from setup and selects the account model', async () => {
+    let reads = 0
+    let signedIn = false
+    const signedOut = { status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    const stored = { status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    const account = {
+      startSignIn: vi.fn(async () => { signedIn = true; return signedOut }),
+      getState: vi.fn(async () => (reads++ === 0 ? signedOut : stored)),
+      getProfile: vi.fn(async () => ({ status: 'ready', value: { id: null, name: 'Terminal User', contact: null } })),
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+      listModels: async () => signedIn
+        ? [{ provider: 'deepseek-account', id: 'deepseek-flash', name: 'DeepSeek Flash' }]
+        : [],
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: 'DeepSeek Flash' }),
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: {
+        credentials: { resolve: async () => undefined },
+        deepseekAccount: account,
+        webServer: { getOrigin: () => 'http://127.0.0.1:4321' },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.account)
+
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.modelTitle)
+    harness.terminal.headless.press('\r')
+
+    await vi.waitFor(() => {
+      expect(harness.agent.agent.model.current()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
+    })
+    expect(harness.transcriptText()).toContain(copy.onboarding.accountSuccess('Terminal User'))
+  })
+
+  it('reports an unavailable credential store from setup', async () => {
+    const stored = { status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    const account = { getState: async () => stored }
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+        listModels: async () => [],
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: { credentials: undefined, deepseekAccount: account },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+    harness.terminal.headless.press('\u001b[B')
+    harness.terminal.headless.press('\r')
+    harness.terminal.headless.press('k')
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, 'the credential store is not composed')
+  })
+
+  it('reports an API key that discovers no model', async () => {
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
+        listModels: async () => { throw new Error('listing unavailable') },
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: {
+        credentials: {
+          resolve: async () => undefined,
+          set: async () => {},
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+    harness.terminal.headless.press('\r')
+    harness.terminal.headless.press('k')
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, 'listing unavailable')
+  })
+})
+
+describe('TerminalApp first-run setup failures', () => {
+  it('falls back to setup when the stored account catalog fails', async () => {
+    const account = {
+      getState: async () => ({ status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }),
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+      listModels: async () => { throw new Error('catalog unavailable') },
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: { credentials: { resolve: async () => undefined }, deepseekAccount: account },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.title)
+  })
+
+  it('shows the unknown-account success copy when no profile name is available', async () => {
+    let reads = 0
+    let signedIn = false
+    const signedOut = { status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    const stored = { status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    const account = {
+      startSignIn: vi.fn(async () => { signedIn = true; return signedOut }),
+      getState: vi.fn(async () => (reads++ === 0 ? signedOut : stored)),
+      getProfile: vi.fn(async () => ({ status: 'failed' })),
+    }
+    const llm = llmDouble({
+      providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+      listModels: async () => signedIn ? [{ provider: 'deepseek-account', id: 'deepseek-flash', name: 'DeepSeek Flash' }] : [],
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+    })
+    const harness = await lifecycleHarness({
+      llm,
+      services: {
+        credentials: { resolve: async () => undefined },
+        deepseekAccount: account,
+        webServer: { getOrigin: () => 'http://127.0.0.1:4321' },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.account)
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.modelTitle)
+    harness.terminal.headless.press('\r')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.onboarding.accountSuccessUnknown) })
+  })
+
+  it('wraps a non-account sign-in failure in the account error type', async () => {
+    const account = {
+      startSignIn: vi.fn(async () => { throw new Error('plain account failure') }),
+      getState: vi.fn(async () => ({ status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } })),
+    }
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+        listModels: async () => [],
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: {
+        credentials: { resolve: async () => undefined },
+        deepseekAccount: account,
+        webServer: { getOrigin: () => 'http://127.0.0.1:4321' },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.account)
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.accountFailures.failed!)
+  })
+
+  it('ignores duplicate requests to open setup', async () => {
+    const harness = await lifecycleHarness({
+      services: { credentials: { resolve: async () => ({ value: 'sk-existing', source: 'env' }) } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const open = (Reflect.get(harness.app, 'openOnboarding') as () => Promise<void>).bind(harness.app)
+    await open()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+    await open()
+    harness.terminal.headless.press('\u001b')
+  })
+
+  it('ignores setup after disposal', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.app.dispose()
+    const maybe = (Reflect.get(harness.app, 'maybeOnboard') as () => Promise<void>).bind(harness.app)
+    await maybe()
+  })
+})
+
+describe('TerminalApp first-run setup account errors', () => {
+  it('falls back to setup when the provider registry cannot be read', async () => {
+    const account = {
+      getState: async () => ({ status: 'credential-stored', attempt: null, links: { usageUrl: '', topUpUrl: '' } }),
+    }
+    const llm = {
+      listProviders: (): never => { throw new Error('registry unavailable') },
+      listModels: async () => [],
+      resolveModelInfo: async () => ({ name: 'x' }),
+    }
+    const harness = await lifecycleHarness({
+      llm,
+      services: { credentials: { resolve: async () => undefined }, deepseekAccount: account },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.title)
+  })
+
+  it('passes through an account login error from setup', async () => {
+    const account = {
+      startSignIn: vi.fn(async () => { throw new AccountLoginError('network', 'network down') }),
+      getState: vi.fn(async () => ({ status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } })),
+    }
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+        listModels: async () => [],
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: {
+        credentials: { resolve: async () => undefined },
+        deepseekAccount: account,
+        webServer: { getOrigin: () => 'http://127.0.0.1:4321' },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.account)
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.accountFailures.network!)
+  })
+})
+
+describe('TerminalApp first-run setup input errors', () => {
+  it('renders a non-Error account failure', async () => {
+    const account = {
+      startSignIn: vi.fn(async () => { throw 'string failure' }),
+      getState: vi.fn(async () => ({ status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } })),
+    }
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+        listModels: async () => [],
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: {
+        credentials: { resolve: async () => undefined },
+        deepseekAccount: account,
+        webServer: { getOrigin: () => 'http://127.0.0.1:4321' },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.account)
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.accountFailures.failed!)
+  })
+
+  it('reports an empty API-key catalog without a provider failure', async () => {
+    const harness = await lifecycleHarness({
+      llm: llmDouble({
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
+        listModels: async () => [],
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+      }),
+      services: {
+        credentials: { resolve: async () => undefined, set: async () => {} },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKey)
+    harness.terminal.headless.press('\r')
+    harness.terminal.headless.press('k')
+    harness.terminal.headless.press('\r')
+    await waitForScreen(harness.terminal.headless, copy.onboarding.apiKeyInvalid)
+  })
+})
+
+describe('TerminalApp first-run configured provider', () => {
+  it('skips setup when a provider route is already usable without an API key', async () => {
+    const harness = await lifecycleHarness({
+      services: { credentials: { resolve: async () => undefined } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    await vi.waitFor(() => { expect(Reflect.get(harness.app, 'onboardingAttempted')).toBe(true) })
+    expect(Reflect.get(harness.app, 'onboarding')).toBeUndefined()
   })
 })
 
