@@ -15,7 +15,6 @@ export const name = 'agent-team-preset-overlay'
 /** Preset child rows the Team tools replace in every preset composition. */
 const REPLACED_ROWS = [
   'tool-subagent-control',
-  'tool-subagent-list-agents',
   'tool-subagent',
   'tool-subagent-fork',
 ] as const

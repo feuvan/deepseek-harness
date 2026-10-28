@@ -205,6 +205,10 @@ function agentDouble(session: Session, status: AgentStatus, model: string): Agen
     session,
     inbox,
     get status() { return status },
+    model: {
+      current: () => ({ provider: 'test', model }),
+      select: () => {},
+    },
     ctx: new Context(),
     options: { provider: 'test', model },
     cancel: () => {},

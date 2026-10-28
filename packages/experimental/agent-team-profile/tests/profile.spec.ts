@@ -55,7 +55,7 @@ describe('Agent Teams profile bundle', () => {
   })
 
   it('disables the host subagent rows and inserts the Team rows', () => {
-    for (const id of ['tool-subagent-control', 'tool-subagent-list-agents', 'tool-subagent', 'tool-subagent-fork']) {
+    for (const id of ['tool-subagent-control', 'tool-subagent', 'tool-subagent-fork']) {
       expect(parsed.find(patch => patch.id === id), id).toMatchObject({ disabled: true })
     }
     const inserted = parsed.flatMap(patch => patch.insert ?? [])
@@ -100,7 +100,6 @@ describe('agent-team-preset-overlay', () => {
     await vi.waitFor(() => { expect(calls).toHaveLength(1) })
     expect(calls[0]).toEqual([
       'tool-subagent-control',
-      'tool-subagent-list-agents',
       'tool-subagent',
       'tool-subagent-fork',
     ])

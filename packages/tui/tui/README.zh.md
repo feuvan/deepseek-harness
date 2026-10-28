@@ -47,11 +47,11 @@ kind: "package-reference"
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tui)是全部可接受字段及其 JSDoc 的权威来源。
 
-只有当 stdin 与 stdout 均为 TTY 时才会占用终端。管道启动会在进入屏幕前失败，并指出一次性替代方式 `dsh --profile headless "<task>"`。
+只有当 stdin 与 stdout 均为 TTY 时才会占用终端。管道启动会在进入屏幕前失败，并指出一次性替代方式 `dsh --profile headless "<task>"`。占用屏幕期间，直接写入 stderr 的内容（例如提供方的模型列表诊断）会转为暗淡的 transcript 通知，而不会覆盖输入行。
 
 ### 屏幕模式
 
-默认 `screen: inline` 把界面渲染到终端普通屏幕与 scrollback：首帧底部对齐，后续 transcript 向下增长；由于应用不捕获鼠标，滚轮、scrollback 与文本选择都由终端负责。`screen: fullscreen` 使用 alternate screen，提供应用自管滚动视图、鼠标捕获、更早历史翻页、回到底部提示与 transcript 搜索。在 profile 的 `cordis.yml`/patch 中设置 `config.screen` 并重启；`/terminal` 会显示当前模式。
+默认 `screen: inline` 把界面渲染到终端普通屏幕与 scrollback：首帧底部对齐，后续 transcript 向下增长；由于应用不捕获鼠标，滚轮、scrollback 与文本选择都由终端负责。`screen: fullscreen` 使用 alternate screen，提供应用自管滚动视图、鼠标捕获、更早历史翻页、回到底部提示与 transcript 搜索。在 profile 的 `cordis.yml`/patch 中设置 `config.screen`；HMR 会重新挂载终端表面，`/terminal` 会显示当前模式。
 
 ### 交互界面
 

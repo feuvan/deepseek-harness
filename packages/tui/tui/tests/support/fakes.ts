@@ -7,7 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentStatus, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Inbox } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -99,11 +99,27 @@ export function testAgent(options: TestAgentOptions): { agent: Agent; ctx: Conte
   const received = options.received ?? []
   const cancels = options.cancels ?? []
   const inbox = testInbox()
+  let modelSelection: ModelSelection | undefined
   const agent: Agent = {
     id: options.session.id,
     session: options.session,
     inbox,
     status: options.status ?? 'idle',
+    model: {
+      current: () => {
+        if (modelSelection !== undefined) return modelSelection
+        const route = options.options
+        if (route?.provider === undefined || route.model === undefined) return undefined
+        return {
+          provider: route.provider,
+          model: route.model,
+          ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
+        }
+      },
+      select: (selection) => {
+        modelSelection = { ...selection }
+      },
+    },
     ctx,
     options: options.options ?? { provider: 'test', model: 'test' },
     cancel: (cause) => { cancels.push(cause.kind) },

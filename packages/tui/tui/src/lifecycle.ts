@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plugin-manager'
-import { installModelSelection, type Agent, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -32,6 +32,8 @@ import { CARD_MODES, nextCardMode, parseCardMode } from './cards.ts'
 import { ModalHost, registerApprovalAnswerer, registerQuestionAnswerer, type InteractionDock } from './interactions.ts'
 import { StatusModel } from './status.ts'
 import { resolveLocale } from './locale.ts'
+import { StderrCapture } from './stderr-capture.ts'
+import { bindModelSelection, type ModelSelectionRef } from './model-selection.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
 import { createPalette, type Palette } from './palette.ts'
@@ -63,6 +65,7 @@ interface SettingsService {
 export class TerminalApp {
   private readonly ctx: Context
   private config: ResolvedConfig
+  private stderrCapture: StderrCapture | undefined
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -282,6 +285,8 @@ export class TerminalApp {
       }
     }
     this.status?.dispose()
+    this.stderrCapture?.uninstall()
+    this.stderrCapture = undefined
     try {
       this.terminal?.terminal.setProgramStatus({ state: 'clear', app: 'dsh' })
     } catch (error: unknown) {
@@ -311,9 +316,7 @@ export class TerminalApp {
     const agent = await this.waitForAgent()
     if (agent === undefined || this.isDisposed()) return
     this.bindAgent(agent)
-    const selection: ModelSelectionRef = { current: initialSelection(agent), assembled: undefined }
-    this.selection = selection
-    installModelSelection(agent.ctx, selection)
+    this.selection = bindModelSelection(agent, initialSelection(agent))
     this.startTerminal(agent)
     this.subscribe()
     this.startAnimation()
@@ -321,6 +324,8 @@ export class TerminalApp {
     await this.observeHistory(agent)
     if (this.isDisposed()) return
     this.started = true
+    this.stderrCapture = new StderrCapture(line => { this.transcript?.notice(line) })
+    this.stderrCapture.install()
     this.tui?.start()
     this.updateActivity()
     if (this.editor !== undefined) this.tui?.setFocus(this.editor)
@@ -1627,7 +1632,7 @@ export class TerminalApp {
   private presetId(): string | undefined {
     const agent = this.agent
     if (agent === undefined) return undefined
-    return this.ctx.get('sessionProjections')?.stateOf(agent.session, 'agentPreset') ?? undefined
+    return this.ctx.get('agentPresets')?.presetForSession(agent.session) ?? undefined
   }
 
   /** @returns the localized display name for one preset identity. */
@@ -1652,8 +1657,8 @@ export class TerminalApp {
       this.transcript?.notice(copy.preset.selected(name))
       return
     }
-    const boundary = this.ctx.get('sessionProjections')?.stateOf(agent.session, 'turnBoundary')
-    if (boundary !== undefined && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
+    const boundary = this.ctx.agents.turnBoundaryOf(agent.session)
+    if (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0) {
       this.transcript?.notice(copy.preset.locked)
       return
     }
@@ -1715,6 +1720,7 @@ export class TerminalApp {
     const effort = state.effort === undefined
       ? labels.effortDefault
       : state.effortImplicit ? labels.effortImplicit(state.effort) : state.effort
+    const preset = this.presetId()
     const lines = [
       `${labels.session.padEnd(12, ' ')} ${agent.session.id}`,
       `${labels.created.padEnd(12, ' ')} ${new Date(agent.session.header.createdAt).toISOString()}`,
@@ -1723,7 +1729,7 @@ export class TerminalApp {
       `${labels.provider.padEnd(12, ' ')} ${this.selection?.current?.provider ?? agent.options.provider}`,
       /* v8 ignore stop */
       `${labels.model.padEnd(12, ' ')} ${state.model}`,
-      `${labels.preset.padEnd(12, ' ')} ${this.presetId() === undefined ? labels.notAvailable : this.presetLabel(this.presetId() ?? '')}`,
+      `${labels.preset.padEnd(12, ' ')} ${preset === undefined ? labels.notAvailable : this.presetLabel(preset)}`,
       `${labels.effort.padEnd(12, ' ')} ${effort}`,
       `${labels.reasoning.padEnd(12, ' ')} ${copy.reasoning.levels[this.transcript?.reasoningLevel() ?? 'standard']}`,
       `${labels.cards.padEnd(12, ' ')} ${copy.cards.levels[this.transcript?.cardsMode() ?? 'collapsed']}`,

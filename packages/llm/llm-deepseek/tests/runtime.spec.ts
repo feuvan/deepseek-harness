@@ -1816,7 +1816,7 @@ describe('plugin registration and config', () => {
         name: 'DeepSeek-V4.1-Flash',
         inputModalities: ['text', 'image'],
         systemPromptUpdate: 'in-history',
-        context: { contextWindow: 1_000_000 },
+        context: { contextWindow: 1_048_576 },
         defaultMaxTokens: 256_000,
         reasoning: {
           efforts: [
@@ -1838,7 +1838,7 @@ describe('plugin registration and config', () => {
     expect(info).toMatchObject({
       id: 'deepseek-v4-pro',
       inputModalities: ['text'],
-      context: { contextWindow: 1_000_000 },
+      context: { contextWindow: 1_048_576 },
       defaultMaxTokens: 256_000,
     })
     expect(info?.systemPromptUpdate).toBeUndefined()

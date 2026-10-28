@@ -117,7 +117,7 @@ function mentionHarness(options: {
     admitPromptContent: async (content: AdmissionInput): Promise<readonly AdmittedPromptContentPart[]> => {
       admitted.push(content)
       if (admit !== undefined) return admit(content)
-      return content.flatMap(part => part.type === 'image' ? [admission(part.mediaType, part.name)] : [])
+      return content.flatMap(part => part.type === 'image' && 'data' in part ? [admission(part.mediaType, part.name)] : [])
     },
   }
 
@@ -310,7 +310,7 @@ describe('expandPromptMentions', () => {
 
     expect(expanded.content.map(block => block.type)).toEqual(['text', 'image', 'image'])
     expect(expanded.content[0]).toEqual({ type: 'text', text: 'first @one.png middle @"two words.jpg" last' })
-    expect(harness.admitted.map(parts => parts[0]?.type === 'image' ? parts[0].name : '')).toEqual(['one.png', 'two words.jpg'])
+    expect(harness.admitted.map(parts => parts[0]?.type === 'image' && 'data' in parts[0] ? parts[0].name : '')).toEqual(['one.png', 'two words.jpg'])
     expect(harness.resolved).toEqual(['one.png', 'two words.jpg'])
   })
 
@@ -319,7 +319,7 @@ describe('expandPromptMentions', () => {
 
     await expand(harness, '@assets/images/photo.png')
 
-    expect(harness.admitted[0]?.[0]?.type === 'image' ? harness.admitted[0][0].name : '').toBe('photo.png')
+    expect(harness.admitted[0]?.[0]?.type === 'image' && 'data' in harness.admitted[0][0] ? harness.admitted[0][0].name : '').toBe('photo.png')
   })
 
   it('admits the base64 form of the read bytes', async () => {
@@ -327,7 +327,7 @@ describe('expandPromptMentions', () => {
 
     await expand(harness, '@a.png')
 
-    expect(harness.admitted[0]?.[0]?.type === 'image' ? harness.admitted[0][0].data : '').toBe('aGk=')
+    expect(harness.admitted[0]?.[0]?.type === 'image' && 'data' in harness.admitted[0][0] ? harness.admitted[0][0].data : '').toBe('aGk=')
   })
 
   it('reports a mention that is not a readable file', async () => {

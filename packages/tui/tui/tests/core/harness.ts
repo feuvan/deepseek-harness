@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { TuiMainScreen, type Component, type MarkdownTheme, type OverlayHandle, type TUI } from '@earendil-works/pi-tui'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
 import type {
-  Agent, AgentOptions, AgentStatus, AssistantStreamFrame, ModelSelectionRef,
+  Agent, AgentOptions, AgentStatus, AssistantStreamFrame, ModelSelection,
 } from '@deepseek-ai/dsh-agent'
 import type { CommandDescriptor, CommandExecution } from '@deepseek-ai/dsh-commands'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -28,6 +28,7 @@ import { createMarkdownTheme } from '../../src/markdown.ts'
 import { createPalette } from '../../src/palette.ts'
 import type { TerminalTranscriptDeps } from '../../src/transcript.ts'
 import { TerminalApp } from '../../src/lifecycle.ts'
+import type { ModelSelectionRef } from '../../src/model-selection.ts'
 import { testInbox } from '../support/fakes.ts'
 
 /**
@@ -101,6 +102,7 @@ export function agentDouble(options: AgentDoubleOptions): AgentDouble {
   const steered: string[] = []
   const removed: string[] = []
   const cancels: string[] = []
+  let modelSelection: ModelSelection | undefined
   let status: AgentStatus = options.status ?? 'idle'
   let whenIdle: () => Promise<void> = async () => {}
   const agent: Agent = {
@@ -111,6 +113,21 @@ export function agentDouble(options: AgentDoubleOptions): AgentDouble {
       removed,
     }),
     get status() { return status },
+    model: {
+      current: () => {
+        if (modelSelection !== undefined) return modelSelection
+        const route = options.options
+        if (route?.provider === undefined || route.model === undefined) return undefined
+        return {
+          provider: route.provider,
+          model: route.model,
+          ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
+        }
+      },
+      select: (selection) => {
+        modelSelection = { ...selection }
+      },
+    },
     ctx,
     options: options.options ?? { provider: 'test', model: 'test' },
     cancel: (cause) => { cancels.push(cause.kind) },
@@ -384,7 +401,7 @@ export function transcriptDeps(overrides: Partial<TerminalTranscriptDeps> = {}):
  * @returns the mutable selection reference.
  */
 export function selectionRef(current?: ModelSelectionRef['current']): ModelSelectionRef {
-  return { current, assembled: undefined }
+  return { current }
 }
 
 /** A headless terminal session used as the application surface. */

@@ -135,8 +135,11 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
     listModels: async () => [{ provider: 'alpha', id: 'm-1', name: 'Model One' }],
     resolveModelInfo: async (provider, model) => ({ provider, id: model, name: 'Model One' }),
   })
+  const turnBoundary = (options.values?.turnBoundary as Record<string, unknown> | undefined) ?? {
+    openTurnStartSeq: null, lastStepStartSeq: null, lastStepBoundary: null, lastTurn: 0,
+  }
   const services: Record<string, unknown> = {
-    agents: agents.service,
+    agents: { ...agents.service, turnBoundaryOf: () => turnBoundary },
     tools: toolsDouble(() => undefined),
     commands: commands.service,
     llm,
@@ -145,6 +148,12 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
     userQuestions: userQuestionsDouble(options.attachWait ?? (() => (async function* empty() {})())),
     appExit: exit.exit,
     ...options.services,
+  }
+  if (services.agentPresets !== undefined) {
+    services.agentPresets = {
+      ...(services.agentPresets as object),
+      presetForSession: () => (options.values?.agentPreset as string | undefined) ?? null,
+    }
   }
   if (options.loader === true) services.loader = { await: async () => {} }
   const ctx = freshContext(services)
@@ -315,6 +324,23 @@ describe('TerminalApp startup', () => {
     await Promise.resolve()
 
     expect(harness.terminal.start).not.toHaveBeenCalled()
+  })
+})
+
+describe('TerminalApp direct stderr capture', () => {
+  it('routes plugin stderr lines into the transcript while the screen is owned', async () => {
+    const harness = await lifecycleHarness({ screen: 'inline' })
+    harness.start()
+    await harness.awaitStarted()
+
+    process.stderr.write('plugin diagnostic line\n')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain('plugin diagnostic line') })
+    expect(harness.stderr).not.toHaveBeenCalled()
+
+    harness.app.dispose()
+    process.stderr.write('after dispose\n')
+    expect(harness.stderr).toHaveBeenCalledWith('after dispose\n')
   })
 })
 
@@ -2249,7 +2275,7 @@ function clipboardServices(options: {
     admitPromptContent: async (content: readonly AttachmentAdmissionPart[]): Promise<readonly AdmittedPromptContentPart[]> => {
       admitted.push([...content])
       if (options.admitError !== undefined) throw options.admitError
-      return content.flatMap((part, index): AdmittedPromptContentPart[] => part.type === 'image'
+      return content.flatMap((part, index): AdmittedPromptContentPart[] => part.type === 'image' && 'data' in part
         ? [{
           type: 'image',
           attachment: {

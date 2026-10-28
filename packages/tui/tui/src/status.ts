@@ -6,12 +6,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { copy } from './copy.ts'
+import type { ModelSelectionRef } from './model-selection.ts'
 import type { ResolvedConfig } from './config.ts'
 import type { FooterSnapshot } from './components/footer.ts'
 
