@@ -39,13 +39,15 @@ The first launch initializes the `tui` profile under `$DSH_HOME/profiles/tui` fr
 
 The profile inherits `dsh-base`'s host plane and replaces its agent plane with the same four preset declarations the Web profile ships, so a preset Session created in either surface can be resumed in the other. Only the deployment persona and the terminal rows differ from base.
 
+The [Agent Teams UI](../../tui/agent-team/README.md) loads with this bundle. Team mode is a saved per-root-Session switch and defaults to off; the root Session's **Use Agent Teams** switch in the `/config` Model & effort section turns collaboration on without changing the profile. With Team mode on, `/team` opens the read-only Members and Shared tasks dock, and the strip above the composer appears once the Session has teammates or tasks.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The patch inserts five rows in order. `tui-startup` (the `./startup` entry) parses the app's arguments and publishes `tuiStartup` with the Session identity a fresh launch mints or the identity to resume. `tui-session` (the package entry) waits for the complete application, resolves provider, model, and reasoning effort from the composed default-model service, and creates or resumes the Agent; it disposes that Agent with the application and reports creation failures on stderr with a failing exit. `terminal-ui` mounts the terminal plugin with the same Session identity. `file-reference-local` provides the workspace file index behind the composer's `@` completion and the matching model guidance. The patch also mounts `ask_user_question`, because base deliberately leaves the model-facing question tool to the compositions whose host registers an answerer.
+The patch inserts five surface rows in order. `tui-startup` (the `./startup` entry) parses the app's arguments and publishes `tuiStartup` with the Session identity a fresh launch mints or the identity to resume. `tui-session` (the package entry) waits for the complete application, resolves provider, model, and reasoning effort from the composed default-model service, and creates or resumes the Agent; it disposes that Agent with the application and reports creation failures on stderr with a failing exit. `terminal-ui` mounts the terminal plugin with the same Session identity. `tui-agent-team` mounts the terminal Agent Teams surface over `ctx.terminalUi`; the base layer supplies the Team service and task tools. `file-reference-local` provides the workspace file index behind the composer's `@` completion and the matching model guidance. The `standard`, `ptc`, and `cordis` preset declarations mount `ask_user_question`, because base deliberately leaves the model-facing question tool to the compositions whose surface registers an answerer.
 
 ### Source map
 

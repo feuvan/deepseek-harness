@@ -20,7 +20,7 @@ seam 刻意只暴露呈现与文本辅助（`setEditorText`、`notice`），不�
 
 ## 后果
 
-插件无需依赖终端内部即可扩展界面。API 刻意保持狭窄；更丰富的界面需要新增 seam 方法并经过设计评审。Team 界面随后已迁入 `@deepseek-ai/dsh-experimental-tui-agent-team`，通过 seam 安装；稳定包不再包含 Team 代码。
+插件无需依赖终端内部即可扩展界面。API 刻意保持狭窄；更丰富的界面需要新增 seam 方法并经过设计评审。Team 界面随后已迁入 `@deepseek-ai/dsh-tui-agent-team`，通过 seam 安装；稳定包不再包含 Team 代码。
 
 ## 考虑的备选方案
 

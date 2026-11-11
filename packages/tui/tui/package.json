@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tui",
   "description": "Terminal front door for DeepSeek Harness: a full-screen Cordis plugin over the shared agent, session, tool, and human-interaction services",
-  "version": "0.2.2-alpha.2",
+  "version": "0.2.2-rc.1",
   "publishConfig": {
     "access": "public"
   },

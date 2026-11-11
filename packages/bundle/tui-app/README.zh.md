@@ -39,13 +39,15 @@ dsh tui --resume session-<id>
 
 该 profile 继承 `dsh-base` 的 host 平面，并用与 Web profile 相同的四个 preset 声明替换其 agent 平面，因此在任一界面创建的 preset 会话都能在另一界面恢复。与 base 的差别只有部署 persona 与终端相关条目。
 
+[Agent Teams 界面](../../tui/agent-team/README.zh.md)随本 bundle 加载。Team 模式是按根会话保存的开关，默认关闭；根会话 `/config` 的模型与推理强度分区中的**使用智能体团队**开关无需修改 profile 即可为该会话树开启协作。Team 模式开启后，`/team` 打开只读的 Members 与 Shared tasks dock，会话拥有 teammate 或任务后，编辑器上方的状态行随之出现。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-patch 按顺序插入五个条目。`tui-startup`（`./startup` 入口）解析应用参数，并发布 `tuiStartup`，其中带有新启动生成的会话标识或待恢复的标识。`tui-session`（包入口）等待完整应用就绪，从组合的默认模型服务解析 provider、model 与 reasoning effort，并创建或恢复 Agent；它随应用一起 dispose 该 Agent，并在创建失败时向 stderr 报告并以失败退出。`terminal-ui` 用同一会话标识挂载终端插件。`file-reference-local` 提供编辑器 `@` 补全背后的工作区文件索引以及对应的模型指引。patch 还会挂载 `ask_user_question`，因为 base 刻意把模型可见的问题工具留给注册了应答者的组合。
+patch 按顺序插入五个界面条目。`tui-startup`（`./startup` 入口）解析应用参数，并发布 `tuiStartup`，其中带有新启动生成的会话标识或待恢复的标识。`tui-session`（包入口）等待完整应用就绪，从组合的默认模型服务解析 provider、model 与 reasoning effort，并创建或恢复 Agent；它随应用一起 dispose 该 Agent，并在创建失败时向 stderr 报告并以失败退出。`terminal-ui` 用同一会话标识挂载终端插件。`tui-agent-team` 通过 `ctx.terminalUi` 挂载终端 Agent Teams 界面；Team 服务与任务工具由 base 层提供。`file-reference-local` 提供编辑器 `@` 补全背后的工作区文件索引以及对应的模型指引。`standard`、`ptc`、`cordis` 三个 preset 声明会挂载 `ask_user_question`，因为 base 刻意把模型可见的问题工具留给注册了应答者的组合。
 
 ### 源码映射
 

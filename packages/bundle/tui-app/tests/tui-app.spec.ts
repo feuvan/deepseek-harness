@@ -82,6 +82,7 @@ describe('dsh-tui-app bundle', () => {
       '@deepseek-ai/dsh-agent-preset',
       '@deepseek-ai/dsh-agent-preset-registry',
       '@deepseek-ai/dsh-cordis-host-runner',
+      '@deepseek-ai/dsh-tui-agent-team',
       '@deepseek-ai/dsh-tui',
       '@deepseek-ai/dsh-file-reference-local',
     ]) {
@@ -122,11 +123,27 @@ describe('dsh-tui-app bundle', () => {
     expect(rows.some(candidate => candidate.name === '@deepseek-ai/dsh-tool-ask-user')).toBe(false)
   })
 
-  it('inserts the startup provider, session owner, terminal, and file index', () => {
+  it('inserts the startup provider, session owner, terminal, Team surface, and file index', () => {
     expect(row('tui-startup').name).toBe('@deepseek-ai/dsh-tui-app/startup')
     expect(row('tui-session')).toMatchObject({ name: '@deepseek-ai/dsh-tui-app', inject: [TUI_STARTUP_SERVICE] })
     expect(row('terminal-ui')).toMatchObject({ name: '@deepseek-ai/dsh-tui', inject: [TUI_STARTUP_SERVICE] })
+    expect(row('tui-agent-team').name).toBe('@deepseek-ai/dsh-tui-agent-team')
     expect(row('file-reference-local').name).toBe('@deepseek-ai/dsh-file-reference-local')
+  })
+
+  it('leaves the Team service and task tools to the base layer and names no retired Team package', () => {
+    for (const name of ['@deepseek-ai/dsh-agent-team', '@deepseek-ai/dsh-tool-agent-team']) {
+      expect(rows.some(candidate => candidate.name === name), name).toBe(false)
+    }
+    for (const file of [...patchFiles, resolve(root, 'package.json')]) {
+      const source = readFileSync(file, 'utf8')
+      for (const retired of [
+        '@deepseek-ai/dsh-experimental-agent-team-profile',
+        '@deepseek-ai/dsh-experimental-tui-agent-team',
+      ]) {
+        expect(source, `${file} names ${retired}`).not.toContain(retired)
+      }
+    }
   })
 
   it('wires the published identity, resume target, and preset into the session row', () => {

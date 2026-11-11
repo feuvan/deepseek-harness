@@ -3,30 +3,40 @@
  * running members, and shared-task counts, so delegated work is visible
  * without opening the detail dock.
  *
- * @module @deepseek-ai/dsh-tui/components/team-strip
+ * @module @deepseek-ai/dsh-tui-agent-team/components/team-strip
  */
 
 import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
+import type { Context } from '@deepseek-ai/cordis'
 import { copy } from '../copy.ts'
 import type { Palette } from '../types.ts'
-import { summarizeTeam, teamVisible, type TeamProjection, type TeamSummary } from '../team.ts'
-import type { Context } from '@deepseek-ai/cordis'
+import {
+  summarizeTeam, teamVisible, type TeamMemberRow, type TeamProjection, type TeamSummary,
+} from '../team.ts'
 
 /** One dim line above the composer while a Team has visible state. */
 export class TeamStrip implements Component {
   private readonly palette: Palette
   private readonly ctx: Context
   private readonly projection: () => TeamProjection | undefined
+  private readonly members: () => readonly TeamMemberRow[]
 
   /**
    * @param palette - terminal style table.
    * @param ctx - host context carrying the Agent registry.
    * @param projection - reads the presented Session's Team projection.
+   * @param members - reads the cached teammate rows.
    */
-  constructor(palette: Palette, ctx: Context, projection: () => TeamProjection | undefined) {
+  constructor(
+    palette: Palette,
+    ctx: Context,
+    projection: () => TeamProjection | undefined,
+    members: () => readonly TeamMemberRow[],
+  ) {
     this.palette = palette
     this.ctx = ctx
     this.projection = projection
+    this.members = members
   }
 
   /**
@@ -36,8 +46,10 @@ export class TeamStrip implements Component {
    */
   render(width: number): string[] {
     const team = this.projection()
-    if (team === undefined || !teamVisible(team)) return []
-    const summary = summarizeTeam(this.ctx, team)
+    if (team === undefined) return []
+    const members = this.members()
+    if (!teamVisible(team, members)) return []
+    const summary = summarizeTeam(this.ctx, team, members)
     const parts = stripParts(summary)
     if (team.failure !== undefined) parts.push(copy.team.failure(team.failure))
     const line = ` ${parts.join(' · ')}`
@@ -56,8 +68,8 @@ export class TeamStrip implements Component {
 function stripParts(summary: TeamSummary): string[] {
   const parts = [copy.team.teammates(summary.teammates)]
   if (summary.running > 0) parts.push(copy.team.running(summary.running))
-  if (summary.tasks > 0) {
-    parts.push(copy.team.tasks(summary.tasks))
+  if (summary.totalTasks > 0) {
+    parts.push(copy.team.tasks(summary.totalTasks))
     const counts: string[] = []
     if (summary.ready > 0) counts.push(copy.team.ready(summary.ready))
     if (summary.inProgress > 0) counts.push(copy.team.inProgress(summary.inProgress))

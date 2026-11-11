@@ -78,7 +78,7 @@ async function waitForFile(path: string, timeoutMs: number): Promise<void> {
 async function waitForRootAgent(ctx: Context): Promise<Agent> {
   const deadline = Date.now() + HANDOFF_TIMEOUT_MS
   for (;;) {
-    const roots = ctx.agents.roots()
+    const roots = ctx.agents.list().filter(agent => agent.session.header.origin !== 'subagent')
     const agent = roots[0]
     if (agent !== undefined) {
       if (roots.length > 1) {

@@ -3,7 +3,7 @@
  * C1 control character except line feeds, so model output, tool content, and
  * diagnostics can never drive the terminal themselves.
  *
- * @module @deepseek-ai/dsh-tui/display-text
+ * @module @deepseek-ai/dsh-tui-agent-team/display-text
  */
 
 /** Control characters that must never reach a terminal raw; LF stays rendered. */

@@ -1,10 +1,10 @@
 /**
- * Terminal Agent Teams plugin: installs the Team strip, `/team` command, roster
- * and task dock, and teammate transcript through `ctx.terminalUi`. The plugin
- * is inert in compositions without the terminal (for example Web), so the same
- * Agent Teams bundle can carry it for every surface.
+ * Terminal Agent Teams plugin: installs the Team strip, `/team` command, member
+ * and task dock, and teammate transcript through `ctx.terminalUi`. The terminal
+ * app composes it; the plugin stays inert in compositions without the terminal
+ * contribution seam (for example Web), which mount their own Team surfaces.
  *
- * @module @deepseek-ai/dsh-experimental-tui-agent-team
+ * @module @deepseek-ai/dsh-tui-agent-team
  */
 
 import type { Context } from '@deepseek-ai/cordis'

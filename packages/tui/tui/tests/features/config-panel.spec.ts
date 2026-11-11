@@ -22,6 +22,7 @@ import {
   type ConfigPermissionOption,
   type ConfigRow,
   type ConfigSection,
+  type ConfigTeamMode,
 } from '../../src/config-panel.ts'
 import { copy } from '../../src/copy.ts'
 import { createPalette } from '../../src/palette.ts'
@@ -108,6 +109,7 @@ function recordingActions(overrides: Partial<ConfigPanelActions> = {}): ActionRe
   const actions: ConfigPanelActions = Object.assign({
     pickModel: () => { calls.push('pickModel') },
     pickEffort: () => { calls.push('pickEffort') },
+    setTeamMode: (enabled: boolean) => { calls.push(`setTeamMode:${String(enabled)}`) },
     setPermission: (value: string) => { calls.push(`setPermission:${value}`) },
     setBundle: (name: string, enabled: boolean) => { calls.push(`setBundle:${name}:${String(enabled)}`) },
     toggleCards: () => { calls.push('toggleCards') },
@@ -125,6 +127,8 @@ interface LoaderOptions {
   readonly permission?: string | undefined
   /** Display values; defaults to {@link DISPLAY}. */
   readonly display?: ConfigDisplayState
+  /** Agent Teams selection; absent leaves the Team service uncomposed. */
+  readonly teamMode?: ConfigTeamMode
   /** Permission catalog to provide; absent leaves the service unprovided. */
   readonly presets?: readonly ConfigPermissionOption[]
   /** Bundles to provide; absent leaves the plugin manager unprovided. */
@@ -162,6 +166,7 @@ async function loadRows(options: LoaderOptions = {}): Promise<LoadedRows> {
     model: options.model ?? MODEL,
     permission: options.permission,
     display: options.display ?? DISPLAY,
+    ...(options.teamMode === undefined ? {} : { teamMode: options.teamMode }),
     permissionPresets: ctx.get('permissionPresets'),
     pluginManager: ctx.get('pluginManager'),
     actions: recorder.actions,
@@ -393,6 +398,49 @@ describe('loadConfigRows', () => {
 
     const implicit = await loadRows({ model: { ...MODEL, effort: 'low', effortImplicit: true } })
     expect(findRow(implicit.rows, 'effort.current').value).toBe(copy.statusPanel.effortImplicit('low'))
+  })
+
+  it('lists the Agent Teams switch with the saved value and passes the next state to its action', async () => {
+    const off = await loadRows({ teamMode: { enabled: false } })
+    expect(off.rows.filter(row => row.section === 'model').map(row => row.id)).toEqual([
+      'model.current', 'model.change', 'effort.current', 'effort.change', 'model.team',
+    ])
+    expect(findRow(off.rows, 'model.team')).toMatchObject({
+      label: copy.config.teamMode,
+      value: copy.config.off,
+      scope: 'session',
+      readOnly: false,
+      toggle: true,
+      description: copy.config.descriptions.teamMode,
+    })
+    await activator(off.rows, 'model.team')()
+
+    const on = await loadRows({ teamMode: { enabled: true } })
+    expect(findRow(on.rows, 'model.team').value).toBe(copy.config.on)
+    await activator(on.rows, 'model.team')()
+
+    expect(off.calls).toEqual(['setTeamMode:true'])
+    expect(on.calls).toEqual(['setTeamMode:false'])
+  })
+
+  it('omits the Agent Teams switch when the Team service is not composed', async () => {
+    const { rows } = await loadRows()
+
+    expect(rows.some(row => row.id === 'model.team')).toBe(false)
+    expect(rows.some(row => row.id === 'model.unavailable')).toBe(false)
+  })
+
+  it('reports Agent Teams unavailable when the Session projection is missing', async () => {
+    const { rows } = await loadRows({ teamMode: { enabled: undefined } })
+
+    expect(findRow(rows, 'model.unavailable')).toMatchObject({
+      label: copy.config.unavailable('agentTeams'),
+      value: '',
+      scope: undefined,
+      readOnly: true,
+      unavailable: true,
+    })
+    expect(findRow(rows, 'model.unavailable').activate).toBeUndefined()
   })
 
   it('reports the profile-owned display values and the in-session toggles', async () => {
@@ -1021,6 +1069,36 @@ describe('ConfigPanel activation results', () => {
     })
     expect(harness.notices).toEqual(['changed'])
     expect(harness.restarts).toEqual([copy.config.restartRequired])
+  })
+
+  it('flips the Agent Teams switch and saves the next state', async () => {
+    const off = await loadRows({ teamMode: { enabled: false } })
+    const harness = panelFor({ rows: off.rows })
+    const rows = Reflect.get(harness.panel, 'rows') as readonly ConfigRow[]
+    const index = rows.filter(row => row.section === 'model').findIndex(row => row.id === 'model.team')
+    Reflect.set(harness.panel, 'cursor', index)
+
+    harness.panel.handleInput(ENTER)
+    await settle()
+
+    expect(off.calls).toEqual(['setTeamMode:true'])
+    expect(rendered(harness.panel)).toContain('[x] On')
+  })
+
+  it('keeps the previous Agent Teams value when the write is rejected', async () => {
+    const on = await loadRows({
+      teamMode: { enabled: true },
+      actions: { setTeamMode: () => ({ failed: true, notice: copy.config.writeFailed('flush failed') }) },
+    })
+    const harness = panelFor({ rows: on.rows })
+    const rows = Reflect.get(harness.panel, 'rows') as readonly ConfigRow[]
+    const index = rows.filter(row => row.section === 'model').findIndex(row => row.id === 'model.team')
+    Reflect.set(harness.panel, 'cursor', index)
+
+    harness.panel.handleInput(ENTER)
+
+    await vi.waitFor(() => { expect(harness.notices).toEqual([copy.config.writeFailed('flush failed')]) })
+    expect(rendered(harness.panel)).toContain('[x] On')
   })
 
   it('flips a toggle optimistically and keeps the new state after a restart requirement', async () => {

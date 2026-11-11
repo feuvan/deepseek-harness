@@ -25,6 +25,7 @@ This group owns the terminal surface of DeepSeek Harness. `dsh tui` boots the sh
 | Package | Role | ctx key |
 |---|---|---|
 | [`tui`](tui/README.md) | Full-screen terminal presentation plugin over the shared Agent, Session, tool, command, and interaction services | none (consumer only) |
+| [`agent-team`](agent-team/README.md) | Read-only Agent Teams surface: the compact team strip, the `/team` dock, and teammate transcripts over the terminal contribution seam | none (consumer only) |
 
 The shipped composition is [`@deepseek-ai/dsh-tui-app`](../bundle/tui-app/README.md); the headless terminal, screen projection, and PTY driver used by its tests live in [`terminal-snapshot`](../test-support/terminal-snapshot/README.md).
 

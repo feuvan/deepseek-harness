@@ -3,7 +3,7 @@
  * Agent Teams surface renders with. The package defines them structurally so it
  * needs no dependency on the terminal package or its internals.
  *
- * @module @deepseek-ai/dsh-experimental-tui-agent-team/types
+ * @module @deepseek-ai/dsh-tui-agent-team/types
  */
 
 import type { Component } from '@earendil-works/pi-tui'

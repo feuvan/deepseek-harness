@@ -25,6 +25,7 @@ kind: "package-group"
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`tui`](tui/README.zh.md) | 基于共享 Agent、会话、工具、命令与交互服务的全屏终端呈现插件 | 无（仅消费） |
+| [`agent-team`](agent-team/README.zh.md) | 只读的 Agent Teams 界面：编辑器上方的紧凑状态行、`/team` dock 与 teammate transcript，经由终端贡献 seam 提供 | 无（仅消费） |
 
 随附组装为 [`@deepseek-ai/dsh-tui-app`](../bundle/tui-app/README.zh.md)；其测试使用的无头终端、屏幕投影与 PTY 驱动器位于 [`terminal-snapshot`](../test-support/terminal-snapshot/README.zh.md)。
 

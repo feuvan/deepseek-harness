@@ -4,8 +4,8 @@ import type { DockComponent } from '../src/types.ts'
 import { TeamController } from '../src/controller.ts'
 import { copy, setCopyLocale } from '../src/copy.ts'
 import {
-  assistantEvent, controllerHarness, sessionToken, teamMember, teamProjection, teamTask,
-  toolCallEvent, turnEndEvent, userEvent, type ControllerOptions,
+  assistantEvent, controllerHarness, diagnosticEntry, emitAgentEvent, memberEntry, sessionToken, teamProjection,
+  teamTask, toolCallEvent, turnEndEvent, userEvent, type ControllerOptions,
 } from './harness.ts'
 
 afterEach(() => {
@@ -21,7 +21,7 @@ interface Installed {
 
 /**
  * Install one controller over a fresh harness.
- * @param options - projection, observation, and service overrides.
+ * @param options - projection, subtree, observation, and service overrides.
  * @returns the controller, harness, and install disposer.
  */
 function install(options: ControllerOptions = {}): Installed {
@@ -42,6 +42,13 @@ function dockComponent(installed: Installed): DockComponent {
   const dock = installed.harness.ui.docks.at(-1)
   if (dock === undefined) throw new Error('no dock was presented')
   return dock.component
+}
+
+/** @returns the strip text, or undefined when the strip renders nothing. */
+function stripText(installed: Installed): string | undefined {
+  const strip = installed.harness.ui.strips[0]
+  if (strip === undefined) throw new Error('strip was not registered')
+  return strip.render(200)[0]
 }
 
 describe('TeamController install', () => {
@@ -65,9 +72,8 @@ describe('TeamController install', () => {
 
   it('resolves member runtime services without requiring child injection', async () => {
     const harness = controllerHarness({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
     })
     harness.ctx.provide('terminalUi', harness.ui as never)
     let child: Context | undefined
@@ -84,31 +90,87 @@ describe('TeamController install', () => {
     dispose()
     await fiber.dispose()
   })
+
+  it('releases every subscription and cancels discovery on dispose', () => {
+    const installed = install({ projection: teamProjection(), descendantsPending: true })
+    expect(installed.harness.services.projections.listenerCount()).toBe(1)
+
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    expect(installed.harness.services.projections.listenerCount()).toBe(2)
+
+    const discovery = installed.harness.services.subagents.calls[0]
+    installed.dispose()
+
+    expect(installed.harness.services.projections.listenerCount()).toBe(0)
+    expect(discovery?.signal?.aborted).toBe(true)
+  })
 })
 
 describe('TeamController strip', () => {
-  it('renders the strip for a visible Team and hides it for a lead-only one', () => {
+  it('renders derived teammates and running counts, hiding when Team mode is off', () => {
     const installed = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
     })
     installed.harness.services.agentStatuses.set('teammate-1', 'running')
 
-    const strip = installed.harness.ui.strips[0]
-    if (strip === undefined) throw new Error('strip was not registered')
-    const [line] = strip.render(200).map(text => text)
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+    expect(stripText(installed)).toContain(copy.team.running(1))
 
-    expect(line).toContain(copy.team.teammates(1))
-    expect(line).toContain(copy.team.running(1))
+    installed.harness.services.projections.values.agentTeam = teamProjection({ enabled: false })
+    expect(stripText(installed)).toBeUndefined()
+  })
 
-    installed.harness.services.projections.values.agentTeam = teamProjection()
-    expect(strip.render(200)).toEqual([])
+  it('renders a task-only Team and a projection failure', () => {
+    const installed = install({ projection: teamProjection({ tasks: [teamTask()] }) })
+
+    expect(stripText(installed)).toContain(copy.team.tasks(1))
+
+    installed.harness.services.projections.values.agentTeam = teamProjection({ failure: 'bad record' })
+    expect(stripText(installed)).toContain(copy.team.failure('bad record'))
+  })
+
+  it('renders nothing for an enabled Team with no teammates and no tasks', () => {
+    const installed = install({ projection: teamProjection() })
+
+    expect(stripText(installed)).toBeUndefined()
   })
 })
 
 describe('TeamController /team command', () => {
-  it('opens the read-only roster for every argument form', () => {
+  it('closes the dock on Escape', () => {
+    const installed = install({ projection: teamProjection() })
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+
+    dockComponent(installed).handleInput('\u001b')
+
+    expect(installed.harness.ui.closed.count).toBe(1)
+  })
+
+  it('falls back to the direct-child catalog without the subagent runtime', () => {
+    const installed = install({
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
+      withoutSubagents: true,
+    })
+
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    expect(dockText(installed)).toContain('reviewer')
+  })
+
+  it('ignores a superseded discovery failure', async () => {
+    const installed = install({ projection: teamProjection(), descendantsError: new Error('catalog unavailable') })
+
+    emitAgentEvent(installed.harness.ctx, 'agent/created', 'teammate-1')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(installed.harness.services.subagents.calls).toHaveLength(2)
+    expect(installed.harness.ui.notices).toEqual([])
+  })
+
+  it('opens the read-only dock for every argument form', () => {
     const installed = install({ projection: teamProjection() })
     const command = installed.harness.ui.commands.get('team')
 
@@ -133,10 +195,18 @@ describe('TeamController /team command', () => {
     expect(installed.harness.ui.notices).toContain(copy.team.unavailable)
   })
 
+  it('reports that Team mode is off instead of opening the dock', () => {
+    const installed = install({ projection: teamProjection({ enabled: false }) })
+
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+
+    expect(installed.harness.ui.docks).toEqual([])
+    expect(installed.harness.ui.notices).toContain(copy.team.disabled)
+  })
+
   it('opens a read-only task detail and performs no task or message actions', () => {
     const installed = install({
       projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' })],
         tasks: [teamTask({ description: 'Full description from the projection.' })],
       }),
     })
@@ -158,74 +228,92 @@ describe('TeamController /team command', () => {
     expect(dockText(installed)).toContain(copy.team.hint)
   })
 
-  it('opens a member transcript only for active teammates', () => {
+  it('renders derived member rows with names, statuses, and descriptions', async () => {
     const installed = install({
-      projection: teamProjection({
-        members: [
-          teamMember(),
-          teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' }),
-          teamMember({ id: 'teammate-2', name: 'Broken', role: 'teammate', phase: 'failed' }),
-        ],
-      }),
+      projection: teamProjection(),
+      descendants: [
+        memberEntry({ id: 'teammate-1', path: 'reviewer', label: 'Reviews diffs' }),
+        diagnosticEntry({ id: 'teammate-2', path: 'reviewer/broken', reason: 'corrupt' }),
+      ],
+    })
+    installed.harness.services.agentStatuses.set('teammate-1', 'running')
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    await waitFor(() => dockText(installed).includes('reviewer/broken'))
+    const text = dockText(installed)
+
+    expect(text).toContain(`reviewer  ${copy.team.memberStatuses.running} · Reviews diffs`)
+    expect(text).toContain(copy.team.memberReasons.corrupt)
+  })
+
+  it('paints the direct-child catalog before descendant discovery settles', () => {
+    const installed = install({
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
+      descendantsPending: true,
     })
     void installed.harness.ui.commands.get('team')?.run(undefined)
 
-    dockComponent(installed).handleInput('\r')
-    expect(installed.harness.services.observed).toEqual([])
-    dockComponent(installed).handleInput('\u001b[B')
-    dockComponent(installed).handleInput('\r')
-    expect(installed.harness.services.observed).toHaveLength(1)
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+    expect(dockText(installed)).toContain('reviewer')
+    expect(stripText(installed)).toBeDefined()
   })
 
-  it('overlays live status and the persisted model on member rows', async () => {
+  it('replaces the catalog seed with discovered descendants', async () => {
     const installed = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate', phase: 'active' })],
-      }),
-      members: { 'teammate-1': { status: 'running', model: 'live/m', sessionModel: 'persisted/m' } },
+      projection: teamProjection(),
+      subagentCatalog: [],
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
     })
-    void installed.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(installed).handleInput('\u001b[B')
-    await waitFor(() => dockText(installed).includes(copy.team.model))
+    expect(stripText(installed)).toBeUndefined()
 
-    expect(dockText(installed)).toContain(copy.team.memberStatuses.running)
-    expect(dockText(installed)).toContain('Model: persisted/m')
-
-    installed.harness.services.members.set('teammate-1', { status: 'inactive', model: 'live/m', withoutSession: true })
-    dockComponent(installed).handleInput('\u001b[A')
-    dockComponent(installed).handleInput('\u001b[B')
-    expect(dockText(installed)).toContain(copy.team.memberStatuses.inactive)
-    expect(dockText(installed)).toContain('Model: live/m')
-
-    installed.harness.services.members.set('teammate-1', { withoutAgent: true, sessionModel: 'persisted/m' })
-    dockComponent(installed).handleInput('\u001b[A')
-    dockComponent(installed).handleInput('\u001b[B')
-    expect(dockText(installed)).toContain(copy.team.memberStatuses.inactive)
-    expect(dockText(installed)).toContain('Model: persisted/m')
+    await waitFor(() => stripText(installed)?.includes(copy.team.teammates(1)) === true)
   })
 
-  it('closes the roster dock on Escape and unsubscribes on install dispose', () => {
-    const installed = install({ projection: teamProjection() })
-    void installed.harness.ui.commands.get('team')?.run(undefined)
+  it('keeps the catalog seed when descendant discovery fails', async () => {
+    const installed = install({
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
+      descendantsError: new Error('catalog unavailable'),
+    })
 
-    dockComponent(installed).handleInput('\u001b')
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+    await Promise.resolve()
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+  })
 
-    expect(installed.harness.ui.closed.count).toBe(1)
-    expect(installed.harness.services.projections.listenerCount()).toBe(0)
+  it('refreshes discovery on Agent and catalog changes and ignores foreign statuses', async () => {
+    const installed = install({ projection: teamProjection(), descendants: [] })
+    await waitFor(() => installed.harness.services.subagents.calls.length === 1)
 
-    void installed.harness.ui.commands.get('team')?.run(undefined)
-    expect(installed.harness.services.projections.listenerCount()).toBe(1)
-    installed.dispose()
-    expect(installed.harness.services.projections.listenerCount()).toBe(0)
+    emitAgentEvent(installed.harness.ctx, 'agent/created', 'teammate-1')
+    await waitFor(() => installed.harness.services.subagents.calls.length === 2)
+
+    installed.harness.services.subagents.entries = [memberEntry({ id: 'teammate-1', path: 'reviewer' })]
+    installed.harness.services.projections.values.subagentCatalog = [
+      { id: sessionToken('teammate-1').id, createdAt: 1, mode: 'continuable', label: 'Reviews diffs', name: 'reviewer' },
+    ]
+    installed.harness.services.projections.emit(installed.harness.agent.session, 'subagentCatalog')
+    await waitFor(() => installed.harness.services.subagents.calls.length === 3)
+    expect(stripText(installed)).toContain(copy.team.teammates(1))
+
+    emitAgentEvent(installed.harness.ctx, 'agent/status', 'teammate-1')
+    await waitFor(() => installed.harness.services.subagents.calls.length === 4)
+
+    emitAgentEvent(installed.harness.ctx, 'agent/status', 'foreign')
+    emitAgentEvent(installed.harness.ctx, 'agent/disposed', 'teammate-1')
+    await waitFor(() => installed.harness.services.subagents.calls.length === 5)
+
+    installed.harness.services.projections.emit(installed.harness.agent.session, 'agentTeam')
+    await Promise.resolve()
+    expect(installed.harness.ui.renders).toBeGreaterThan(0)
   })
 })
 
 describe('TeamController teammate transcript', () => {
   it('observes the teammate Session, formats durable events, and appends live lines', async () => {
     const installed = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
       events: [
         userEvent('hello from the lead'),
         assistantEvent('assistant answer'),
@@ -244,7 +332,6 @@ describe('TeamController teammate transcript', () => {
       ],
     })
     void installed.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(installed).handleInput('\u001b[B')
     dockComponent(installed).handleInput('\r')
     await waitFor(() => installed.harness.services.observed.length === 1)
 
@@ -253,6 +340,7 @@ describe('TeamController teammate transcript', () => {
       options: { projectionMode: 'all' },
     })
     const loaded = dockText(installed)
+    expect(loaded).toContain(copy.team.memberTitle('reviewer'))
     expect(loaded).toContain(copy.team.memberUser('hello from the lead'))
     expect(loaded).toContain(copy.team.memberAssistant('assistant answer'))
     expect(loaded).toContain(copy.team.memberTool('bash'))
@@ -268,7 +356,6 @@ describe('TeamController teammate transcript', () => {
     dockComponent(installed).handleInput('\u001b')
     expect(dockText(installed)).toContain(copy.team.title)
 
-    dockComponent(installed).handleInput('\u001b[B')
     dockComponent(installed).handleInput('\r')
     await waitFor(() => installed.harness.services.observed.length === 2)
     installed.harness.ui.docks.at(-1)?.close()
@@ -277,13 +364,11 @@ describe('TeamController teammate transcript', () => {
 
   it('reports unavailable history without the query service', async () => {
     const installed = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
       withoutQuery: true,
     })
     void installed.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(installed).handleInput('\u001b[B')
     dockComponent(installed).handleInput('\r')
 
     await waitFor(() => installed.harness.ui.notices.includes(copy.team.historyUnavailable))
@@ -292,58 +377,73 @@ describe('TeamController teammate transcript', () => {
 
   it('reports history read failures thrown as Error and non-Error', async () => {
     const failing = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
       queryError: new Error('history unavailable'),
     })
     void failing.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(failing).handleInput('\u001b[B')
     dockComponent(failing).handleInput('\r')
     await waitFor(() => failing.harness.ui.notices.includes(copy.team.actionFailed('history unavailable')))
 
     const nonError = install({
-      projection: teamProjection({
-        members: [teamMember(), teamMember({ id: 'teammate-1', name: 'Worker', role: 'teammate' })],
-      }),
+      projection: teamProjection(),
+      descendants: [memberEntry({ id: 'teammate-1', path: 'reviewer' })],
       queryError: 'history unavailable',
     })
     void nonError.harness.ui.commands.get('team')?.run(undefined)
-    dockComponent(nonError).handleInput('\u001b[B')
     dockComponent(nonError).handleInput('\r')
     await waitFor(() => nonError.harness.ui.notices.includes(copy.team.actionFailed('history unavailable')))
   })
 })
 
 describe('TeamController projection updates', () => {
-  it('refreshes an open roster and closes it when the projection disappears', () => {
+  it('refreshes an open dock and closes it when Team mode turns off or the projection disappears', () => {
     const installed = install({ projection: teamProjection({ tasks: [teamTask({ subject: 'Initial task' })] }) })
     void installed.harness.ui.commands.get('team')?.run(undefined)
     dockComponent(installed).handleInput('\t')
     expect(dockText(installed)).toContain('Initial task')
 
     installed.harness.services.projections.values.agentTeam = teamProjection({ tasks: [teamTask({ subject: 'Updated task' })] })
-    installed.harness.services.projections.emit(installed.harness.agent.session)
+    installed.harness.services.projections.emit(installed.harness.agent.session, 'agentTeam')
     expect(dockText(installed)).toContain('Updated task')
     expect(installed.harness.ui.renders).toBeGreaterThan(0)
 
-    installed.harness.services.projections.emit({ id: 'foreign' })
+    installed.harness.services.projections.emit({ id: 'foreign' }, 'agentTeam')
     expect(dockText(installed)).toContain('Updated task')
 
-    delete installed.harness.services.projections.values.agentTeam
-    installed.harness.services.projections.emit(installed.harness.agent.session)
+    installed.harness.services.projections.values.agentTeam = teamProjection({ enabled: false })
+    installed.harness.services.projections.emit(installed.harness.agent.session, 'agentTeam')
     expect(installed.harness.ui.closed.count).toBe(1)
+
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    delete installed.harness.services.projections.values.agentTeam
+    installed.harness.services.projections.emit(installed.harness.agent.session, 'agentTeam')
+    expect(installed.harness.ui.closed.count).toBe(2)
   })
 
-  it('closes the roster and member panels through the dock close callback', () => {
+  it('closes the dock through the dock close callback', () => {
     const installed = install({ projection: teamProjection() })
     void installed.harness.ui.commands.get('team')?.run(undefined)
-    const roster = installed.harness.ui.docks.at(-1)
+    const dock = installed.harness.ui.docks.at(-1)
 
-    roster?.close()
+    dock?.close()
 
     expect(installed.harness.ui.closed.count).toBe(1)
-    expect(installed.harness.services.projections.listenerCount()).toBe(0)
+    expect(installed.harness.services.projections.listenerCount()).toBe(1)
+  })
+
+  it('refreshes the open dock when member rows change', async () => {
+    const installed = install({
+      projection: teamProjection(),
+      subagentCatalog: [],
+      descendants: [],
+    })
+    void installed.harness.ui.commands.get('team')?.run(undefined)
+    expect(dockText(installed)).toContain(copy.team.emptyMembers)
+
+    installed.harness.services.subagents.entries = [memberEntry({ id: 'teammate-1', path: 'reviewer' })]
+    emitAgentEvent(installed.harness.ctx, 'agent/created', 'teammate-1')
+    await waitFor(() => dockText(installed).includes('reviewer'))
   })
 })
 

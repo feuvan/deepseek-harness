@@ -2,7 +2,7 @@
  * English and Chinese copy for the read-only terminal Agent Teams panel. The
  * locale is chosen once from the terminal contribution seam at plugin activation.
  *
- * @module @deepseek-ai/dsh-experimental-tui-agent-team/copy
+ * @module @deepseek-ai/dsh-tui-agent-team/copy
  */
 
 /** English dictionary; its keys define the copy contract. */
@@ -14,13 +14,14 @@ const english = {
     tasksTab: 'Shared tasks',
     failure: (message: string): string => `Invalid persisted Team record: ${message}`,
     hint: 'Tab/←/→ section · ↑/↓ move · Enter open · Esc close',
-    current: 'Current chat',
-    model: 'Model',
     memberStatuses: {
       running: 'Running',
       inactive: 'Inactive',
-      provisioning: 'Provisioning',
-      failed: 'Failed',
+    },
+    memberReasons: {
+      corrupt: 'History unreadable',
+      unsupported: 'Unsupported mode',
+      unavailable: 'History unavailable',
     },
     statuses: {
       pending: 'Pending',
@@ -33,6 +34,7 @@ const english = {
     unowned: 'Unowned',
     blockedBy: 'Blocked by',
     writeScopes: 'Write scopes',
+    emptyMembers: 'No teammates yet. Delegate through the conversation.',
     emptyTasks: 'No shared tasks yet. Create them through the conversation.',
     taskDetailStatus: 'Status',
     taskDetailId: 'Task',
@@ -44,7 +46,8 @@ const english = {
     blocked: (count: number): string => `${String(count)} blocked`,
     inProgress: (count: number): string => `${String(count)} in progress`,
     completed: (count: number): string => `${String(count)} completed`,
-    unavailable: 'Agent Teams is not composed in this profile. Enable dsh-experimental-agent-team-profile under /config → Experimental capabilities, then restart the terminal.',
+    unavailable: 'Agent Teams is not available in this composition. The Team service ships with the base composition.',
+    disabled: 'Agent Team mode is off for this Session. Turn on Use Agent Teams in /config → Model & effort.',
     historyUnavailable: 'Teammate history is unavailable in this composition.',
     actionFailed: (message: string): string => `Team action failed: ${message}`,
     memberTitle: (name: string): string => `Teammate ${name}`,
@@ -76,13 +79,14 @@ const chinese: Copy = {
     tasksTab: '共享任务',
     failure: message => `团队持久记录无效：${message}`,
     hint: 'Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开 · Esc 关闭',
-    current: '当前会话',
-    model: '模型',
     memberStatuses: {
       running: '运行中',
       inactive: '未运行',
-      provisioning: '准备中',
-      failed: '失败',
+    },
+    memberReasons: {
+      corrupt: '历史不可读',
+      unsupported: '不支持的模式',
+      unavailable: '历史不可用',
     },
     statuses: {
       pending: '待处理',
@@ -95,6 +99,7 @@ const chinese: Copy = {
     unowned: '未分配',
     blockedBy: '依赖',
     writeScopes: '写入范围',
+    emptyMembers: '暂无成员，可以通过对话委派任务。',
     emptyTasks: '暂无共享任务，可以通过对话创建',
     taskDetailStatus: '状态',
     taskDetailId: '任务',
@@ -106,7 +111,8 @@ const chinese: Copy = {
     blocked: count => `${String(count)} 阻塞`,
     inProgress: count => `${String(count)} 进行中`,
     completed: count => `${String(count)} 已完成`,
-    unavailable: '当前 profile 没有组装 Agent Teams。请在 /config → 实验性能力中启用 dsh-experimental-agent-team-profile，然后重启终端。',
+    unavailable: '当前组合没有组装 Agent Teams。Team 服务随基础组合提供。',
+    disabled: '当前会话未启用智能体团队模式。请在 /config → 模型与推理强度 中打开 Use Agent Teams。',
     historyUnavailable: '当前组合无法读取 teammate 历史。',
     actionFailed: message => `Team 操作失败：${message}`,
     memberTitle: name => `Teammate ${name}`,

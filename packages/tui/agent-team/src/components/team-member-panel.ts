@@ -4,7 +4,7 @@
  * It is a viewer, not a driver: prompts to a teammate are sent from the
  * composer, never from this panel.
  *
- * @module @deepseek-ai/dsh-tui/components/team-member-panel
+ * @module @deepseek-ai/dsh-tui-agent-team/components/team-member-panel
  */
 
 import { matchesKey, truncateToWidth, type Component } from '@earendil-works/pi-tui'

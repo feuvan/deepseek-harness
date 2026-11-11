@@ -1,14 +1,14 @@
 {
-  "name": "@deepseek-ai/dsh-experimental-tui-agent-team",
-  "description": "Terminal Agent Teams surface: team strip, dock panel, teammate transcript, and task actions over ctx.terminalUi",
-  "version": "0.2.2-alpha.2",
+  "name": "@deepseek-ai/dsh-tui-agent-team",
+  "description": "Terminal Agent Teams surface: team strip, member and shared-task dock, and teammate transcripts over ctx.terminalUi",
+  "version": "0.2.2-rc.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/experimental/tui-agent-team"
+    "directory": "packages/tui/agent-team"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -32,17 +32,19 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-agent-team": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-session-query": "workspace:*"
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-agent-team": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-session-query": "workspace:*"
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*"
   }
 }

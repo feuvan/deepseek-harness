@@ -39,6 +39,12 @@
       config:
         sessionId: !!js ctx.tuiStartup.sessionId
 
+    # The terminal Agent Teams surface: the compact strip, the read-only
+    # `/team` dock, and teammate transcripts over `ctx.terminalUi`. The base
+    # layer supplies the Team service and task tools; this row presents them.
+    - id: tui-agent-team
+      name: '@deepseek-ai/dsh-tui-agent-team'
+
     # `@` mentions resolve through the shared file-reference provider, so the
     # terminal offers the same workspace candidates as the Web composer.
     - id: file-reference-local

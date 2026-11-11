@@ -393,6 +393,7 @@ const en = {
       modelChange: 'Choose the model used for this Session',
       effortCurrent: 'Current reasoning effort',
       effortChange: 'Choose how much reasoning the model shows',
+      teamMode: 'Coordinate subagents through shared tasks for this Session tree',
       permission: 'Choose what the Agent may do in this workspace',
       bundle: 'Optional experimental capability; applies through profile HMR',
       cards: 'Cycle collapsed, expanded, and hidden tool cards',
@@ -414,6 +415,8 @@ const en = {
     changeModel: 'Change model',
     /** Label for the row that opens the effort chooser. */
     changeEffort: 'Change effort',
+    /** Label for the per-Session Agent Teams switch. */
+    teamMode: 'Use Agent Teams',
     /** Label for the tool-card density action. */
     toolCards: 'Tool cards',
     /** Label for the reasoning-visibility action. */
@@ -452,6 +455,16 @@ const en = {
     on: 'on',
     /** Row value for a disabled toggle. */
     off: 'off',
+    /** Heading of the confirmation shown before disabling Agent Teams. */
+    teamDisableTitle: 'Disable Agent Teams?',
+    /** What disabling Agent Teams keeps. */
+    teamDisableDescription: 'Tasks and subagents are kept, and admitted task operations finish.',
+    /** Why disabling Agent Teams asks for confirmation. */
+    teamDisableWarning: 'It can affect cache reuse and increase token use for the rest of the conversation.',
+    /** Confirm action label of that confirmation. */
+    teamDisableConfirm: 'Disable',
+    /** Cancel action label of that confirmation. */
+    teamDisableCancel: 'Cancel',
     /** A configuration read failed. */
     failed: (message: string): string => `Configuration unavailable: ${message}`,
     /** A configuration write failed. */
@@ -498,6 +511,8 @@ const en = {
     closeHint: 'Esc or Enter closes',
     /** Scrolling hint for long dock panels. */
     scrollHint: '↑/↓ scroll · Esc or Enter closes',
+    /** Choice hint for a two-action dock confirmation. */
+    confirmHint: '←/→ choose · Enter confirm · Esc cancel',
   },
   /** First-run model connection flow. */
   onboarding: {
@@ -871,6 +886,7 @@ export const chinese: Copy = {
       modelChange: '选择本会话使用的模型',
       effortCurrent: '当前推理强度',
       effortChange: '选择模型展示多少推理',
+      teamMode: '让本会话树通过共享任务协调子代理',
       permission: '选择 Agent 在此工作区可以做什么',
       bundle: '可选的实验性能力；通过 profile HMR 应用',
       cards: '循环折叠、展开与隐藏工具卡',
@@ -889,6 +905,7 @@ export const chinese: Copy = {
     filter: '筛选配置',
     changeModel: '更改模型',
     changeEffort: '更改推理强度',
+    teamMode: '使用智能体团队',
     toolCards: '工具卡',
     reasoning: '推理显示',
     noMatches: '无匹配项',
@@ -909,6 +926,11 @@ export const chinese: Copy = {
     notSet: '未设置',
     on: '开',
     off: '关',
+    teamDisableTitle: '停用智能体团队？',
+    teamDisableDescription: '任务与子代理会保留，已受理的任务操作会完成。',
+    teamDisableWarning: '停用可能影响缓存复用，并增加后续对话的 token 用量。',
+    teamDisableConfirm: '确认停用',
+    teamDisableCancel: '取消',
     failed: message => `无法读取配置：${message}`,
     writeFailed: message => `配置未保存：${message}`,
     hint: '↑/↓ 移动 · Enter 打开或切换 · Esc 关闭',
@@ -1050,6 +1072,7 @@ export const chinese: Copy = {
     status: '状态',
     closeHint: 'Esc 或 Enter 关闭',
     scrollHint: '↑/↓ 滚动 · Esc 或 Enter 关闭',
+    confirmHint: '←/→ 选择 · Enter 确认 · Esc 取消',
   },
   activity: {
     working: '运行中…',

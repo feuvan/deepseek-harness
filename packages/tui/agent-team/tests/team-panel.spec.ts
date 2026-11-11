@@ -1,13 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import {
-  TeamPanel,
-  type TeamMemberRuntime,
-  type TeamPanelHandlers,
-} from '../src/components/team-panel.ts'
+import { TeamPanel, type TeamPanelHandlers } from '../src/components/team-panel.ts'
+import type { TeamMemberRow, TeamProjection } from '../src/team.ts'
 import { copy, setCopyLocale } from '../src/copy.ts'
-import { paletteDouble, teamMember, teamProjection, teamTask } from './harness.ts'
+import { paletteDouble, teamProjection, teamTask } from './harness.ts'
 
 /** Keys the Team panel accepts. */
 const KEY = {
@@ -27,36 +23,48 @@ afterEach(() => {
   setCopyLocale('en')
 })
 
+/** One teammate row fixture. */
+function member(id: string, name: string, description?: string, reason?: TeamMemberRow['reason']): TeamMemberRow {
+  return {
+    id,
+    name,
+    ...description === undefined ? {} : { description },
+    ...reason === undefined ? {} : { reason },
+  }
+}
+
 /** One Team panel harness and its action recordings. */
 interface PanelHarness {
   readonly panel: TeamPanel
   readonly opens: { name: string }[]
-  readonly closes: number
   readonly runtimeCalls: string[]
+  get closes(): number
 }
 
 /**
  * Build one read-only Team panel over recording handlers.
  * @param team - initial projection.
- * @param runtime - per-member runtime facts keyed by Session id.
+ * @param members - initial teammate rows.
+ * @param running - running flags keyed by Session id.
  * @returns the panel and its recordings.
  */
 function panelHarness(
-  team: Parameters<TeamPanel['setTeam']>[0] = teamProjection(),
-  runtime: Readonly<Record<string, TeamMemberRuntime>> = {},
+  team: TeamProjection | undefined = teamProjection(),
+  members: readonly TeamMemberRow[] = [],
+  running: Readonly<Record<string, boolean>> = {},
 ): PanelHarness {
   const opens: { name: string }[] = []
   const runtimeCalls: string[] = []
   const state = { closes: 0 }
   const handlers: TeamPanelHandlers = {
     close: () => { state.closes += 1 },
-    openMember: (member) => { opens.push({ name: member.name }) },
+    openMember: (row) => { opens.push({ name: row.name }) },
   }
   const panel = new TeamPanel(paletteDouble().palette, handlers, (id) => {
     runtimeCalls.push(id)
-    return runtime[id] ?? { status: 'inactive' }
+    return running[id] ?? false
   })
-  panel.setTeam(team)
+  panel.setTeam(team, members)
   return {
     panel,
     opens,
@@ -83,76 +91,63 @@ function selected(lines: readonly string[], needle: string): boolean {
 describe('TeamPanel read-only list', () => {
   it('renders only the title before any projection', () => {
     const harness = panelHarness()
-    harness.panel.setTeam(undefined)
+    harness.panel.setTeam(undefined, [])
 
     expect(harness.panel.active).toBe(false)
     expect(rendered(harness.panel)).toEqual([copy.team.title])
     expect(harness.panel.handleInput(KEY.down)).toBe(false)
   })
 
-  it('renders native member statuses, the current tag, models, and errors', () => {
+  it('renders teammate rows with live running state and descriptions', () => {
     const harness = panelHarness(
-      teamProjection({
-        members: [
-          teamMember(),
-          teamMember({ id: SessionId('t1'), name: 'Running', role: 'teammate', phase: 'active' }),
-          teamMember({ id: SessionId('t2'), name: 'Idle', role: 'teammate', phase: 'active' }),
-          teamMember({ id: SessionId('t3'), name: 'Waking', role: 'teammate', phase: 'provisioning' }),
-          teamMember({ id: SessionId('t4'), name: 'Broken', role: 'teammate', phase: 'failed', error: 'spawn failed' }),
-        ],
-      }),
-      {
-        't1': { status: 'running', model: 'alpha/m-1' },
-        't2': { status: 'inactive' },
-      },
+      teamProjection({ tasks: [teamTask()] }),
+      [
+        member('t1', 'reviewer', 'Reviews diffs'),
+        member('t2', 'checker'),
+        member('t3', 'broken', undefined, 'corrupt'),
+      ],
+      { 't1': true },
     )
     const lines = rendered(harness.panel)
 
     expect(lines[0]).toBe(copy.team.title)
-    expect(lines[1]).toContain(` ${copy.team.membersTab} 5 `)
-    expect(lines[1]).toContain(` ${copy.team.tasksTab} 0 `)
-    expect(hasLine(lines, `○ Lead [${copy.team.current}]  ${copy.team.memberStatuses.inactive}`)).toBe(true)
-    expect(hasLine(lines, `● Running  ${copy.team.memberStatuses.running}`)).toBe(true)
-    expect(hasLine(lines, `${copy.team.model}: alpha/m-1`)).toBe(true)
-    expect(hasLine(lines, `○ Idle  ${copy.team.memberStatuses.inactive}`)).toBe(true)
-    expect(hasLine(lines, `● Waking  ${copy.team.memberStatuses.provisioning}`)).toBe(true)
-    expect(hasLine(lines, `! Broken  ${copy.team.memberStatuses.failed}`)).toBe(true)
-    expect(hasLine(lines, 'spawn failed')).toBe(true)
-    expect(selected(lines, 'Lead')).toBe(true)
+    expect(lines[1]).toContain(` ${copy.team.membersTab} 3 `)
+    expect(lines[1]).toContain(` ${copy.team.tasksTab} 1 `)
+    expect(hasLine(lines, `● reviewer  ${copy.team.memberStatuses.running} · Reviews diffs`)).toBe(true)
+    expect(hasLine(lines, `○ checker  ${copy.team.memberStatuses.inactive}`)).toBe(true)
+    expect(hasLine(lines, `○ broken  ${copy.team.memberStatuses.inactive} · ${copy.team.memberReasons.corrupt}`)).toBe(true)
+    expect(selected(lines, 'reviewer')).toBe(true)
     expect(lines.at(-1)).toBe(`  ${copy.team.hint}`)
+    expect(harness.runtimeCalls).toEqual(['t1', 't2', 't3'])
 
     harness.panel.handleInput(KEY.down)
-    expect(hasLine(rendered(harness.panel), `Running  ${copy.team.memberStatuses.running}`)).toBe(true)
+    expect(hasLine(rendered(harness.panel), 'checker')).toBe(true)
   })
 
-  it('derives status from phase before live runtime and marks only the lead as current', () => {
-    const harness = panelHarness(
-      teamProjection({
-        members: [
-          teamMember({ id: SessionId('lead'), name: 'Lead', role: 'lead', phase: 'active' }),
-          teamMember({ id: SessionId('p1'), name: 'Provisioning', role: 'teammate', phase: 'provisioning' }),
-          teamMember({ id: SessionId('f1'), name: 'Failed', role: 'teammate', phase: 'failed' }),
-          teamMember({ id: SessionId('a1'), name: 'Active', role: 'teammate', phase: 'active' }),
-        ],
-      }),
-      {
-        'lead': { status: 'running' },
-        'p1': { status: 'running' },
-        'f1': { status: 'running' },
-        'a1': { status: 'running' },
-      },
-    )
+  it('renders every unreadable-branch reason', () => {
+    const harness = panelHarness(teamProjection(), [
+      member('t1', 'corrupt', undefined, 'corrupt'),
+      member('t2', 'unsupported', undefined, 'unsupported'),
+      member('t3', 'unavailable', undefined, 'unavailable'),
+    ])
     const lines = rendered(harness.panel)
 
-    expect(hasLine(lines, `● Lead [${copy.team.current}]  ${copy.team.memberStatuses.running}`)).toBe(true)
-    expect(hasLine(lines, `● Provisioning  ${copy.team.memberStatuses.provisioning}`)).toBe(true)
-    expect(hasLine(lines, `! Failed  ${copy.team.memberStatuses.failed}`)).toBe(true)
-    expect(hasLine(lines, `● Active  ${copy.team.memberStatuses.running}`)).toBe(true)
-    expect(hasLine(lines, copy.team.memberStatuses.inactive)).toBe(false)
-    expect(lines.some(line => line.includes(`Active${copy.team.current}`))).toBe(false)
+    expect(hasLine(lines, copy.team.memberReasons.corrupt)).toBe(true)
+    expect(hasLine(lines, copy.team.memberReasons.unsupported)).toBe(true)
+    expect(hasLine(lines, copy.team.memberReasons.unavailable)).toBe(true)
   })
 
-  it('renders native task statuses, readiness, owners, and subjects', () => {
+  it('renders the empty-member and empty-task copy', () => {
+    const empty = panelHarness(teamProjection())
+    const memberLines = rendered(empty.panel)
+    expect(hasLine(memberLines, copy.team.emptyMembers)).toBe(true)
+
+    empty.panel.handleInput(KEY.tab)
+    const taskLines = rendered(empty.panel)
+    expect(hasLine(taskLines, copy.team.emptyTasks)).toBe(true)
+  })
+
+  it('renders task statuses, readiness, owners, and subjects', () => {
     const harness = panelHarness(teamProjection({
       tasks: [
         teamTask({ id: 'ready', subject: 'Ready subject' }),
@@ -172,31 +167,27 @@ describe('TeamPanel read-only list', () => {
     expect(lines.at(-1)).toBe(`  ${copy.team.hint}`)
   })
 
-  it('shows the native empty-task and failure copy', () => {
-    const empty = panelHarness(teamProjection({ tasks: [] }))
-    empty.panel.handleInput(KEY.tab)
-    const emptyLines = rendered(empty.panel)
-    expect(hasLine(emptyLines, copy.team.emptyTasks)).toBe(true)
-
+  it('renders the projection failure', () => {
     const failed = panelHarness(teamProjection({ failure: 'rejected record' }))
     const failedLines = rendered(failed.panel)
+
     expect(failedLines[1]).toBe(`  ${copy.team.failure('rejected record')}`)
     expect(failedLines[2]).toContain(` ${copy.team.membersTab}`)
   })
 
   it('moves the cursor, switches sections, and clamps at both ends', () => {
-    const harness = panelHarness(teamProjection({
-      members: [teamMember(), teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate' })],
-      tasks: [teamTask({ subject: 'Only task' })],
-    }))
+    const harness = panelHarness(
+      teamProjection({ tasks: [teamTask({ subject: 'Only task' })] }),
+      [member('t1', 'One'), member('t2', 'Two')],
+    )
 
-    expect(selected(rendered(harness.panel), 'Lead')).toBe(true)
-    harness.panel.handleInput(KEY.down)
     expect(selected(rendered(harness.panel), 'One')).toBe(true)
     harness.panel.handleInput(KEY.down)
-    expect(selected(rendered(harness.panel), 'One')).toBe(true)
+    expect(selected(rendered(harness.panel), 'Two')).toBe(true)
+    harness.panel.handleInput(KEY.down)
+    expect(selected(rendered(harness.panel), 'Two')).toBe(true)
     harness.panel.handleInput(KEY.up)
-    expect(selected(rendered(harness.panel), 'Lead')).toBe(true)
+    expect(selected(rendered(harness.panel), 'One')).toBe(true)
 
     harness.panel.handleInput(KEY.tab)
     expect(Reflect.get(harness.panel, 'tab')).toBe('tasks')
@@ -231,39 +222,37 @@ describe('TeamPanel read-only list', () => {
     expect(selected(rendered(harness.panel), 'Subject 1')).toBe(true)
   })
 
+  it('pages teammate rows by eight and shows overflow indicators', () => {
+    const members = Array.from({ length: 10 }, (_, index) => member(`t${String(index)}`, `Member ${String(index)}`))
+    const harness = panelHarness(teamProjection(), members)
+
+    expect(hasLine(rendered(harness.panel), `↓ ${copy.moreRows(2)}`)).toBe(true)
+    harness.panel.handleInput(KEY.pageDown)
+    expect(hasLine(rendered(harness.panel), `↑ ${copy.moreRows(2)}`)).toBe(true)
+    expect(selected(rendered(harness.panel), 'Member 8')).toBe(true)
+    harness.panel.handleInput(KEY.pageUp)
+    expect(selected(rendered(harness.panel), 'Member 0')).toBe(true)
+  })
+
   it('clamps the cursor when the projection shrinks and clears on setTeam(undefined)', () => {
-    const harness = panelHarness(teamProjection({
-      members: [
-        teamMember(),
-        teamMember({ id: SessionId('t1'), name: 'One', role: 'teammate', phase: 'active' }),
-      ],
-    }))
+    const harness = panelHarness(teamProjection(), [member('t1', 'One'), member('t2', 'Two')])
     harness.panel.handleInput(KEY.down)
 
-    harness.panel.setTeam(teamProjection())
+    harness.panel.setTeam(teamProjection(), [member('t1', 'One')])
     expect(Reflect.get(harness.panel, 'index')).toBe(0)
-    expect(selected(rendered(harness.panel), 'Lead')).toBe(true)
+    expect(selected(rendered(harness.panel), 'One')).toBe(true)
 
-    harness.panel.handleInput(KEY.down)
     harness.panel.handleInput(KEY.enter)
-    expect(harness.opens).toEqual([])
-    harness.panel.setTeam(undefined)
+    expect(harness.opens).toEqual([{ name: 'One' }])
+    harness.panel.setTeam(undefined, [])
     expect(rendered(harness.panel)).toEqual([copy.team.title])
   })
 
   it('truncates list rows and the full-width selected row', () => {
-    const harness = panelHarness(teamProjection({
-      members: [
-        teamMember({ name: 'A very long lead name that will not fit at all' }),
-        teamMember({
-          id: SessionId('t1'),
-          name: 'A very long teammate name that will not fit',
-          role: 'teammate',
-          phase: 'failed',
-          error: 'A long failure message that will not fit either',
-        }),
-      ],
-    }))
+    const harness = panelHarness(teamProjection(), [
+      member('t1', 'A very long teammate name that will not fit', 'A long creation description that will not fit either'),
+      member('t2', 'A very long diagnostic name that will not fit', undefined, 'unavailable'),
+    ])
 
     for (const line of rendered(harness.panel, 24)) expect(visibleWidth(line)).toBeLessThanOrEqual(24)
     const selectedLine = rendered(harness.panel, 24).find(line => line.includes('❯')) ?? ''
@@ -276,29 +265,24 @@ describe('TeamPanel read-only list', () => {
 })
 
 describe('TeamPanel read-only navigation', () => {
-  it('opens a transcript only for an active teammate', () => {
-    const harness = panelHarness(
-      teamProjection({
-        members: [
-          teamMember(),
-          teamMember({ id: SessionId('t1'), name: 'Active', role: 'teammate', phase: 'active' }),
-          teamMember({ id: SessionId('t2'), name: 'Provisioning', role: 'teammate', phase: 'provisioning' }),
-          teamMember({ id: SessionId('t3'), name: 'Failed', role: 'teammate', phase: 'failed' }),
-        ],
-      }),
-      { 't1': { status: 'inactive' } },
-    )
+  it('opens a transcript for every teammate row, including an inactive one', () => {
+    const harness = panelHarness(teamProjection(), [
+      member('t1', 'Active'),
+      member('t2', 'Inactive'),
+    ], { 't1': true })
+
+    expect(harness.panel.handleInput(KEY.enter)).toBe(true)
+    expect(harness.opens).toEqual([{ name: 'Active' }])
+    harness.panel.handleInput(KEY.down)
+    expect(harness.panel.handleInput(KEY.enter)).toBe(true)
+    expect(harness.opens).toEqual([{ name: 'Active' }, { name: 'Inactive' }])
+  })
+
+  it('ignores Enter when the member list is empty', () => {
+    const harness = panelHarness(teamProjection())
 
     expect(harness.panel.handleInput(KEY.enter)).toBe(true)
     expect(harness.opens).toEqual([])
-    harness.panel.handleInput(KEY.down)
-    expect(harness.panel.handleInput(KEY.enter)).toBe(true)
-    expect(harness.opens).toEqual([{ name: 'Active' }])
-    harness.panel.handleInput(KEY.down)
-    harness.panel.handleInput(KEY.enter)
-    harness.panel.handleInput(KEY.down)
-    harness.panel.handleInput(KEY.enter)
-    expect(harness.opens).toEqual([{ name: 'Active' }])
   })
 
   it('opens the task detail on Enter and renders native metadata', () => {
@@ -357,7 +341,7 @@ describe('TeamPanel read-only navigation', () => {
 
     blocked.panel.setTeam(teamProjection({
       tasks: [teamTask({ status: 'completed', description: 'Done.' })],
-    }))
+    }), [])
     expect(hasLine(rendered(blocked.panel), `${copy.team.taskDetailStatus}: ${copy.team.statuses.completed}`)).toBe(true)
   })
 
@@ -396,34 +380,28 @@ describe('TeamPanel read-only navigation', () => {
 
     harness.panel.setTeam(teamProjection({
       tasks: [teamTask({ id: 'task-1', subject: 'New subject', status: 'completed', description: 'New.' })],
-    }))
+    }), [])
     const refreshed = rendered(harness.panel)
     expect(refreshed[1]).toBe('New subject')
     expect(hasLine(refreshed, copy.team.statuses.completed)).toBe(true)
 
-    harness.panel.setTeam(teamProjection({ tasks: [] }))
+    harness.panel.setTeam(teamProjection({ tasks: [] }), [])
     expect(hasLine(rendered(harness.panel), copy.team.emptyTasks)).toBe(true)
     expect(Reflect.get(harness.panel, 'detail')).toBeUndefined()
   })
 
-  it('renders the Chinese native labels', () => {
+  it('renders the Chinese labels', () => {
     setCopyLocale('zh')
     const harness = panelHarness(
-      teamProjection({
-        members: [
-          teamMember(),
-          teamMember({ id: SessionId('t1'), name: 'Worker', role: 'teammate', phase: 'active' }),
-        ],
-        tasks: [teamTask({ status: 'in_progress', ownerName: 'Worker' })],
-      }),
-      { 't1': { status: 'running', model: 'alpha/m-1' } },
+      teamProjection({ tasks: [teamTask({ status: 'in_progress', ownerName: 'Worker' })] }),
+      [member('t1', 'Worker', 'Reviews diffs')],
+      { 't1': true },
     )
 
     const lines = rendered(harness.panel)
     expect(lines[0]).toBe(copy.team.title)
-    expect(lines[1]).toContain(` ${copy.team.membersTab} 2 `)
+    expect(lines[1]).toContain(` ${copy.team.membersTab} 1 `)
     expect(hasLine(lines, copy.team.memberStatuses.running)).toBe(true)
-    expect(hasLine(lines, copy.team.current)).toBe(true)
     expect(lines.at(-1)).toBe(`  ${copy.team.hint}`)
 
     harness.panel.handleInput(KEY.tab)
@@ -435,13 +413,13 @@ describe('TeamPanel read-only navigation', () => {
 
   it('reports a zero row count and invalidates without cached state', () => {
     const harness = panelHarness()
-    harness.panel.setTeam(undefined)
+    harness.panel.setTeam(undefined, [])
     const rowCount = Reflect.get(harness.panel, 'rowCount') as () => number
 
     expect(rowCount.call(harness.panel)).toBe(0)
     expect(() => { harness.panel.invalidate() }).not.toThrow()
 
-    const empty = panelHarness(teamProjection({ members: [] }))
+    const empty = panelHarness(teamProjection())
     expect(empty.panel.handleInput(KEY.enter)).toBe(true)
     empty.panel.handleInput(KEY.tab)
     expect(empty.panel.handleInput(KEY.enter)).toBe(true)

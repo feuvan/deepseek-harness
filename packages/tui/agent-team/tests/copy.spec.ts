@@ -29,19 +29,17 @@ describe('moreRows', () => {
 })
 
 describe('team copy', () => {
-  it('formats the English native labels, statuses, and notices', () => {
+  it('formats the English labels, statuses, and notices', () => {
     expect(copy.team.title).toBe('Agent Team')
     expect(copy.team.membersTab).toBe('Members')
     expect(copy.team.tasksTab).toBe('Shared tasks')
     expect(copy.team.failure('rejected')).toBe('Invalid persisted Team record: rejected')
     expect(copy.team.hint).toBe('Tab/←/→ section · ↑/↓ move · Enter open · Esc close')
-    expect(copy.team.current).toBe('Current chat')
-    expect(copy.team.model).toBe('Model')
-    expect(copy.team.memberStatuses).toEqual({
-      running: 'Running',
-      inactive: 'Inactive',
-      provisioning: 'Provisioning',
-      failed: 'Failed',
+    expect(copy.team.memberStatuses).toEqual({ running: 'Running', inactive: 'Inactive' })
+    expect(copy.team.memberReasons).toEqual({
+      corrupt: 'History unreadable',
+      unsupported: 'Unsupported mode',
+      unavailable: 'History unavailable',
     })
     expect(copy.team.statuses).toEqual({ pending: 'Pending', inProgress: 'In progress', completed: 'Completed' })
     expect(copy.team.readyLabel).toBe('Ready')
@@ -50,6 +48,7 @@ describe('team copy', () => {
     expect(copy.team.unowned).toBe('Unowned')
     expect(copy.team.blockedBy).toBe('Blocked by')
     expect(copy.team.writeScopes).toBe('Write scopes')
+    expect(copy.team.emptyMembers).toBe('No teammates yet. Delegate through the conversation.')
     expect(copy.team.emptyTasks).toBe('No shared tasks yet. Create them through the conversation.')
     expect(copy.team.taskDetailStatus).toBe('Status')
     expect(copy.team.taskDetailId).toBe('Task')
@@ -61,7 +60,8 @@ describe('team copy', () => {
     expect(copy.team.blocked(1)).toBe('1 blocked')
     expect(copy.team.inProgress(1)).toBe('1 in progress')
     expect(copy.team.completed(1)).toBe('1 completed')
-    expect(copy.team.unavailable).toContain('dsh-experimental-agent-team-profile')
+    expect(copy.team.unavailable).toBe('Agent Teams is not available in this composition. The Team service ships with the base composition.')
+    expect(copy.team.disabled).toBe('Agent Team mode is off for this Session. Turn on Use Agent Teams in /config → Model & effort.')
     expect(copy.team.historyUnavailable).toBe('Teammate history is unavailable in this composition.')
     expect(copy.team.actionFailed('nope')).toBe('Team action failed: nope')
     expect(copy.team.memberTitle('Worker')).toBe('Teammate Worker')
@@ -73,20 +73,18 @@ describe('team copy', () => {
     expect(copy.team.memberHint).toBe('↑/↓ scroll · Esc back to the Agent Team panel')
   })
 
-  it('formats the Chinese native labels and notices', () => {
+  it('formats the Chinese labels and notices', () => {
     setCopyLocale('zh')
     expect(copy.team.title).toBe('智能体团队')
     expect(copy.team.membersTab).toBe('成员')
     expect(copy.team.tasksTab).toBe('共享任务')
     expect(copy.team.failure('x')).toBe('团队持久记录无效：x')
     expect(copy.team.hint).toBe('Tab/←/→ 切换 · ↑/↓ 移动 · Enter 打开 · Esc 关闭')
-    expect(copy.team.current).toBe('当前会话')
-    expect(copy.team.model).toBe('模型')
-    expect(copy.team.memberStatuses).toEqual({
-      running: '运行中',
-      inactive: '未运行',
-      provisioning: '准备中',
-      failed: '失败',
+    expect(copy.team.memberStatuses).toEqual({ running: '运行中', inactive: '未运行' })
+    expect(copy.team.memberReasons).toEqual({
+      corrupt: '历史不可读',
+      unsupported: '不支持的模式',
+      unavailable: '历史不可用',
     })
     expect(copy.team.statuses).toEqual({ pending: '待处理', inProgress: '进行中', completed: '已完成' })
     expect(copy.team.readyLabel).toBe('可开始')
@@ -95,6 +93,7 @@ describe('team copy', () => {
     expect(copy.team.unowned).toBe('未分配')
     expect(copy.team.blockedBy).toBe('依赖')
     expect(copy.team.writeScopes).toBe('写入范围')
+    expect(copy.team.emptyMembers).toBe('暂无成员，可以通过对话委派任务。')
     expect(copy.team.emptyTasks).toBe('暂无共享任务，可以通过对话创建')
     expect(copy.team.taskDetailStatus).toBe('状态')
     expect(copy.team.taskDetailId).toBe('任务')
@@ -106,6 +105,8 @@ describe('team copy', () => {
     expect(copy.team.blocked(1)).toBe('1 阻塞')
     expect(copy.team.inProgress(1)).toBe('1 进行中')
     expect(copy.team.completed(1)).toBe('1 已完成')
+    expect(copy.team.unavailable).toBe('当前组合没有组装 Agent Teams。Team 服务随基础组合提供。')
+    expect(copy.team.disabled).toBe('当前会话未启用智能体团队模式。请在 /config → 模型与推理强度 中打开 Use Agent Teams。')
     expect(copy.team.historyUnavailable).toBe('当前组合无法读取 teammate 历史。')
     expect(copy.team.actionFailed('nope')).toBe('Team 操作失败：nope')
     expect(copy.team.memberTitle('Worker')).toBe('Teammate Worker')

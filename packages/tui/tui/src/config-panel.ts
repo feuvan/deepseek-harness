@@ -76,6 +76,12 @@ export interface ConfigModelState {
   readonly effortImplicit: boolean
 }
 
+/** The saved Agent Teams selection the model section shows for the presented root Session. */
+export interface ConfigTeamMode {
+  /** Saved selection; `undefined` while the Session projection has not produced one. */
+  readonly enabled: boolean | undefined
+}
+
 /** Fields shown in the terminal-display section. */
 export type DisplayField = 'color' | 'animation' | 'previewLines' | 'windowBlocks' | 'title' | 'locale' | 'busyEnter' | 'screen'
 
@@ -152,6 +158,12 @@ export interface ConfigPanelActions {
    */
   pickEffort(): ConfigActionOutcome
   /**
+   * Save the presented root Session's Agent Teams selection.
+   * @param enabled - the requested selection.
+   * @returns an optional result the panel reports, including a rejected write.
+   */
+  setTeamMode(enabled: boolean): ConfigActionOutcome
+  /**
    * Switch the current session's permission preset.
    * @param value - the preset value to select.
    * @returns an optional result the panel reports.
@@ -187,6 +199,8 @@ export interface ConfigPanelActions {
 export interface ConfigPanelDeps {
   /** Current model route and effort. */
   readonly model: ConfigModelState
+  /** Agent Teams selection; absent when the composition mounts no Team service or presents a subagent. */
+  readonly teamMode?: ConfigTeamMode | undefined
   /** Current permission preset value, when the Session projection knows it. */
   readonly permission: string | undefined
   /** Terminal display values from the resolved profile configuration. */
@@ -308,7 +322,7 @@ function errorMessage(error: unknown): string {
 /**
  * Rows for the model and reasoning-effort section.
  * @param deps - the values the loader reads.
- * @returns the current route and effort with their change actions.
+ * @returns the current route and effort with their change actions and the Agent Teams switch.
  */
 function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
   return [
@@ -350,7 +364,34 @@ function modelRows(deps: ConfigPanelDeps): ConfigRow[] {
       description: copy.config.descriptions.effortChange,
       activate: () => deps.actions.pickEffort(),
     },
+    ...teamModeRows(deps),
   ]
+}
+
+/**
+ * Row for the per-Session Agent Teams switch.
+ * @param deps - the values the loader reads.
+ * @returns the switch row, an unavailable fallback row when the projection is missing, or no row when the Team service is absent.
+ */
+function teamModeRows(deps: ConfigPanelDeps): ConfigRow[] {
+  const team = deps.teamMode
+  if (team === undefined) return []
+  if (team.enabled === undefined) {
+    return [fallbackRow('model', 'unavailable', copy.config.unavailable('agentTeams'))]
+  }
+  return [{
+    id: 'model.team',
+    section: 'model',
+    label: copy.config.teamMode,
+    value: team.enabled ? copy.config.on : copy.config.off,
+    scope: 'session',
+    readOnly: false,
+    description: copy.config.descriptions.teamMode,
+    toggle: true,
+    activate: (next?: string) => deps.actions.setTeamMode(
+      (next ?? (team.enabled === true ? copy.config.off : copy.config.on)) === copy.config.on,
+    ),
+  }]
 }
 
 /**

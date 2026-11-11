@@ -105,6 +105,8 @@ interface LifecycleOptions {
   readonly llm?: Record<string, unknown>
   /** Session working directory recorded in the header. */
   readonly sessionCwd?: string
+  /** Coarse Session classification recorded in the header. */
+  readonly sessionOrigin?: 'subagent'
   /** Registered-command execution override for dispatch tests. */
   readonly execute?: (line: string) => Promise<import('@deepseek-ai/dsh-commands').CommandExecution | undefined>
   /** Plain-Enter delivery mode while the Agent runs. */
@@ -160,7 +162,14 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   const ctx = freshContext(services)
   await mountSessions(ctx)
   const session = ctx.sessions.create(SessionId('session-test'), {
-    ...(options.sessionCwd === undefined ? {} : { meta: { cwd: options.sessionCwd } }),
+    ...(options.sessionCwd === undefined && options.sessionOrigin === undefined
+      ? {}
+      : {
+        meta: {
+          ...(options.sessionCwd === undefined ? {} : { cwd: options.sessionCwd }),
+          ...(options.sessionOrigin === undefined ? {} : { origin: options.sessionOrigin }),
+        },
+      }),
     ...(options.seed === undefined ? {} : { seed: options.seed }),
   })
   const agent = agentDouble({
@@ -3561,6 +3570,143 @@ describe('TerminalApp /config dock', () => {
     const open = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
 
     await expect(open.call(harness.app)).rejects.toThrow('bundle load failed')
+  })
+})
+
+describe('TerminalApp /config Agent Teams switch', () => {
+  /**
+   * Open `/config` and return the presented panel.
+   * @param harness - the application harness.
+   * @returns the presented configuration panel.
+   */
+  async function openConfig(harness: LifecycleHarness): Promise<ConfigPanel> {
+    await submitLine(harness, '/config')
+    await waitForDock(harness, copy.config.modelSection)
+    const panel = configPanelOf(harness.app)
+    if (panel === undefined) throw new Error('configuration panel was not presented')
+    return panel
+  }
+
+  it('saves the switch through the Team service and reads the saved projection value', async () => {
+    const setEnabled = vi.fn(async () => {})
+    const harness = await lifecycleHarness({
+      services: { agentTeams: { setEnabled } },
+      values: { agentTeam: { enabled: false, tasks: [] } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    await pressConfigRow(harness, panel, 'model', 'model.team')
+    await vi.waitFor(() => { expect(setEnabled).toHaveBeenCalledWith(harness.agent.agent, true) })
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+
+    harness.projections.values.agentTeam = { enabled: true, tasks: [] }
+    harness.terminal.headless.press('\u001b')
+    await vi.waitFor(() => { expect(bottomOf(harness.app).active).toBe(false) })
+
+    const reopened = await openConfig(harness)
+    expect(dockText(harness.app)).toContain('[x] On')
+    await pressConfigRow(harness, reopened, 'model', 'model.team')
+    await vi.waitFor(() => { expect(setEnabled).toHaveBeenCalledWith(harness.agent.agent, false) })
+    expect(setEnabled).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a failed Team mode write and keeps the switch on the saved value', async () => {
+    const harness = await lifecycleHarness({
+      services: { agentTeams: { setEnabled: async () => { throw new Error('flush failed') } } },
+      values: { agentTeam: { enabled: false, tasks: [] } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    await pressConfigRow(harness, panel, 'model', 'model.team')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.config.writeFailed('flush failed'))
+    })
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+    expect(dockText(harness.app)).toContain('[ ] Off')
+  })
+
+  it('keeps Team mode on when the disable confirmation is cancelled', async () => {
+    const setEnabled = vi.fn(async () => {})
+    const harness = await lifecycleHarness({
+      services: { agentTeams: { setEnabled } },
+      values: {
+        agentTeam: { enabled: true, tasks: [] },
+        modelSelection: { lastUsed: { provider: 'alpha', model: 'm-1' }, next: null },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    await pressConfigRow(harness, panel, 'model', 'model.team')
+    await waitForDock(harness, copy.config.teamDisableTitle)
+    expect(setEnabled).not.toHaveBeenCalled()
+
+    harness.terminal.headless.press('\u001b')
+    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
+    expect(setEnabled).not.toHaveBeenCalled()
+    expect(dockText(harness.app)).toContain('[x] On')
+  })
+
+  it('disables Team mode after the confirmation', async () => {
+    const setEnabled = vi.fn(async () => {})
+    const harness = await lifecycleHarness({
+      services: { agentTeams: { setEnabled } },
+      values: {
+        agentTeam: { enabled: true, tasks: [] },
+        modelSelection: { lastUsed: { provider: 'alpha', model: 'm-1' }, next: null },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    await pressConfigRow(harness, panel, 'model', 'model.team')
+    await waitForDock(harness, copy.config.teamDisableTitle)
+    const confirmation = dockContentOf(harness.app)
+    confirmation.handleInput('\u001b[C')
+    confirmation.handleInput('\r')
+
+    await vi.waitFor(() => { expect(setEnabled).toHaveBeenCalledWith(harness.agent.agent, false) })
+    await vi.waitFor(() => { expect(dockText(harness.app)).toContain('[ ] Off') })
+  })
+
+  it('omits the switch when the composition has no Team service', async () => {
+    const harness = await lifecycleHarness({ values: { agentTeam: { enabled: true, tasks: [] } } })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    const rows = Reflect.get(panel, 'rows') as readonly ConfigRow[]
+    expect(rows.some(row => row.id === 'model.team')).toBe(false)
+  })
+
+  it('reports Agent Teams unavailable when the Session projection is missing', async () => {
+    const harness = await lifecycleHarness({ services: { agentTeams: { setEnabled: async () => {} } } })
+    harness.start()
+    await harness.awaitStarted()
+    await openConfig(harness)
+
+    expect(dockText(harness.app)).toContain(copy.config.unavailable('agentTeams'))
+  })
+
+  it('omits the switch when the presented Session is a subagent', async () => {
+    const harness = await lifecycleHarness({
+      sessionOrigin: 'subagent',
+      services: { agentTeams: { setEnabled: vi.fn(async () => {}) } },
+      values: { agentTeam: { enabled: true, tasks: [] } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    const panel = await openConfig(harness)
+
+    const rows = Reflect.get(panel, 'rows') as readonly ConfigRow[]
+    expect(rows.some(row => row.id === 'model.team')).toBe(false)
   })
 })
 

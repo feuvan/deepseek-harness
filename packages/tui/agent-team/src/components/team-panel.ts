@@ -1,14 +1,14 @@
 /**
- * Agent Teams dock: a read-only view of the Lead Session's roster and shared
- * task board, matching the native Agent Teams panel. Selecting a member opens
- * its transcript; selecting a task expands its full description and metadata.
- * Task and member mutations stay in the Team tools and conversation.
+ * Agent Teams dock: a read-only view of the Lead Session's teammate rows and
+ * shared task board. Teammates come from the root's subagent tree, so selecting
+ * one opens its transcript; selecting a task expands its full description and
+ * metadata. Task and teammate mutations stay in the Team tools and conversation.
  *
- * @module @deepseek-ai/dsh-experimental-tui-agent-team/components/team-panel
+ * @module @deepseek-ai/dsh-tui-agent-team/components/team-panel
  */
 
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
-import type { TeamMemberProjectionRow, TeamProjection, TeamTaskRow } from '../team.ts'
+import type { TeamMemberRow, TeamProjection, TeamTaskRow } from '../team.ts'
 import { copy } from '../copy.ts'
 import { displayText } from '../display-text.ts'
 import type { Palette } from '../types.ts'
@@ -21,28 +21,21 @@ const MAX_VISIBLE = 8
 /** Maximum task-detail rows shown before scrolling. */
 const MAX_DETAIL = 14
 
-/** Runtime facts the roster overlays on the durable projection. */
-export interface TeamMemberRuntime {
-  /** Live turn state for an active member. */
-  readonly status: 'running' | 'inactive'
-  /** Model reported by the member Session, when available. */
-  readonly model?: string
-}
-
 /** Callbacks the read-only Team panel dispatches. */
 export interface TeamPanelHandlers {
   /** Close the panel and release the dock. */
   close(): void
   /** Open one teammate's read-only transcript. */
-  openMember(member: TeamMemberProjectionRow): void
+  openMember(member: TeamMemberRow): void
 }
 
 /** A read-only bottom-dock Agent Teams panel. */
 export class TeamPanel implements Component {
   private readonly palette: Palette
   private readonly handlers: TeamPanelHandlers
-  private readonly runtime: (id: string) => TeamMemberRuntime
+  private readonly running: (id: string) => boolean
   private team: TeamProjection | undefined
+  private members: readonly TeamMemberRow[] = []
   private tab: TeamTab = 'members'
   private index = 0
   private detail: TeamTaskRow | undefined
@@ -51,16 +44,16 @@ export class TeamPanel implements Component {
   /**
    * @param palette - terminal style table.
    * @param handlers - panel actions.
-   * @param runtime - live member status/model lookup.
+   * @param running - live running-state lookup for one teammate Session.
    */
   constructor(
     palette: Palette,
     handlers: TeamPanelHandlers,
-    runtime: (id: string) => TeamMemberRuntime,
+    running: (id: string) => boolean,
   ) {
     this.palette = palette
     this.handlers = handlers
-    this.runtime = runtime
+    this.running = running
   }
 
   /** Whether a Team projection is presented. */
@@ -71,9 +64,11 @@ export class TeamPanel implements Component {
   /**
    * Replace the presented Team value, keeping the selected section and clamping the cursor.
    * @param team - current projection, or undefined when it disappeared.
+   * @param members - teammate rows derived from the root's subagent tree.
    */
-  setTeam(team: TeamProjection | undefined): void {
+  setTeam(team: TeamProjection | undefined, members: readonly TeamMemberRow[]): void {
     this.team = team
+    this.members = members
     this.index = Math.min(this.index, Math.max(0, this.rowCount() - 1))
     if (this.detail !== undefined) {
       this.detail = team?.tasks.find(task => task.id === this.detail?.id)
@@ -145,8 +140,8 @@ export class TeamPanel implements Component {
         }
         return true
       }
-      const member = this.team.members[this.index]
-      if (member !== undefined && this.memberSelectable(member)) this.handlers.openMember(member)
+      const member = this.members[this.index]
+      if (member !== undefined) this.handlers.openMember(member)
       return true
     }
     if (matchesKey(data, 'escape')) {
@@ -157,7 +152,7 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Render the read-only roster/task board or the selected task detail.
+   * Render the read-only teammate/task board or the selected task detail.
    * @param width - available terminal columns.
    * @returns the panel lines.
    */
@@ -171,7 +166,7 @@ export class TeamPanel implements Component {
     }
     if (this.detail !== undefined) return [...lines, ...this.detailLines(this.detail, width)]
     lines.push(truncateToWidth(this.tabLine(team), width))
-    if (this.tab === 'members') lines.push(...this.memberLines(team, width))
+    if (this.tab === 'members') lines.push(...this.memberLines(width))
     else lines.push(...this.taskLines(team, width))
     lines.push(palette.dim(truncateToWidth(`  ${copy.team.hint}`, width)))
     return lines
@@ -179,17 +174,6 @@ export class TeamPanel implements Component {
 
   /** No cached renderer state beyond the projection snapshot. */
   invalidate(): void {}
-
-  /**
-   * Whether a roster row opens a transcript.
-   * @param member - roster row.
-   * @returns whether the row is selectable.
-   */
-  private memberSelectable(member: TeamMemberProjectionRow): boolean {
-    if (member.role === 'lead') return false
-    if (member.phase !== 'active') return false
-    return true
-  }
 
   /**
    * Switch the active section and reset the cursor.
@@ -212,37 +196,40 @@ export class TeamPanel implements Component {
   private rowCount(): number {
     const team = this.team
     if (team === undefined) return 0
-    return this.tab === 'members' ? team.members.length : team.tasks.length
+    return this.tab === 'members' ? this.members.length : team.tasks.length
   }
 
   /**
-   * Render the section tabs with native headings and counts.
+   * Render the section tabs with counts.
    * @param team - projection.
    * @returns the styled tab line.
    */
   private tabLine(team: TeamProjection): string {
     const palette = this.palette
-    const members = ` ${copy.team.membersTab} ${String(team.members.length)} `
+    const members = ` ${copy.team.membersTab} ${String(this.members.length)} `
     const tasks = ` ${copy.team.tasksTab} ${String(team.tasks.length)} `
     return `${this.tab === 'members' ? palette.inverse(members) : palette.dim(members)}   ${this.tab === 'tasks' ? palette.inverse(tasks) : palette.dim(tasks)}`
   }
 
   /**
-   * Render the member rows.
-   * @param team - projection.
+   * Render the teammate rows.
    * @param width - terminal columns.
    * @returns member lines.
    */
-  private memberLines(team: TeamProjection, width: number): string[] {
+  private memberLines(width: number): string[] {
     const lines: string[] = []
-    const visible = this.window(team.members.length)
+    if (this.members.length === 0) {
+      lines.push(this.palette.dim(truncateToWidth(`  ${copy.team.emptyMembers}`, width)))
+      return lines
+    }
+    const visible = this.window(this.members.length)
     for (let position = visible.start; position < visible.start + visible.capacity; position += 1) {
-      const member = team.members[position]
+      const member = this.members[position]
       /* v8 ignore next -- the window is clamped to the row count */
       if (member === undefined) continue
       this.pushSelectable(lines, position === this.index, this.memberLine(member, width), width)
     }
-    this.pushIndicators(lines, team.members.length, visible, width)
+    this.pushIndicators(lines, this.members.length, visible, width)
     return lines
   }
 
@@ -306,32 +293,21 @@ export class TeamPanel implements Component {
   }
 
   /**
-   * Format one member row with status, current tag, and model.
-   * @param member - roster row.
+   * Format one teammate row with its live state, name, and description.
+   * @param member - teammate row.
    * @param width - terminal columns.
    * @returns the row content.
    */
-  private memberLine(member: TeamMemberProjectionRow, width: number): string {
+  private memberLine(member: TeamMemberRow, width: number): string {
     const palette = this.palette
-    const status = this.memberStatus(member)
-    const glyph = status === 'failed' ? palette.warning('!') : status === 'inactive' ? palette.dim('○') : palette.success('●')
-    const name = member.role === 'lead' ? palette.heading(displayText(member.name)) : displayText(member.name)
-    const current = member.role === 'lead' ? ` ${palette.dim(`[${copy.team.current}]`)}` : ''
-    const model = this.runtime(member.id).model
-    const modelText = model === undefined ? '' : ` · ${copy.team.model}: ${displayText(model)}`
-    const error = member.error === undefined ? '' : `  ${palette.warning(displayText(member.error))}`
-    return truncateToWidth(`${glyph} ${name}${current}  ${copy.team.memberStatuses[status]}${modelText}${error}`, width)
-  }
-
-  /**
-   * Derive the native member status from durable phase and live activity.
-   * @param member - roster row.
-   * @returns native member status key.
-   */
-  private memberStatus(member: TeamMemberProjectionRow): keyof typeof copy.team.memberStatuses {
-    if (member.phase === 'failed') return 'failed'
-    if (member.phase === 'provisioning') return 'provisioning'
-    return this.runtime(member.id).status
+    const running = this.running(member.id)
+    const glyph = running ? palette.success('●') : palette.dim('○')
+    const status = running ? copy.team.memberStatuses.running : copy.team.memberStatuses.inactive
+    const description = member.reason === undefined
+      ? member.description
+      : copy.team.memberReasons[member.reason]
+    const suffix = description === undefined ? '' : ` · ${displayText(description)}`
+    return truncateToWidth(`${glyph} ${displayText(member.name)}  ${status}${suffix}`, width)
   }
 
   /**

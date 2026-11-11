@@ -1,6 +1,7 @@
 /**
  * Modal panels for human interaction: the question flow, the one-shot approval
- * decision, and read-only text panels used by help and status.
+ * decision, a two-action confirmation, and read-only text panels used by help
+ * and status.
  *
  * @module @deepseek-ai/dsh-tui/components/dialogs
  */
@@ -404,6 +405,79 @@ export class ApprovalPanel implements Component {
   }
 
   /** No cached state exists, so nothing must be invalidated. */
+  invalidate(): void {}
+}
+
+/** Values of one two-action dock confirmation. */
+export interface ConfirmPanelOptions {
+  /** Heading line. */
+  readonly title: string
+  /** Explanatory sentences, wrapped to the panel width. */
+  readonly lines: readonly string[]
+  /** Label of the action that confirms the change. */
+  readonly confirmLabel: string
+  /** Label of the action that keeps the current state. */
+  readonly cancelLabel: string
+  /** Terminal style table. */
+  readonly palette: Palette
+  /** Receives the settled decision. */
+  readonly onDecision: (confirmed: boolean) => void
+}
+
+/**
+ * A two-action dock confirmation whose cancellation keeps the current state.
+ * Cancel starts selected, so Enter alone changes nothing.
+ */
+export class ConfirmPanel implements Component {
+  private readonly options: ConfirmPanelOptions
+  private confirm = false
+
+  /**
+   * @param options - panel copy, palette, and the settled decision.
+   */
+  constructor(options: ConfirmPanelOptions) {
+    this.options = options
+  }
+
+  /**
+   * Handle one input sequence while the panel has focus.
+   * @param data - raw terminal input.
+   */
+  handleInput(data: string): void {
+    if (matchesKey(data, 'escape')) {
+      this.options.onDecision(false)
+      return
+    }
+    if (matchesKey(data, 'left') || matchesKey(data, 'right') || matchesKey(data, 'tab')) {
+      this.confirm = !this.confirm
+      return
+    }
+    if (matchesKey(data, 'enter')) this.options.onDecision(this.confirm)
+  }
+
+  /**
+   * Render the confirmation.
+   * @param width - available terminal columns.
+   * @returns the panel lines.
+   */
+  render(width: number): string[] {
+    const { palette } = this.options
+    const lines = [palette.warning(truncateToWidth(this.options.title, width))]
+    for (const paragraph of this.options.lines) {
+      for (const line of wrap(paragraph, Math.max(1, width - 2))) lines.push(` ${palette.dim(line)}`)
+    }
+    lines.push('')
+    const cancelMark = this.confirm ? ' ' : palette.accent('❯')
+    const confirmMark = this.confirm ? palette.accent('❯') : ' '
+    lines.push(truncateToWidth(
+      ` ${cancelMark} ${displayText(this.options.cancelLabel)}   ${confirmMark} ${displayText(this.options.confirmLabel)}`,
+      width,
+    ))
+    lines.push('', palette.dim(truncateToWidth(` ${copy.panel.confirmHint}`, width)))
+    return lines
+  }
+
+  /** No cached state exists beyond the selected action. */
   invalidate(): void {}
 }
 

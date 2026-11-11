@@ -44,7 +44,7 @@ import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
 import { createPalette, type Palette } from './palette.ts'
 import { createTerminalSession, type TerminalSession } from './terminal.ts'
-import { TextPanel } from './components/dialogs.ts'
+import { ConfirmPanel, TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
 import { BottomList } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
@@ -53,7 +53,7 @@ import { ContributedStrips } from './components/contributed-strips.ts'
 import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
-import { ConfigPanel, loadConfigRows, type ConfigPanelActions, type DisplayField } from './config-panel.ts'
+import { ConfigPanel, loadConfigRows, type ConfigPanelActions, type ConfigTeamMode, type DisplayField } from './config-panel.ts'
 import { PromptEditor } from './components/editor.ts'
 
 /** The subset of SettingsForms the terminal display rows use. */
@@ -65,6 +65,23 @@ interface SettingsService {
    * @returns completion after Loader reconciliation.
    */
   update(namespace: string, patch: Record<string, unknown>): Promise<void>
+}
+
+/** The subset of the composed Agent Teams service the `/config` switch writes through. */
+interface TeamModeService {
+  /**
+   * Save the root Session's Team selection.
+   * @param agent - the presented root Agent.
+   * @param enabled - the requested selection.
+   * @returns fulfillment after the selection flushes.
+   */
+  setEnabled(agent: Agent, enabled: boolean): Promise<void>
+}
+
+/** The root Session's saved Team selection as its `agentTeam` projection publishes it. */
+interface TeamModeProjection {
+  /** Whether shared task tools and Team guidance are enabled for the tree. */
+  readonly enabled: boolean
 }
 
 /** A startup or in-flight failure the terminal reports before exiting. */
@@ -1451,9 +1468,24 @@ export class TerminalApp {
     }
     const permissionPresets = this.ctx.get('permissionPresets')
     const pluginManager = this.ctx.get('pluginManager')
+    const teamMode = this.teamMode()
     const actions: ConfigPanelActions = {
       pickModel: () => { this.closeConfigPanel(); void this.openModelSelector(); return undefined },
       pickEffort: () => { this.closeConfigPanel(); void this.setEffort(undefined); return undefined },
+      setTeamMode: async (enabled) => {
+        const teams = this.ctx.get('agentTeams') as TeamModeService | undefined
+        const agent = this.agent
+        if (teams === undefined || agent === undefined) {
+          return { failed: true, notice: copy.config.failed(copy.config.unavailable('agentTeams')) }
+        }
+        if (!enabled && this.teamModeUsed() && !await this.confirmTeamDisable()) return { failed: true }
+        try {
+          await teams.setEnabled(agent, enabled)
+          return undefined
+        } catch (error: unknown) {
+          return { failed: true, notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
+        }
+      },
       setPermission: (value) => { this.dispatchCommand(`/permission ${value}`) },
       setBundle: async (name, enabled) => {
         /* v8 ignore next -- the bundle rows exist only when the manager was passed to the loader */
@@ -1501,6 +1533,7 @@ export class TerminalApp {
       },
       permission: this.status?.snapshot().permission,
       display,
+      ...(teamMode === undefined ? {} : { teamMode }),
       ...(permissionPresets === undefined
         ? {}
         : {
@@ -1532,6 +1565,60 @@ export class TerminalApp {
     this.configPanel = panel
     this.syncDock()
     this.tui?.requestRender()
+  }
+
+  /**
+   * Read the presented root Session's saved Agent Teams selection.
+   * @returns the projection's selection, or undefined when the composition mounts no Team service or presents a subagent Session.
+   */
+  private teamMode(): ConfigTeamMode | undefined {
+    const agent = this.agent
+    const teams = this.ctx.get('agentTeams') as TeamModeService | undefined
+    if (agent === undefined || teams === undefined) return undefined
+    if (agent.session.header.origin === 'subagent') return undefined
+    const values = this.ctx.get('sessionProjections')?.snapshot(agent.session).values
+    const projection = values === undefined
+      ? undefined
+      : (values as { agentTeam?: TeamModeProjection }).agentTeam
+    return { enabled: projection?.enabled }
+  }
+
+  /**
+   * Whether the presented root Session already recorded a model request, the
+   * point after which disabling Team mode can affect cache reuse.
+   * @returns whether the Session has run.
+   */
+  private teamModeUsed(): boolean {
+    const agent = this.agent
+    if (agent === undefined) return false
+    const selection = this.ctx.get('sessionProjections')?.snapshot(agent.session).values.modelSelection
+    return selection !== undefined && selection.lastUsed !== null
+  }
+
+  /**
+   * Ask the user to confirm disabling Agent Teams for the presented root Session.
+   * @returns whether the user confirmed; Esc and Ctrl+C keep the current mode.
+   */
+  private async confirmTeamDisable(): Promise<boolean> {
+    return await new Promise<boolean>((resolve) => {
+      const close = (confirmed: boolean): void => {
+        this.setDockOverlay(undefined)
+        resolve(confirmed)
+      }
+      const panel = new ConfirmPanel({
+        title: copy.config.teamDisableTitle,
+        lines: [copy.config.teamDisableDescription, copy.config.teamDisableWarning],
+        confirmLabel: copy.config.teamDisableConfirm,
+        cancelLabel: copy.config.teamDisableCancel,
+        palette: this.palette,
+        onDecision: close,
+      })
+      this.setDockOverlay({
+        component: panel,
+        handleInput: (data) => { panel.handleInput(data) },
+        close: () => { close(false) },
+      })
+    })
   }
 
   /**

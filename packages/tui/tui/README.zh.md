@@ -63,7 +63,7 @@ kind: "package-reference"
 
 ### 交互界面
 
-当组合包挂载实验性 Agent Teams bundle 时，其 `@deepseek-ai/dsh-experimental-tui-agent-team` 插件通过 seam 在编辑器上方贡献一行 Team 状态（teammate 与共享任务计数），`/team` 在 dock 中打开只读的 Members / Shared tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭）。数据来自 Lead Session 的 `agentTeam` projection，并与 native 智能体团队面板展示同一套事实：成员运行/未运行/准备中/失败状态、模型、当前会话标记，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Enter 打开选中 teammate 的 transcript，或展开选中任务的完整描述；任务和成员变更仍由 Team 工具与会话完成。未启用 bundle 的 profile 既没有状态行也没有面板，`/team` 会说明如何启用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
+Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，[`@deepseek-ai/dsh-tui-agent-team`](../agent-team/README.zh.md) 插件通过 seam 添加终端视图。Team 模式开启后，一旦会话拥有 teammate 或共享任务，编辑器上方就会出现一行 Team 状态；`/team` 在 dock 中打开只读的 Members / Shared tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭）。该面板读取根会话的 `agentTeam` projection，并与 native 智能体团队面板展示同一套事实：teammate 运行/未运行状态、模型，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Enter 打开选中 teammate 的 transcript，或展开选中任务的完整描述；任务与消息变更仍由 Team 工具和会话完成。`/config` 的模型与推理强度分区提供**使用智能体团队**开关，按根会话保存且默认关闭；subagent 会话与没有 Team 服务的组合不显示该开关，会话运行后再关闭会先请求确认。没有 Team 服务的组合既没有状态行也没有开关，`/team` 会说明 Agent Teams 不可用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
 
 已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/team`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
 
@@ -71,7 +71,7 @@ kind: "package-reference"
 
 `/terminal` 打开诊断面板，显示终端、TERM、复用器/SSH、渲染模式、键盘协议、焦点、transcript 统计与收到的滚轮事件，用于区分终端侧滚动与应用侧捕获。inline 模式下滚轮应当留在终端 scrollback，面板会显示 0 个捕获事件。
 
-插件扩展 seam（`ctx.terminalUi`，`src/contribution.ts`）允许插件在不引用应用内部的情况下添加状态行、命令与一个 dock 组件；每次注册都是 effect，disposer 随插件卸载。所有面板都在编辑器下方的 dock 中渲染——帮助/状态、模型选择器、问题、审批、各选择列表与 `/config`；不存在浮动 overlay，长页面可滚动，Esc 关闭面板。`/config` 在编辑器下方打开结构化配置面板：标题与“修改会自动保存”副标题、readiness 行（`就绪`、`降级` 或 `只读` 及动作/只读计数）、每个分类一个 tab（模型与推理强度、权限、实验性能力、终端显示），以及 label/value/description 三列行；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 移动，Enter 激活（只读行会解释原因），`/` 搜索，Esc 关闭。footer 只列出当前行可用的动作，选中行整行高亮。面板读取实时服务：模型与推理强度、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
+插件扩展 seam（`ctx.terminalUi`，`src/contribution.ts`）允许插件在不引用应用内部的情况下添加状态行、命令与一个 dock 组件；每次注册都是 effect，disposer 随插件卸载。所有面板都在编辑器下方的 dock 中渲染——帮助/状态、模型选择器、问题、审批、各选择列表与 `/config`；不存在浮动 overlay，长页面可滚动，Esc 关闭面板。`/config` 在编辑器下方打开结构化配置面板：标题与“修改会自动保存”副标题、readiness 行（`就绪`、`降级` 或 `只读` 及动作/只读计数）、每个分类一个 tab（模型与推理强度、权限、实验性能力、终端显示），以及 label/value/description 三列行；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 移动，Enter 激活（只读行会解释原因），`/` 搜索，Esc 关闭。footer 只列出当前行可用的动作，选中行整行高亮。面板读取实时服务：模型与推理强度、按会话保存的智能体团队开关（读取 `agentTeam` projection；subagent 会话与没有 Team 服务的组合不显示；会话运行后再关闭会先请求确认）、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -135,7 +135,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Agent Teams 视图是终端本地视图。** teammate transcript 只读（不能驱动对话），任务动作限于认领/完成/创建。把 teammate 作为主会话打开仍属于 Web/Desktop 流程。bundle 现在会抑制 preset scope 的 subagent 行，由 Team 工具替换它们。
+- **Agent Teams 视图是终端本地视图。** teammate transcript 只读（不能驱动对话），任务板没有变更控件；创建、更新任务与发消息仍由 Team 工具和会话完成，`/config` 开关只保存根会话的模式。把 teammate 作为主会话打开仍属于 Web/Desktop 流程。
 - **preset 由组合包提供。** 终端本身只读取并切换已组装的 preset 注册表；随附的 `@deepseek-ai/dsh-tui-app` 组合包声明四个内置 preset，默认 `standard`。
 - **没有剪贴板图片粘贴，也没有内联图片渲染。** 图片通过 `@` 提及命名后附加；已附加或收到的图片块渲染为带标签的占位符，而不是像素。随附组合包不选择 PTC 模式。
 - **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。
