@@ -56,6 +56,14 @@ export interface Palette {
   diffAdd(text: string): string
   /** A removed diff line. */
   diffRemove(text: string): string
+  /**
+   * A moving rainbow sweep for active-status text. Each code point takes the
+   * next color in the cycle, and `phase` advances the cycle.
+   * @param text - text to color.
+   * @param phase - animation phase in whole color steps.
+   * @returns the colored text, or the unchanged text when color is disabled.
+   */
+  sweep(text: string, phase: number): string
 }
 
 /** One open/close SGR pair in the standard 16-color namespace. */
@@ -79,6 +87,9 @@ const SGR = {
   cyan: { open: '36', close: '39' },
   link: { open: '4;34', close: '24;39' },
 } as const satisfies Record<string, Sgr>
+
+/** One full traversal of the running-status color cycle. */
+const SWEEP = [SGR.cyan, SGR.blue, SGR.magenta, SGR.red, SGR.yellow, SGR.green] as const
 
 /**
  * Create the palette for one terminal session.
@@ -113,5 +124,19 @@ export function createPalette(color: boolean): Palette {
     border: wrap(SGR.dim),
     diffAdd: wrap(SGR.green),
     diffRemove: wrap(SGR.red),
+    sweep(text, phase) {
+      if (!enabled) return text
+      if (text === '') return text
+      const offset = ((Math.trunc(phase) % SWEEP.length) + SWEEP.length) % SWEEP.length
+      let index = 0
+      let rendered = ''
+      for (const character of text) {
+        /* v8 ignore next -- the modulo keeps the index inside the cycle */
+        const sgr = SWEEP[(offset + index) % SWEEP.length] ?? SGR.cyan
+        rendered += `\u001b[${sgr.open}m${character}\u001b[${sgr.close}m`
+        index += 1
+      }
+      return rendered
+    },
   }
 }

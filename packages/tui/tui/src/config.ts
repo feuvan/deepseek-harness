@@ -29,7 +29,7 @@ export interface Config {
   sessionId: string
   /** Whether rendered text carries ANSI styling. */
   color: boolean
-  /** Whether the running footer advances its elapsed clock once per second. */
+  /** Whether the running footer animates its status sweep and elapsed clock. */
   animation: boolean
   /** Maximum body lines shown for a collapsed tool card. */
   previewLines: number
@@ -57,7 +57,7 @@ export interface ConfigInput {
   readonly sessionId: string | Volatile<string>
   /** Whether rendered text carries ANSI styling. */
   readonly color: boolean | Volatile<boolean>
-  /** Whether the running footer advances its elapsed clock. */
+  /** Whether the running footer animates its status sweep and elapsed clock. */
   readonly animation: boolean | Volatile<boolean>
   /** Maximum body lines shown for a collapsed tool card. */
   readonly previewLines: number | Volatile<number>
@@ -92,7 +92,7 @@ export interface ResolvedConfig {
   readonly sessionId: SessionId
   /** Whether rendered text carries ANSI styling. */
   readonly color: boolean
-  /** Whether the running footer advances its elapsed clock. */
+  /** Whether the running footer animates its status sweep and elapsed clock. */
   readonly animation: boolean
   /** Maximum body lines shown for a collapsed tool card. */
   readonly previewLines: number

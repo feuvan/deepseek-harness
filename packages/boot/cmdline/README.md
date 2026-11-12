@@ -29,11 +29,12 @@ Your app reads the invocation's inner arguments at startup, and any number of it
 
 ### The launcher values
 
-The launcher makes three things available to your app:
+The launcher makes four things available to your app:
 
 - `ctx.cmdlineArgs` — the inner arguments of your invocation. Reading them returns an immutable snapshot and never consumes or changes them: `dsh --profile tui --resume abc` gives your app `['--resume', 'abc']`.
 - `ctx.appExit` — a way to ask the process to exit once the tree has shut down, wired to the launcher's shutdown controller.
 - `ctx.appReady` — the successful-startup signal, committed only after the Loader tree and launcher-owned setup succeed.
+- `ctx.appRelaunch` — an optional in-place replacement of the process with the same launcher invocation and new app arguments. The launcher enters the target working directory, disposes the tree, and executes the replacement, so the call returns only on failure. Apps that can switch their own subject, such as a Session picker, publish a narrower service over it; a launcher that cannot replace its process omits the capability.
 
 An app launched with no arguments sees an empty list — that is the honest answer, not a missing value.
 
@@ -83,7 +84,7 @@ This section explains how the outcomes above are realized and points at the code
 
 ### Design notes
 
-- **Launcher facts, not config.** `cmdlineArgs` and `appExit` are provided on the host context before the tree mounts; they are not Loader rows, so no composition owns or overrides them.
+- **Launcher facts, not config.** `cmdlineArgs`, `appExit`, and the optional `appRelaunch` capability are provided on the host context before the tree mounts; they are not Loader rows, so no composition owns or overrides them.
 - **Positional split.** The launcher recognizes no app row: the first token after its own flags starts the app's arguments, so the app owns its flag family, its `--help` text, and its parse errors.
 - **Structural error detection.** `isCommanderError` reads commander's error code prefix instead of using `instanceof`, because an out-of-tree plugin brings its own commander copy whose `CommanderError` identity differs; `configureExitAndOutput` walks every subcommand because commander copies exit and output settings only at registration.
 - **Injectable output streams.** `internals` holds the output streams so tests can capture commander's text without touching the process.
@@ -96,7 +97,7 @@ The parse path is one small family with two owners: `provideCmdline` freezes the
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `CmdlineArgs`/`AppExit` types, `provideCmdline`, `parseCmdline`, commander exit/output routing |
+| [`src/index.ts`](src/index.ts) | `CmdlineArgs`/`AppExit`/`AppRelaunch` types, `provideCmdline`, `parseCmdline`, commander exit/output routing |
 
 </details>
 

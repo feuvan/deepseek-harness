@@ -15,7 +15,7 @@ kind: "subsystem"
 |---|---|---|
 | `sessionId` | 必填 | 本终端呈现的活动根 Agent 的精确会话标识 |
 | `color` | `true` | 输出 ANSI 样式；`false` 时每个字符串原样返回 |
-| `animation` | `true` | 运行中页脚时钟每秒推进一次 |
+| `animation` | `true` | 让运行中状态滚动换色并推进计时 |
 | `previewLines` | `10` | 折叠工具卡展示的正文行数 |
 | `windowBlocks` | `200` | 保留渲染的 transcript 块上限 |
 | `title` | `DeepSeek Harness` | 终端标题后缀 |
@@ -33,6 +33,8 @@ kind: "subsystem"
 历史在订阅 `session/event` 之后通过 `ctx.sessionQuery.observeSession()` 读取；回放前缀与实时尾部按序号拼接，因此没有事件被渲染两次或跳过。终端从不调用已废弃的同步会话读取方法。
 
 退出时它取消活动轮次、等待空闲、flush 会话、恢复终端并请求进程退出。每条 dispose 路径（正常退出、启动失败、信号驱动的关闭）都执行同一套幂等恢复，进程退出钩子覆盖跳过 dispose 的硬退出。
+
+`/sessions` 在底部 dock 中打开已存会话选择器，按创建时间从新到旧列出所有工作区的顶层会话；活动 projection 或持久 projection 缓存持有标题时显示该标题，并列出会话 id、工作区与 agent preset。`/resume <id>` 恢复精确标识，裸 `/resume` 打开选择器。终端无法接管的行会说明原因，包括当前正在展示的会话、另一个活动会话、subagent 或分叉会话、待执行的格式迁移、缺少工作区或 agent preset，以及不可访问的工作区。切换在轮次运行中拒绝执行，先 flush 并复查当前会话，然后停止终端并调用应用外壳的 `terminalSessionHandoff`。启动器提供 `ctx.appRelaunch` 时，随附的 `tui-startup` 提供该交接；它在目标工作区重写应用参数并重新执行同一 profile 调用，因此已记录的会话状态会回放，而仅运行时状态会重启。没有交接能力的组合仍列出会话，并说明可从命令行恢复。
 
 ## Transcript（文本记录）
 
@@ -74,11 +76,11 @@ kind: "subsystem"
 
 在模型输出、工具内容、问题文本、诊断或终端标题到达渲染器之前，`displayText()` 转义除换行以外的所有 C0 与 C1 控制字符。调色板是一张标准 16 色 SGR 对的表；正文与背景保持终端默认值，选择使用反显，`color: false` 移除全部样式。终端不定义主题，因此宿主终端的浅色或深色调色板生效。
 
-页脚读取会话投影：`tokenUsage`、`contextPressure`、`permissions`、`title` 与 `workingDirectory`。它从不通过重新折叠日志来推导这些值。
+页脚读取会话投影：`tokenUsage`、`contextPressure`、`permissions`、`title` 与 `workingDirectory`。它从不通过重新折叠日志来推导这些值。 轮次运行时，页脚状态词会按动画步长在标准调色板的颜色周期中滚动，让活动状态可见地流动，同时不离开主题无关的 16 色调色板；`animation: false` 时改为静态警告色。
 
 ## 验证
 
-包测试覆盖渲染层、transcript 折叠、交互应答者、命令与提及补全、图片准入、高亮、plan-review 呈现、强度循环，以及针对无头终端的生命周期。组装验收通过 `dsh` launcher 在 PTY 下启动随附 `tui` profile，使用回放的模型输出，并比较语义终端状态与进程退出。[测试策略](../testing.zh.md)拥有通道归属。
+包测试覆盖渲染层、transcript 折叠、交互应答者、命令与提及补全、已存会话选择器与交接预检、图片准入、高亮、plan-review 呈现、强度循环，以及针对无头终端的生命周期。组装验收通过 `dsh` launcher 在 PTY 下启动随附 `tui` profile，使用回放的模型输出，并比较语义终端状态与进程退出。[测试策略](../testing.zh.md)拥有通道归属。
 
 ## 相关文档
 

@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_HANDOFF_SERVICE, type SessionHandoff } from '@deepseek-ai/dsh-tui'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-startup'
@@ -59,11 +60,59 @@ Examples:
 }
 
 /**
+ * Replace the Session-selecting arguments of one invocation.
+ *
+ * Resume always uses the persisted Session's recorded agent preset, so a
+ * preset chosen for the previous fresh Session is dropped. The launcher keeps
+ * its own flags and reruns them unchanged.
+ * @param args - the current invocation's inner arguments.
+ * @param sessionId - exact Session identity to resume.
+ * @returns a fresh argument list ending in the resume flag.
+ */
+export function resumeArguments(args: readonly string[], sessionId: SessionId): string[] {
+  const remaining: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    /* v8 ignore next -- the loop bound proves the indexed argument exists */
+    if (argument === undefined) continue
+    if (argument === '--resume' || argument === '--preset') {
+      index += 1
+      continue
+    }
+    if (argument.startsWith('--resume=') || argument.startsWith('--preset=')) continue
+    remaining.push(argument)
+  }
+  remaining.push('--resume', sessionId)
+  return remaining
+}
+
+/**
+ * Publish the terminal's Session handoff when the launcher can replace its
+ * process. The service re-writes only the app's own arguments; the launcher
+ * reuses the profile, patch overlays, and environment.
+ * @param ctx - plugin context carrying the command line and optional relaunch capability.
+ */
+function provideSessionHandoff(ctx: Context): void {
+  const relaunch = ctx.get('appRelaunch')
+  if (relaunch === undefined) return
+  const handoff: SessionHandoff = {
+    async resume(sessionId, cwd) {
+      /* v8 ignore next -- the launcher provides cmdlineArgs before this row mounts */
+      await relaunch.relaunch(resumeArguments(ctx.cmdlineArgs?.get() ?? [], sessionId), cwd)
+      throw new Error('tui-startup: the launcher returned from process replacement')
+    },
+  }
+  ctx.provide(SESSION_HANDOFF_SERVICE, handoff)
+}
+
+/**
  * Parse the application arguments and provide the Session identity as an
- * ordinary Cordis service.
+ * ordinary Cordis service, plus the Session handoff when the launcher can
+ * replace its process.
  * @param ctx - plugin context carrying the command line and exit request.
  */
 export function apply(ctx: Context): void {
+  provideSessionHandoff(ctx)
   const program = tuiCommand()
   program.action(() => {
     const options = program.opts<{ resume?: string; preset?: string }>()

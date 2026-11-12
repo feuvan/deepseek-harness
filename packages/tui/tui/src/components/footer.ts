@@ -35,6 +35,12 @@ export interface FooterSnapshot {
   readonly permission: string | undefined
   /** Agent status label. */
   readonly status: string
+  /**
+   * Animation phase for the running status sweep. Absent renders the status
+   * with the static warning style, which is how an animation-disabled
+   * terminal shows it.
+   */
+  readonly statusPhase?: number
   /** Elapsed seconds of the running turn, when the agent runs. */
   readonly elapsedSeconds: number | undefined
   /** Steering messages waiting for the next step boundary. */
@@ -79,7 +85,10 @@ export class Footer implements Component {
     if (state.cacheRate !== undefined) segments.push(segment('cache', palette.dim(`cache ${String(Math.round(state.cacheRate * 100))}%`)))
     if (state.contextPercent !== undefined) segments.push(segment('ctx', palette.dim(`ctx ${String(Math.round(state.contextPercent * 100))}%`)))
     if (state.permission !== undefined) segments.push(segment('permission', palette.dim(displayText(state.permission))))
-    segments.push(segment('status', state.status === copy.status.running ? palette.warning(state.status) : palette.dim(state.status)))
+    const status = state.status !== copy.status.running
+      ? palette.dim(state.status)
+      : state.statusPhase === undefined ? palette.warning(state.status) : palette.sweep(state.status, state.statusPhase)
+    segments.push(segment('status', status))
     if (state.elapsedSeconds !== undefined) segments.push(segment('elapsed', palette.dim(`${String(state.elapsedSeconds)}s`)))
     const separator = palette.dim(' · ')
     const join = (active: readonly { text: string }[]): string => ` ${active.map(item => item.text).join(separator)}`

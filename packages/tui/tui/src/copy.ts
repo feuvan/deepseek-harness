@@ -142,6 +142,40 @@ const en = {
     /** Notice that the preset could not be changed. */
     failed: (message: string): string => `Agent preset unchanged: ${message}`,
   },
+  /** Stored-Session browser and resume notices. */
+  sessions: {
+    /** Chooser heading. */
+    title: 'Sessions',
+    /** Row description for one resumable Session. */
+    description: (id: string, cwd: string, preset: string | undefined): string =>
+      `${id} · ${cwd}${preset === undefined ? '' : ` · ${preset}`}`,
+    /** Notice refusing a switch while a turn runs. */
+    busy: 'Wait for the running turn to finish before resuming another Session.',
+    /** Notice refusing a switch to the presented Session. */
+    same: 'That Session is already open in this terminal.',
+    /** Notice for an id absent from the Session corpus. */
+    notFound: (id: string): string => `Session "${id}" was not found.`,
+    /** Notice when the launcher cannot replace its process. */
+    unavailable: 'This terminal cannot replace its own process; the Session remains resumable from the command line.',
+    /** Notice when the recorded working directory is not a reachable directory. */
+    cwdUnavailable: (cwd: string): string => `The Session working directory "${cwd}" is not reachable.`,
+    /** Notice when flushing the current Session fails before a switch. */
+    flushFailed: (message: string): string => `Could not save the current Session before resuming: ${message}`,
+    /** Notice when the stored-Session listing fails. */
+    listFailed: (message: string): string => `Could not list Sessions: ${message}`,
+    /** Notice when re-reading the Session to resume fails. */
+    failed: (message: string): string => `Could not resume the Session: ${message}`,
+    /** Notice when no other Session can be resumed. */
+    empty: 'No other resumable Sessions.',
+    /** Row descriptions for Sessions the terminal cannot adopt. */
+    disabled: {
+      live: 'cannot resume: open in this process',
+      migration: 'cannot resume: requires a Session format migration',
+      subagent: 'cannot resume: subagent or forked Session',
+      missingCwd: 'cannot resume: no recorded working directory',
+      missingPreset: 'cannot resume: no recorded agent preset',
+    },
+  },
   /** Tool-card visibility labels. */
   cards: {
     /** Localized mode names, keyed by mode id. */
@@ -269,6 +303,8 @@ const en = {
     login: 'Sign in or configure a model',
     account: 'Show DeepSeek account status',
     preset: 'Show or switch the agent preset',
+    sessions: 'Browse stored Sessions and resume one',
+    resume: 'Resume a stored Session by id, or browse without an argument',
     terminal: 'Show terminal, input, and rendering diagnostics',
     /** The Agent is not live yet. */
     agentNotReady: 'The agent is not ready yet.',
@@ -400,7 +436,7 @@ const en = {
       reasoning: 'Cycle compact, standard, detailed, and verbose reasoning',
       display: {
         color: 'Emit ANSI styling',
-        animation: 'Advance the running clock once per second',
+        animation: 'Animate the running status sweep and elapsed clock',
         previewLines: 'Body lines shown for a collapsed tool card',
         windowBlocks: 'Blocks attached before older history pages in',
         title: 'Terminal title suffix',
@@ -799,6 +835,8 @@ export const chinese: Copy = {
     login: '登录或配置模型',
     account: '查看 DeepSeek 账号状态',
     preset: '显示或切换 agent preset',
+    sessions: '浏览已存会话并恢复其中一个',
+    resume: '按标识恢复已存会话；不带参数时浏览会话',
     terminal: '显示终端、输入与渲染诊断信息',
     agentNotReady: 'Agent 尚未就绪。',
     disposed: 'Agent 已被释放；正在关闭终端。',
@@ -893,7 +931,7 @@ export const chinese: Copy = {
       reasoning: '循环 compact、standard、detailed、verbose 推理显示',
       display: {
         color: '输出 ANSI 样式',
-        animation: '运行中时钟每秒推进一次',
+        animation: '让运行中状态滚动换色并推进计时',
         previewLines: '折叠工具卡展示的正文行数',
         windowBlocks: '更早历史翻页前挂载的块数',
         title: '终端标题后缀',
@@ -958,6 +996,40 @@ export const chinese: Copy = {
     locked: '本会话已经开始，agent preset 不能再切换。',
     unavailable: '当前终端没有组装 agent preset。',
     failed: (message: string): string => `agent preset 未更改：${message}`,
+  },
+  /** 已存会话浏览与恢复提示。 */
+  sessions: {
+    /** 选择器标题。 */
+    title: '会话',
+    /** 一个可恢复会话的行描述。 */
+    description: (id: string, cwd: string, preset: string | undefined): string =>
+      `${id} · ${cwd}${preset === undefined ? '' : ` · ${preset}`}`,
+    /** 运行中拒绝切换的提示。 */
+    busy: '请等待当前轮次结束后再恢复其他会话。',
+    /** 拒绝切换到当前会话的提示。 */
+    same: '该会话已在此终端中打开。',
+    /** 会话集合中不存在该标识的提示。 */
+    notFound: (id: string): string => `未找到会话“${id}”。`,
+    /** 启动器无法替换进程时的提示。 */
+    unavailable: '当前终端无法替换自身进程；该会话仍可从命令行恢复。',
+    /** 会话记录的工作目录不可访问时的提示。 */
+    cwdUnavailable: (cwd: string): string => `会话的工作目录“${cwd}”不可访问。`,
+    /** 切换前保存当前会话失败时的提示。 */
+    flushFailed: (message: string): string => `恢复前无法保存当前会话：${message}`,
+    /** 列出已存会话失败时的提示。 */
+    listFailed: (message: string): string => `无法列出会话：${message}`,
+    /** 恢复会话时重新读取失败时的提示。 */
+    failed: (message: string): string => `无法恢复会话：${message}`,
+    /** 没有其他可恢复会话时的提示。 */
+    empty: '没有其他可恢复的会话。',
+    /** 终端无法接管的会话行描述。 */
+    disabled: {
+      live: '无法恢复：正在此进程中打开',
+      migration: '无法恢复：需要会话格式迁移',
+      subagent: '无法恢复：子代理或分叉会话',
+      missingCwd: '无法恢复：未记录工作目录',
+      missingPreset: '无法恢复：未记录 agent preset',
+    },
   },
   /** First-run model connection flow. */
   onboarding: {

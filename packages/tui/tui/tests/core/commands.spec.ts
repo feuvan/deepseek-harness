@@ -27,6 +27,7 @@ interface ComposerHarness {
   readonly queueArgs: (string | undefined)[]
   readonly steerArgs: (string | undefined)[]
   readonly presetArgs: (string | undefined)[]
+  readonly resumeArgs: (string | undefined)[]
   readonly cardArgs: (string | undefined)[]
   readonly configures: string[]
   readonly notices: string[]
@@ -63,6 +64,7 @@ async function composerHarness(options: {
   const queueArgs: (string | undefined)[] = []
   const steerArgs: (string | undefined)[] = []
   const presetArgs: (string | undefined)[] = []
+  const resumeArgs: (string | undefined)[] = []
   const cardArgs: (string | undefined)[] = []
   const configures: string[] = []
   const notices: string[] = []
@@ -84,6 +86,8 @@ async function composerHarness(options: {
     login: record('login'),
     account: record('account'),
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
+    sessions: () => { local.push('sessions') },
+    resume: (argument) => { local.push('resume'); resumeArgs.push(argument) },
     terminal: () => { local.push('terminal') },
     exit: record('exit'),
   }
@@ -106,6 +110,7 @@ async function composerHarness(options: {
     queueArgs,
     steerArgs,
     presetArgs,
+    resumeArgs,
     cardArgs,
     configures,
     notices,
@@ -129,6 +134,8 @@ describe('Composer.submit', () => {
     ['steer', 'steer'],
     ['config', 'config'],
     ['preset', 'preset'],
+    ['sessions', 'sessions'],
+    ['resume', 'resume'],
     ['exit', 'exit'],
     ['quit', 'exit'],
   ] as const)('runs the terminal-local /%s control', async (name, control) => {
@@ -138,6 +145,15 @@ describe('Composer.submit', () => {
 
     expect(harness.local).toEqual([control])
     expect(harness.commands.executed).toEqual([])
+  })
+
+  it('dispatches /resume with an exact Session id', async () => {
+    const harness = await composerHarness()
+
+    harness.composer.submit('/resume session-other')
+
+    expect(harness.local).toEqual(['resume'])
+    expect(harness.resumeArgs).toEqual(['session-other'])
   })
 
   it('runs a local control with trailing arguments and tabs', async () => {
@@ -382,9 +398,18 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'login', 'account', 'preset', 'terminal', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'login', 'account', 'preset', 'sessions', 'resume', 'terminal', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
+  })
+
+  it('hints the exact id argument of /resume', async () => {
+    const harness = await composerHarness()
+
+    const resume = harness.composer.slashCommands().find(command => command.name === 'resume')
+
+    expect(resume).toMatchObject({ name: 'resume', argumentHint: '<id>' })
+    expect(resume).not.toHaveProperty('getArgumentCompletions')
   })
 
   it('appends registered commands with their argument hints', async () => {
@@ -412,6 +437,8 @@ describe('Composer.helpLines', () => {
     expect(lines[0]).toBe('Keys')
     expect(lines).toContain('  /help               Show keys and commands')
     expect(lines).toContain('  /preset             ' + copy.commands.preset)
+    expect(lines).toContain('  /sessions           ' + copy.commands.sessions)
+    expect(lines).toContain('  /resume             ' + copy.commands.resume)
     expect(lines).toContain('  /cards              ' + copy.commands.cards)
     expect(lines).toContain('  /steer              ' + copy.commands.steer)
     expect(lines).toContain('  /terminal           ' + copy.commands.terminal)
@@ -453,7 +480,7 @@ describe('Composer.statusLines', () => {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
         queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {},
-        preset: () => {}, terminal: () => {}, exit: () => {},
+        preset: () => {}, sessions: () => {}, resume: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',
@@ -751,7 +778,7 @@ describe('Composer.statusLines provider fallback', () => {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
         queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {},
-        preset: () => {}, terminal: () => {}, exit: () => {},
+        preset: () => {}, sessions: () => {}, resume: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
       busyEnter: 'queue',

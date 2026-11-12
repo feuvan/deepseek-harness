@@ -52,6 +52,28 @@ export interface AppReady {
   onReady(listener: () => void): () => void
 }
 
+/**
+ * Launcher capability that replaces this process with the same invocation and
+ * a new set of app arguments.
+ *
+ * The replacement reuses the original profile, patch overlays, and launch
+ * environment, so an app only supplies its own argument family. The launcher
+ * tears down the current tree before executing, and the call therefore returns
+ * only when replacement failed.
+ */
+export interface AppRelaunch {
+  /**
+   * Replace the process with the same launcher invocation carrying `args` as
+   * the app arguments.
+   * @param args - the replacement app arguments, in argv order.
+   * @param cwd - working directory the replacement process starts in.
+   * @returns only when replacement could not start; a successful replacement
+   *   never returns.
+   * @throws when `cwd` is unreachable or the process cannot be replaced.
+   */
+  relaunch(args: readonly string[], cwd: string): Promise<void>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The invocation's inner arguments; provided by a launcher before the tree mounts. */
@@ -60,6 +82,8 @@ declare module '@deepseek-ai/cordis' {
     appExit?: AppExit
     /** Successful startup signal; provided by a launcher before the tree mounts. */
     appReady?: AppReady
+    /** In-place relaunch capability; provided only by a launcher that can replace its process. */
+    appRelaunch?: AppRelaunch
   }
 }
 
@@ -71,21 +95,25 @@ export interface CmdlineHost {
   exit: AppExit
   /** Successful startup signal for lifecycle work that must not mask boot failure. */
   ready?: AppReady
+  /** In-place relaunch capability, when the launcher can replace its process. */
+  relaunch?: AppRelaunch
 }
 
 /**
  * Provide launcher facts on a host context before any tree entry mounts: the
- * command line, bounded exit request, and optional successful-startup signal.
+ * command line, bounded exit request, optional successful-startup signal, and
+ * optional relaunch capability.
  * An embedding host with no command line provides an empty argument list; a
  * host that mounts a stdio application also provides readiness.
  * @param ctx - the host context the tree will mount under.
- * @param host - the invocation's arguments, exit request, and optional readiness signal.
+ * @param host - the invocation's arguments, exit request, readiness signal, and relaunch capability.
  */
 export function provideCmdline(ctx: Context, host: CmdlineHost): void {
   const snapshot: readonly string[] = Object.freeze([...host.args])
   ctx.provide('cmdlineArgs', { get: () => snapshot })
   ctx.provide('appExit', host.exit)
   if (host.ready !== undefined) ctx.provide('appReady', host.ready)
+  if (host.relaunch !== undefined) ctx.provide('appRelaunch', host.relaunch)
 }
 
 /** Process stdin operations used to bind a stdio application's lifetime. */

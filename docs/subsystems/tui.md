@@ -15,7 +15,7 @@ English | [中文](tui.zh.md)
 |---|---|---|
 | `sessionId` | required | Exact Session identity of the live root Agent the terminal presents |
 | `color` | `true` | Emit ANSI styling; `false` returns every string unchanged |
-| `animation` | `true` | Advance the running footer clock once per second |
+| `animation` | `true` | Animate the running status sweep and advance the elapsed clock |
 | `previewLines` | `10` | Body lines shown for a collapsed tool card |
 | `windowBlocks` | `200` | Maximum transcript blocks kept rendered |
 | `title` | `DeepSeek Harness` | Terminal title suffix |
@@ -33,6 +33,8 @@ The startup row parses `--resume <id>` and mints `session-<uuid>` for a fresh la
 History is read through `ctx.sessionQuery.observeSession()` after subscribing to `session/event`; the replayed prefix and the live tail splice by sequence number, so no event is rendered twice or skipped. The terminal never calls the deprecated synchronous Session readers.
 
 On exit it cancels an active turn, waits for idle, flushes the Session, restores the terminal, and requests the process exit. Every disposal path (normal exit, startup failure, signal-driven shutdown) runs the same idempotent restore, and a process-exit hook covers a hard exit that skips disposal.
+
+`/sessions` opens a bottom-dock chooser over stored top-level Sessions in every workspace, ordered newest first; each row carries the logged title when a live projection or the durable projection cache holds one, plus the Session id, workspace, and agent preset. `/resume <id>` resumes one exact identity and bare `/resume` opens the chooser. A row the terminal cannot adopt states why, including the Session already presented, another live Session, a subagent or forked Session, a pending format migration, a missing workspace or agent preset, and an unreachable workspace. A switch refuses while a turn runs, flushes and rechecks the presented Session, stops the terminal, and calls the app shell's `terminalSessionHandoff`. The shipped `tui-startup` provides that handoff when the launcher offers `ctx.appRelaunch`; it re-executes the same profile invocation with rewritten app arguments in the target workspace, so logged Session state replays while runtime-only state restarts. A composition without the handoff lists Sessions and reports that they remain resumable from the command line.
 
 ## Transcript
 
@@ -72,11 +74,11 @@ The question panel renders the option list, multi-select state, a free-text answ
 
 `displayText()` escapes every C0 and C1 control character except line feeds before model output, tool content, question text, diagnostics, or the terminal title reaches the renderer. The palette is one table of standard 16-color SGR pairs; body text and backgrounds stay at terminal defaults, selections use reverse video, and `color: false` removes all styling. The terminal does not define a theme, so the host terminal's light or dark palette applies.
 
-The footer reads Session projections: `tokenUsage`, `contextPressure`, `permissions`, `title`, and `workingDirectory`. It never derives those values by re-folding the log.
+The footer reads Session projections: `tokenUsage`, `contextPressure`, `permissions`, `title`, and `workingDirectory`. It never derives those values by re-folding the log. While a turn runs, the footer status word sweeps through the standard palette's color cycle at the animation interval, so the active state visibly moves without leaving the theme-agnostic 16-color palette; `animation: false` renders it with the static warning color instead.
 
 ## Verification
 
-Package tests cover the render layer, the transcript fold, the interaction answerers, command and mention completion, image admission, highlighting, the plan-review presentation, effort cycling, and the lifecycle against a headless terminal. Assembled acceptance boots the shipped `tui` profile through the `dsh` launcher under a PTY with replayed model output, and compares semantic terminal state and process exit. The [testing policy](../testing.md) owns lane placement.
+Package tests cover the render layer, the transcript fold, the interaction answerers, command and mention completion, the stored-Session chooser and handoff preflight, image admission, highlighting, the plan-review presentation, effort cycling, and the lifecycle against a headless terminal. Assembled acceptance boots the shipped `tui` profile through the `dsh` launcher under a PTY with replayed model output, and compares semantic terminal state and process exit. The [testing policy](../testing.md) owns lane placement.
 
 ## Related documentation
 

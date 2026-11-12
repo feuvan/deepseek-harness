@@ -7,19 +7,23 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { statSync } from 'node:fs'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plugin-manager'
+import type {} from '@deepseek-ai/dsh-session-projection-cache'
+import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { AppExit } from '@deepseek-ai/dsh-cmdline'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScrollView, VStack, isViewportTUI, matchesKey, type Component, type MarkdownTheme, type OverlayHandle, type TUI,
 } from '@earendil-works/pi-tui'
 import type { ResolvedConfig } from './config.ts'
 import { copy, setCopyLocale } from './copy.ts'
+import { RUNNING_ANIMATION_INTERVAL_MS } from './animation.ts'
 import { Composer } from './commands.ts'
 import { Banner } from './components/banner.ts'
 import { Footer } from './components/footer.ts'
@@ -46,11 +50,12 @@ import { createPalette, type Palette } from './palette.ts'
 import { createTerminalSession, type TerminalSession } from './terminal.ts'
 import { ConfirmPanel, TextPanel } from './components/dialogs.ts'
 import { BottomPanel, type DockSurface } from './components/bottom.ts'
-import { BottomList } from './bottom-list.ts'
+import { BottomList, type BottomListItem } from './bottom-list.ts'
 import { QueuePanel, type QueuePanelItem } from './components/queue-panel.ts'
 import { BottomAnchor } from './components/bottom-anchor.ts'
 import { ContributedStrips } from './components/contributed-strips.ts'
 import type { TerminalCommand, TerminalDockComponent } from './contribution.ts'
+import { SESSION_HANDOFF_SERVICE } from './handoff.ts'
 import { CompletionController } from './completion.ts'
 import { PendingStrip } from './components/pending.ts'
 import { ConfigPanel, loadConfigRows, type ConfigPanelActions, type ConfigTeamMode, type DisplayField } from './config-panel.ts'
@@ -129,6 +134,7 @@ export class TerminalApp {
   private inlineAnchor: BottomAnchor | undefined
   private disposed = false
   private exiting = false
+  private switchingSessions = false
   private readonly createTerminal: () => TerminalSession
   private readonly contributedStrips: Component[] = []
   private readonly pendingCommands: TerminalCommand[] = []
@@ -175,7 +181,7 @@ export class TerminalApp {
     this.tui?.requestRender()
   }
 
-  /** Stop the running-status clock, if started. */
+  /** Stop the running-status animation, if started. */
   private stopAnimation(): void {
     if (this.animation === undefined) return
     clearInterval(this.animation)
@@ -750,6 +756,7 @@ export class TerminalApp {
       agent: () => this.agent,
       selection,
       config: this.config,
+      animation: () => this.config.animation,
       effort: () => this.effectiveEffort(),
       reasoning: () => this.transcript?.reasoningLevel() ?? 'standard',
       turnStartedAt: () => transcript.turnStartedAt(),
@@ -796,6 +803,8 @@ export class TerminalApp {
         login: () => { this.openOnboarding() },
         account: () => { this.openAccountPanel() },
         preset: (argument) => { void this.pickPreset(argument) },
+        sessions: () => { void this.openSessionsPanel() },
+        resume: (argument) => { void this.resumeCommand(argument) },
         terminal: () => { this.showTerminalDiagnostics() },
         redraw: () => { tui.renderNow(true) },
         exit: () => { this.requestExit(0) },
@@ -1027,14 +1036,14 @@ export class TerminalApp {
     }
   }
 
-  /** Start the running-status clock when animation is enabled. */
+  /** Start the running-status sweep and elapsed clock when animation is enabled. */
   private startAnimation(): void {
     if (!this.config.animation || this.animation !== undefined) return
     this.animation = setInterval(() => {
       if (this.agent?.status !== 'running') return
       this.footer?.invalidate()
       this.tui?.requestRender()
-    }, 1000)
+    }, RUNNING_ANIMATION_INTERVAL_MS)
     this.animation.unref()
   }
 
@@ -1297,6 +1306,226 @@ export class TerminalApp {
       }
     }
     return undefined
+  }
+
+  /**
+   * Present the stored-Session chooser. Only top-level Sessions other than the
+   * presented one appear; each row carries the reason it cannot be resumed.
+   */
+  private async openSessionsPanel(): Promise<void> {
+    let records: readonly SessionRecord[]
+    try {
+      records = await this.listSessions()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.sessions.listFailed(errorMessage(error)))
+      return
+    }
+    const rows: BottomListItem[] = []
+    const choices = new Map<string, SessionChoice>()
+    for (const record of records) {
+      const header = record.header
+      if (header.origin === 'subagent' || header.parentSession !== undefined) continue
+      if (header.id === this.config.sessionId) continue
+      const disabled = this.sessionDisabled(record)
+      choices.set(header.id, { record, ...(disabled === undefined ? {} : { disabled }) })
+      rows.push({
+        value: header.id,
+        label: this.sessionTitle(record) ?? header.id,
+        description: disabled ?? this.sessionDescription(record),
+      })
+    }
+    if (rows.length === 0) {
+      this.transcript?.notice(copy.sessions.empty)
+      return
+    }
+    this.completion?.close()
+    this.closeConfigPanel()
+    this.bottomList?.open(copy.sessions.title, rows, (item) => {
+      const choice = choices.get(item.value)
+      /* v8 ignore next -- the chooser only offers values inserted into the map */
+      if (choice === undefined) return
+      if (choice.disabled !== undefined) {
+        this.transcript?.notice(choice.disabled)
+        return
+      }
+      void this.resumeSession(choice.record)
+    }, () => {})
+  }
+
+  /**
+   * Resume one Session named on the command line, or open the chooser without
+   * an argument.
+   * @param argument - exact stored Session identity, or undefined to browse.
+   */
+  private async resumeCommand(argument: string | undefined): Promise<void> {
+    const requested = argument?.trim()
+    if (requested === undefined || requested === '') {
+      await this.openSessionsPanel()
+      return
+    }
+    if (this.agent?.status === 'running') {
+      this.transcript?.notice(copy.sessions.busy)
+      return
+    }
+    const id = SessionId(requested)
+    if (id === this.config.sessionId) {
+      this.transcript?.notice(copy.sessions.same)
+      return
+    }
+    let records: readonly SessionRecord[]
+    try {
+      records = await this.listSessions()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.sessions.listFailed(errorMessage(error)))
+      return
+    }
+    const record = records.find(item => item.header.id === id)
+    if (record === undefined) {
+      this.transcript?.notice(copy.sessions.notFound(id))
+      return
+    }
+    const disabled = this.sessionDisabled(record)
+    if (disabled !== undefined) {
+      this.transcript?.notice(disabled)
+      return
+    }
+    await this.resumeSession(record)
+  }
+
+  /**
+   * Save the presented Session and hand the process to the launcher for the
+   * chosen stored Session. Preflight re-reads the target before teardown so a
+   * stale chooser row cannot drive a Session whose header moved.
+   * @param record - the listed target Session.
+   */
+  private async resumeSession(record: SessionRecord): Promise<void> {
+    if (this.switchingSessions) return
+    if (this.agent?.status === 'running') {
+      this.transcript?.notice(copy.sessions.busy)
+      return
+    }
+    const handoff = this.ctx.get(SESSION_HANDOFF_SERVICE)
+    if (handoff === undefined) {
+      this.transcript?.notice(copy.sessions.unavailable)
+      return
+    }
+    const query = this.ctx.get('sessionQuery')
+    /* v8 ignore next 4 -- the terminal plugin injects sessionQuery before it activates */
+    if (query === undefined) {
+      this.transcript?.notice(copy.sessions.failed('the sessionQuery service is not composed'))
+      return
+    }
+    this.switchingSessions = true
+    try {
+      const observation = await query.observeSession(record.header.id)
+      const header = observation.header
+      // Release the read lease before any teardown: the launcher disposes the
+      // tree that owns the observation once the handoff begins.
+      observation[Symbol.dispose]()
+      if (header.origin === 'subagent' || header.parentSession !== undefined) {
+        this.transcript?.notice(copy.sessions.disabled.subagent)
+        return
+      }
+      if (header.cwd === undefined) {
+        this.transcript?.notice(copy.sessions.disabled.missingCwd)
+        return
+      }
+      if (header.agentPreset === undefined) {
+        this.transcript?.notice(copy.sessions.disabled.missingPreset)
+        return
+      }
+      if (!isDirectory(header.cwd)) {
+        this.transcript?.notice(copy.sessions.cwdUnavailable(header.cwd))
+        return
+      }
+      const agent = this.agent
+      /* v8 ignore next -- the composer is live only after the Agent is presented */
+      if (agent !== undefined) {
+        try {
+          await this.ctx.sessions.flush(agent.session)
+        } catch (error: unknown) {
+          this.transcript?.notice(copy.sessions.flushFailed(errorMessage(error)))
+          return
+        }
+      }
+      const current = this.agent
+      if (current !== undefined && current.status === 'running') {
+        this.transcript?.notice(copy.sessions.busy)
+        return
+      }
+      this.dispose()
+      try {
+        await handoff.resume(header.id, header.cwd)
+      } catch (error: unknown) {
+        this.fail(error)
+        return
+      }
+      /* v8 ignore next -- a successful handoff replaces the process and never returns */
+      this.fail(new Error('terminal-ui: the launcher returned from Session handoff'))
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.sessions.failed(errorMessage(error)))
+    } finally {
+      if (!this.disposed) this.switchingSessions = false
+    }
+  }
+
+  /** @returns stored Sessions from the unified query service. */
+  private async listSessions(): Promise<readonly SessionRecord[]> {
+    const query = this.ctx.get('sessionQuery')
+    /* v8 ignore next 2 -- the terminal plugin injects sessionQuery before it activates */
+    if (query === undefined) throw new Error('the sessionQuery service is not composed')
+    return await query.listSessions()
+  }
+
+  /**
+   * Read the advisory display title for one listed Session.
+   * @param record - the listed Session.
+   * @returns the logged title, preferring the live projection and falling back
+   *   to the durable cache; undefined when neither holds one.
+   */
+  private sessionTitle(record: SessionRecord): string | undefined {
+    const live = this.ctx.sessions.get(record.header.id)
+    if (live !== undefined) {
+      const title = this.ctx.get('sessionProjections')?.snapshot(live).values.title
+      if (typeof title === 'string' && title !== '') return title
+    }
+    try {
+      const title = this.ctx.get('sessionProjectionCache')?.cachedSnapshot(record.header, ['title'])?.values.title
+      return typeof title === 'string' && title !== '' ? title : undefined
+    } catch (error: unknown) {
+      // The cache is an advisory title source; a bad row must not hide the Session.
+      void error
+      return undefined
+    }
+  }
+
+  /**
+   * Explain why one listed Session cannot be adopted by this terminal.
+   * @param record - the listed Session.
+   * @returns the disabled reason, or undefined when it can be resumed.
+   */
+  private sessionDisabled(record: SessionRecord): string | undefined {
+    if (record.formatStatus === 'migration-required') return copy.sessions.disabled.migration
+    if (record.header.origin === 'subagent' || record.header.parentSession !== undefined) {
+      return copy.sessions.disabled.subagent
+    }
+    if (record.live) return copy.sessions.disabled.live
+    if (record.header.cwd === undefined) return copy.sessions.disabled.missingCwd
+    if (record.header.agentPreset === undefined) return copy.sessions.disabled.missingPreset
+    return undefined
+  }
+
+  /**
+   * Render one Session row's supporting facts.
+   * @param record - the listed Session.
+   * @returns the identity, workspace, and preset description.
+   */
+  private sessionDescription(record: SessionRecord): string {
+    return copy.sessions.description(
+      record.header.id,
+      record.header.cwd ?? '',
+      record.header.agentPreset,
+    )
   }
 
   /**
@@ -2199,6 +2428,38 @@ export class TerminalApp {
 
 /** Deadline for one account profile or wallet query. */
 const ACCOUNT_QUERY_TIMEOUT_MS = 15_000
+
+/** One stored-Session chooser row and the reason it may be disabled. */
+interface SessionChoice {
+  /** The listed Session the row represents. */
+  readonly record: SessionRecord
+  /** Why the terminal cannot adopt it, when it cannot. */
+  readonly disabled?: string
+}
+
+/**
+ * Whether one path currently resolves to a directory.
+ * @param path - absolute directory path from a Session header.
+ * @returns whether the path is a readable directory.
+ */
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch (error: unknown) {
+    // An unreachable directory rejects the switch instead of aborting the terminal.
+    void error
+    return false
+  }
+}
+
+/**
+ * Render one arbitrary failure for a terminal notice.
+ * @param error - thrown value.
+ * @returns its message.
+ */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 /** One account query exceeded the terminal's wait budget. */
 class AccountQueryTimeoutError extends Error {}

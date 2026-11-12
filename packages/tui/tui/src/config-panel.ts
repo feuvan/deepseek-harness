@@ -89,7 +89,7 @@ export type DisplayField = 'color' | 'animation' | 'previewLines' | 'windowBlock
 export interface ConfigDisplayState {
   /** Whether rendered text carries ANSI styling. */
   readonly color: boolean
-  /** Whether the running footer advances its elapsed clock. */
+  /** Whether the running footer animates its status sweep and elapsed clock. */
   readonly animation: boolean
   /** Maximum body lines shown for a collapsed tool card. */
   readonly previewLines: number

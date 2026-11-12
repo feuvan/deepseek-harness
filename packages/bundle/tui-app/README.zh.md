@@ -37,6 +37,8 @@ dsh tui --resume session-<id>
 
 `dsh tui --help` 打印应用自己的帮助并在占用终端前退出。非交互启动会在进入屏幕前失败，并指出 `dsh --profile headless "<task>"`。
 
+在终端内，`/sessions` 列出已存的顶层会话，`/resume <id>` 恢复精确标识；两者与 `--resume` 使用同一启动路径。启动器提供 `ctx.appRelaunch` 时，`tui-startup` 发布 `terminalSessionHandoff`；交接保留启动器的 profile、patch 覆盖层与环境，去掉先前的 `--resume`/`--preset` 参数，并在目标会话记录的工作区重新执行同一调用。启动器不支持原地重启时不提供交接，终端会说明该会话仍可从命令行恢复。
+
 该 profile 继承 `dsh-base` 的 host 平面，并用与 Web profile 相同的四个 preset 声明替换其 agent 平面，因此在任一界面创建的 preset 会话都能在另一界面恢复。与 base 的差别只有部署 persona 与终端相关条目。
 
 [Agent Teams 界面](../../tui/agent-team/README.zh.md)随本 bundle 加载。Team 模式是按根会话保存的开关，默认关闭；根会话 `/config` 的模型与推理强度分区中的**使用智能体团队**开关无需修改 profile 即可为该会话树开启协作。Team 模式开启后，`/team` 打开只读的 Members 与 Shared tasks dock，会话拥有 teammate 或任务后，编辑器上方的状态行随之出现。
@@ -47,13 +49,13 @@ dsh tui --resume session-<id>
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-patch 按顺序插入五个界面条目。`tui-startup`（`./startup` 入口）解析应用参数，并发布 `tuiStartup`，其中带有新启动生成的会话标识或待恢复的标识。`tui-session`（包入口）等待完整应用就绪，从组合的默认模型服务解析 provider、model 与 reasoning effort，并创建或恢复 Agent；它随应用一起 dispose 该 Agent，并在创建失败时向 stderr 报告并以失败退出。`terminal-ui` 用同一会话标识挂载终端插件。`tui-agent-team` 通过 `ctx.terminalUi` 挂载终端 Agent Teams 界面；Team 服务与任务工具由 base 层提供。`file-reference-local` 提供编辑器 `@` 补全背后的工作区文件索引以及对应的模型指引。`standard`、`ptc`、`cordis` 三个 preset 声明会挂载 `ask_user_question`，因为 base 刻意把模型可见的问题工具留给注册了应答者的组合。
+patch 按顺序插入五个界面条目。`tui-startup`（`./startup` 入口）解析应用参数，发布 `tuiStartup`（其中带有新启动生成的会话标识或待恢复的标识），并在启动器能替换进程时发布 `/sessions` 交接。`tui-session`（包入口）等待完整应用就绪，从组合的默认模型服务解析 provider、model 与 reasoning effort，并创建或恢复 Agent；它随应用一起 dispose 该 Agent，并在创建失败时向 stderr 报告并以失败退出。`terminal-ui` 用同一会话标识挂载终端插件。`tui-agent-team` 通过 `ctx.terminalUi` 挂载终端 Agent Teams 界面；Team 服务与任务工具由 base 层提供。`file-reference-local` 提供编辑器 `@` 补全背后的工作区文件索引以及对应的模型指引。`standard`、`ptc`、`cordis` 三个 preset 声明会挂载 `ask_user_question`，因为 base 刻意把模型可见的问题工具留给注册了应答者的组合。
 
 ### 源码映射
 
 | 文件 | 角色 |
 |---|---|
-| [`src/startup.ts`](src/startup.ts) | `tui-startup`：`--resume`、`--help` 与 `tuiStartup` provider |
+| [`src/startup.ts`](src/startup.ts) | `tui-startup`：`--resume`、`--help`、`tuiStartup` provider 与会话交接 |
 | [`src/index.ts`](src/index.ts) | `tui-session`：创建或恢复所呈现的 Agent |
 | [`cordis.patch.yml`](cordis.patch.yml) | 叠放在 `dsh-base` 上的终端 patch |
 
@@ -94,7 +96,7 @@ patch 按顺序插入五个界面条目。`tui-startup`（`./startup` 入口）�
 - **Schedule 工具需要 Web host。** preset 声明逐字复制自 Web，而 Web 的 `schedule` host 条目依赖 API session controller；终端不组装该 controller，因此 preset 的 `tool-schedule` 条目在这里不会注册工具。
 - **preset 组装是副本。** `presets/` 下的四个声明是 Web bundle 文件的逐字节副本；一旦漂移，parity 测试会失败。
 - **终端配置可热更新。** Profile patch 与插件开关通过 HMR 生效；volatile 终端设置（`color`、`animation`、`previewLines`、`windowBlocks`、`title`、`locale`、`busyEnter`）可在 `/config` 中编辑并更新运行中的终端；`screen` 保持只读，在 profile 中修改时会重新挂载终端表面。
-- **没有自动会话选择器。** 恢复需要精确的会话标识。
+- **恢复会替换进程。** `/sessions` 与 `/resume` 依赖启动器的 `ctx.appRelaunch`；没有该能力时终端仍列出会话，但会提示使用命令行。每次切换都会重跑同一 profile 调用，因此仅运行时状态（打开的面板、进行中的诊断）会重启，而已记录的会话状态会回放。
 - **Windows 未由随附验收通道验证。** PTY profile 验收运行在 POSIX 主机上。
 
 -----

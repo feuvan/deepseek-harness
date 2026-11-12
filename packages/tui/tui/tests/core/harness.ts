@@ -15,7 +15,8 @@ import type {
 } from '@deepseek-ai/dsh-agent'
 import type { CommandDescriptor, CommandExecution } from '@deepseek-ai/dsh-commands'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
@@ -23,6 +24,7 @@ import type { LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo } from '@deeps
 import { HeadlessTerminal } from '@deepseek-ai/dsh-terminal-snapshot'
 import type { ScreenMode, TerminalSession } from '../../src/terminal.ts'
 import { createTerminalSession } from '../../src/terminal.ts'
+import type { SessionHandoff } from '../../src/handoff.ts'
 import { resolveConfig, type Config, type ResolvedConfig } from '../../src/config.ts'
 import { createMarkdownTheme } from '../../src/markdown.ts'
 import { createPalette } from '../../src/palette.ts'
@@ -220,6 +222,8 @@ export function commandsDouble(options: CommandsDoubleOptions = {}): CommandsDou
 
 /** One observation lease returned by the session-query double. */
 export interface ObservationDouble {
+  /** The observed Session header. */
+  readonly header?: SessionHeader
   /** The exact replayed events. */
   readonly events: readonly SessionEvent[]
   /** Release the lease. */
@@ -229,37 +233,77 @@ export interface ObservationDouble {
 /**
  * Build one observation lease over the supplied events.
  * @param events - exact replayed events.
+ * @param header - observed Session header, when a caller reads it.
  * @returns the lease.
  */
-export function observation(events: readonly SessionEvent[]): ObservationDouble {
-  return { events, [Symbol.dispose]() {} }
+export function observation(events: readonly SessionEvent[], header?: SessionHeader): ObservationDouble {
+  return { ...(header === undefined ? {} : { header }), events, [Symbol.dispose]() {} }
 }
 
 /** Session-query double. */
 export interface SessionQueryDouble {
   /** The `ctx.sessionQuery` service. */
-  readonly service: { observeSession(sessionId: SessionId): Promise<ObservationDouble> }
+  readonly service: {
+    observeSession(sessionId: SessionId): Promise<ObservationDouble>
+    listSessions(): Promise<readonly SessionRecord[]>
+  }
   /** Every observed Session identity, in call order. */
   readonly observed: SessionId[]
+  /** Records returned by `listSessions`; tests may append to them. */
+  readonly listed: SessionRecord[]
 }
 
 /**
  * Build the session-query double.
  * @param read - resolves the observation for one Session.
+ * @param listed - records returned by the listing; defaults to none.
  * @returns the service and observed identities.
  */
 export function sessionQueryDouble(
   read: (sessionId: SessionId) => Promise<ObservationDouble>,
+  listed: readonly SessionRecord[] = [],
 ): SessionQueryDouble {
   const observed: SessionId[] = []
+  const records: SessionRecord[] = [...listed]
   return {
     service: {
       observeSession: (sessionId: SessionId) => {
         observed.push(sessionId)
         return read(sessionId)
       },
+      listSessions: async () => [...records],
     },
     observed,
+    listed: records,
+  }
+}
+
+/** Session-handoff double. */
+export interface SessionHandoffDouble {
+  /** The service handed to the terminal. */
+  readonly service: SessionHandoff
+  /** Every requested target, in call order. */
+  readonly calls: { readonly sessionId: SessionId; readonly cwd: string }[]
+}
+
+/**
+ * Build the app-shell handoff double.
+ * @param failure - rejection the handoff reports instead of replacing the process.
+ * @returns the service and recorded calls.
+ */
+export function sessionHandoffDouble(failure?: Error): SessionHandoffDouble {
+  const calls: { sessionId: SessionId; cwd: string }[] = []
+  return {
+    service: {
+      async resume(sessionId, cwd) {
+        calls.push({ sessionId, cwd })
+        if (failure !== undefined) throw failure
+        // A successful replacement never returns; keep the caller suspended so
+        // the test observes the pre-handoff state instead of a post-return fail.
+        await new Promise<void>(() => {})
+      },
+    },
+    calls,
   }
 }
 

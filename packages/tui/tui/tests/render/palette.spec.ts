@@ -5,7 +5,7 @@ const ESC = '\u001b'
 
 /** A named style and the SGR pair it must emit when color is enabled. */
 interface StyleCase {
-  readonly name: keyof Omit<Palette, 'color' | 'setColor'>
+  readonly name: Exclude<keyof Omit<Palette, 'color' | 'setColor'>, 'sweep'>
   readonly open: string
   readonly close: string
 }
@@ -64,6 +64,26 @@ describe('createPalette', () => {
 
   it.each(composed)('returns $name text unchanged when color is disabled', ({ name }) => {
     expect(createPalette(false)[name]('hello')).toBe('hello')
+  })
+
+  it('sweeps each code point through the color cycle by phase', () => {
+    const palette = createPalette(true)
+    expect(palette.sweep('ab', 0)).toBe(`${ESC}[36ma${ESC}[39m${ESC}[34mb${ESC}[39m`)
+    expect(palette.sweep('ab', 1)).toBe(`${ESC}[34ma${ESC}[39m${ESC}[35mb${ESC}[39m`)
+    expect(palette.sweep('运行中', 5)).toBe(
+      `${ESC}[32m运${ESC}[39m${ESC}[36m行${ESC}[39m${ESC}[34m中${ESC}[39m`,
+    )
+  })
+
+  it('normalizes a negative or oversized phase', () => {
+    const palette = createPalette(true)
+    expect(palette.sweep('a', -1)).toBe(`${ESC}[32ma${ESC}[39m`)
+    expect(palette.sweep('a', 13)).toBe(`${ESC}[34ma${ESC}[39m`)
+  })
+
+  it('leaves a sweep unchanged when color is disabled or the text is empty', () => {
+    expect(createPalette(false).sweep('running', 3)).toBe('running')
+    expect(createPalette(true).sweep('', 3)).toBe('')
   })
 
   it('keeps text and escape sequences untouched when color is disabled', () => {

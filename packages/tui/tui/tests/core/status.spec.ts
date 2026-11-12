@@ -48,6 +48,7 @@ function statusModel(overrides: Partial<StatusDeps> = {}): { model: StatusModel;
     agent: () => undefined,
     selection: selectionRef(),
     config: terminalConfig(),
+    animation: () => false,
     effort: () => ({ level: undefined, implicit: false }),
     reasoning: () => 'standard',
     turnStartedAt: () => undefined,
@@ -294,6 +295,37 @@ describe('StatusModel', () => {
     harness.agent.setStatus('running')
     startedAt = 101_500
     expect(model.snapshot().elapsedSeconds).toBe(0)
+  })
+
+  it('reports an animation phase only for an animated running turn', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    const harness = await statusHarness()
+    const { model } = statusModel({
+      ctx: harness.ctx,
+      agent: () => harness.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+      config: terminalConfig({ animation: true }),
+      animation: () => true,
+    })
+
+    harness.agent.setStatus('running')
+    expect(model.snapshot().statusPhase).toBe(1000)
+
+    vi.setSystemTime(100_250)
+    expect(model.snapshot().statusPhase).toBe(1002)
+
+    harness.agent.setStatus('idle')
+    expect(model.snapshot().statusPhase).toBeUndefined()
+
+    harness.agent.setStatus('running')
+    const disabled = statusModel({
+      ctx: harness.ctx,
+      agent: () => harness.agent.agent,
+      selection: selectionRef({ provider: 'test', model: 'test-model' }),
+      config: terminalConfig({ animation: false }),
+    })
+    expect(disabled.model.snapshot().statusPhase).toBeUndefined()
   })
 
   it('renders on changes of the presented Session only and stops on dispose', async () => {

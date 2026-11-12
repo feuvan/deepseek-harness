@@ -1,0 +1,6 @@
+# Test-only overlay for the PTY Session-switch acceptance: the driver seeds one
+# detached stored Session before the terminal lists it, and reports the resumed
+# identity after the launcher replaces the process.
+- insert:
+    - id: tui-resume-driver
+      name: './tui-resume-driver.ts'

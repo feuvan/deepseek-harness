@@ -7,8 +7,11 @@ import type { CommandDescriptor, CommandExecution } from '@deepseek-ai/dsh-comma
 import { LlmAttemptId, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
 import { TerminalApp } from '../../src/lifecycle.ts'
+import { SESSION_HANDOFF_SERVICE } from '../../src/handoff.ts'
+import type { SessionHandoff } from '../../src/handoff.ts'
 import { AccountLoginError } from '../../src/account-login.ts'
 import type { BusyEnter } from '../../src/config.ts'
 import { TerminalTranscript } from '../../src/transcript.ts'
@@ -40,10 +43,10 @@ import { sessionTitle, toolCall, toolResult, userMessage } from '../support/even
 import {
   agentDouble, agentsDouble, appExitDouble, commandsDouble, freshContext,
   agentPresetsDouble, headlessSession, llmDouble, observation, projectionsDouble, queuedMessage,
-  screenLines, sessionQueryDouble, terminalConfig,
+  screenLines, sessionHandoffDouble, sessionQueryDouble, terminalConfig,
   toolsDouble, userQuestionsDouble, waitForScreen,
   type AgentDouble, type AgentsDouble, type AppExitDouble, type CommandsDouble,
-  type ObservationDouble, type ProjectionsDouble, type SessionQueryDouble,
+  type ObservationDouble, type ProjectionsDouble, type SessionHandoffDouble, type SessionQueryDouble,
 } from './harness.ts'
 
 /** One terminal the application owns, with its render spies. */
@@ -117,6 +120,10 @@ interface LifecycleOptions {
   readonly screen?: ScreenMode
   /** Messages already queued in the Agent inbox. */
   readonly queued?: readonly UserMessage[]
+  /** Stored-Session records the query listing returns. */
+  readonly listed?: readonly SessionRecord[]
+  /** App-shell Session handoff, when the composition provides one. */
+  readonly handoff?: SessionHandoff
 }
 
 /**
@@ -128,7 +135,7 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
   const exit = appExitDouble()
   const agents = agentsDouble()
   const projections = projectionsDouble(options.values ?? {})
-  const query = sessionQueryDouble(options.read ?? (async () => observation([])))
+  const query = sessionQueryDouble(options.read ?? (async () => observation([])), options.listed)
   const commands = commandsDouble({
     ...(options.descriptors === undefined ? {} : { descriptors: options.descriptors }),
     ...(options.execute === undefined ? {} : { execute: options.execute }),
@@ -150,6 +157,7 @@ async function lifecycleHarness(options: LifecycleOptions = {}): Promise<Lifecyc
     sessionProjections: projections.service,
     userQuestions: userQuestionsDouble(options.attachWait ?? (() => (async function* empty() {})())),
     appExit: exit.exit,
+    ...(options.handoff === undefined ? {} : { [SESSION_HANDOFF_SERVICE]: options.handoff }),
     ...options.services,
   }
   if (services.agentPresets !== undefined) {
@@ -3905,6 +3913,456 @@ describe('TerminalApp dock synchronization', () => {
     expect(bottomOf(harness.app).active).toBe(false)
   })
 })
+
+describe('TerminalApp stored Sessions', () => {
+  it('lists a stored Session and resumes the chosen row', async () => {
+    const { harness, target, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+    expect(list.render(200).join('\n')).toContain('session-other')
+
+    press(list, '\r')
+
+    await vi.waitFor(() => { expect(handoff.calls).toHaveLength(1) })
+    expect(handoff.calls[0]).toEqual({ sessionId: target.header.id, cwd: process.cwd() })
+    expect(harness.flush).toHaveBeenCalledWith(harness.session)
+    expect(harness.terminal.stop).toHaveBeenCalled()
+  })
+
+  it('closes the stored-Session chooser with Escape', async () => {
+    const { harness } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+
+    press(list, '\x1b')
+
+    expect(list.active).toBe(false)
+  })
+
+  it('resumes an exact id without opening the chooser', async () => {
+    const { harness, target, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, `/resume ${target.header.id}`)
+
+    await vi.waitFor(() => { expect(handoff.calls).toHaveLength(1) })
+    expect(bottomListOf(harness.app).active).toBe(false)
+  })
+
+  it('opens the chooser from a bare /resume', async () => {
+    const harness = await lifecycleHarness({ listed: [] })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.empty) })
+  })
+
+  it('reports no other resumable Session', async () => {
+    const harness = await lifecycleHarness({ listed: [] })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.empty) })
+  })
+
+  it('refuses a switch while a turn runs', async () => {
+    const { harness, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.busy) })
+    expect(handoff.calls).toEqual([])
+    expect(harness.flush).not.toHaveBeenCalled()
+  })
+
+  it('refuses the Session already presented', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-test')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.same) })
+  })
+
+  it('reports a missing stored Session', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-missing')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.notFound('session-missing')) })
+  })
+
+  it('reports a failing Session listing', async () => {
+    const harness = await lifecycleHarness({ listed: [] })
+    vi.spyOn(harness.query.service, 'listSessions').mockRejectedValue(new Error('listing broke'))
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.listFailed('listing broke')) })
+  })
+
+  it('reports a launcher without an in-place handoff', async () => {
+    const { harness, handoff } = await storedSessionHarness({ withoutHandoff: true })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.unavailable) })
+    expect(handoff.calls).toEqual([])
+    expect(harness.flush).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a live Session', { live: true }, copy.sessions.disabled.live],
+    ['a migration', { formatStatus: 'migration-required' as const }, copy.sessions.disabled.migration],
+    ['a subagent Session', { overrides: { origin: 'subagent' as const } }, copy.sessions.disabled.subagent],
+    ['a missing workspace', { header: withoutCwd }, copy.sessions.disabled.missingCwd],
+    ['a missing preset', { header: withoutPreset }, copy.sessions.disabled.missingPreset],
+  ])('refuses %s', async (_label, options, expected) => {
+    const { harness, handoff } = await storedSessionHarness(options)
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(expected) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('refuses an unreachable recorded workspace', async () => {
+    const { harness, handoff } = await storedSessionHarness({
+      overrides: { cwd: '/definitely/not/a/dsh/workspace' },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => {
+      expect(harness.transcriptText()).toContain(copy.sessions.cwdUnavailable('/definitely/not/a/dsh/workspace'))
+    })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('does not switch when saving the current Session fails', async () => {
+    const { harness, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.flush.mockRejectedValueOnce(new Error('disk full'))
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.flushFailed('disk full')) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('rechecks idleness after the flush', async () => {
+    const { harness, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.flush.mockImplementationOnce(async () => {
+      harness.agent.setStatus('running')
+      return true
+    })
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.busy) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('reports a failed preflight read', async () => {
+    const { harness, handoff } = await storedSessionHarness({ readFailure: new Error('unreadable log') })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.failed('unreadable log')) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('reports a failed handoff and exits', async () => {
+    const { harness } = await storedSessionHarness({ handoffFailure: new Error('exec failed') })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await harness.awaitExit()
+    expect(harness.exit.codes).toEqual([1])
+    expect(harness.stderr).toHaveBeenCalledWith('dsh: exec failed\n')
+  })
+
+  it('does not start a second handoff while one is pending', async () => {
+    const { harness, target, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    const resume = privateValue(harness.app, 'resumeSession') as (record: SessionRecord) => Promise<void>
+
+    void resume.call(harness.app, target)
+    await vi.waitFor(() => { expect(handoff.calls).toHaveLength(1) })
+    await resume.call(harness.app, target)
+
+    expect(handoff.calls).toHaveLength(1)
+  })
+
+  it('marks a chooser row the terminal cannot adopt', async () => {
+    const { harness, handoff } = await storedSessionHarness({ live: true })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+    expect(list.render(200).join('\n')).toContain(copy.sessions.disabled.live)
+    press(list, '\r')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.disabled.live) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('hides subagent and forked Sessions from the chooser', async () => {
+    const { harness } = await storedSessionHarness({ overrides: { origin: 'subagent' } })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.empty) })
+  })
+
+  it('uses a live projection title and a cached cold title', async () => {
+    const { harness } = await storedSessionHarness()
+    const header = { ...harness.session.header, id: SessionId('session-cold'), cwd: process.cwd(), agentPreset: 'standard' }
+    harness.query.listed.push({ header, live: false, persisted: true, formatStatus: 'current' })
+    harness.projections.values.title = 'Projected title'
+    harness.ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: (meta: SessionHeader) => ({
+        asOfSeq: 0,
+        values: { title: meta.id === 'session-cold' ? 'Cached title' : undefined },
+      }),
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+    const rendered = list.render(200).join('\n')
+    expect(rendered).toContain('Cached title')
+  })
+
+  it('falls back to the id when the title cache throws', async () => {
+    const { harness } = await storedSessionHarness()
+    harness.ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: () => { throw new Error('cache unavailable') },
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+    expect(list.render(200).join('\n')).toContain('session-other')
+  })
+
+  it('skips the presented Session in the chooser', async () => {
+    const harness = await lifecycleHarness()
+    harness.query.listed.push({
+      header: { ...harness.session.header, cwd: process.cwd(), agentPreset: 'standard' },
+      live: true,
+      persisted: true,
+      formatStatus: 'current',
+    })
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.empty) })
+  })
+
+  it('reports a failing listing for an exact resume', async () => {
+    const harness = await lifecycleHarness()
+    vi.spyOn(harness.query.service, 'listSessions').mockRejectedValue(new Error('listing broke'))
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.sessions.listFailed('listing broke')) })
+  })
+
+  it('rechecks idleness when resuming directly', async () => {
+    const { harness, target, handoff } = await storedSessionHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.agent.setStatus('running')
+    const resume = privateValue(harness.app, 'resumeSession') as (record: SessionRecord) => Promise<void>
+
+    await resume.call(harness.app, target)
+
+    expect(harness.transcriptText()).toContain(copy.sessions.busy)
+    expect(handoff.calls).toEqual([])
+  })
+
+  it.each([
+    ['a subagent Session', { observed: asSubagent }, copy.sessions.disabled.subagent],
+    ['a missing workspace', { observed: withoutCwd }, copy.sessions.disabled.missingCwd],
+    ['a missing preset', { observed: withoutPreset }, copy.sessions.disabled.missingPreset],
+  ])('refuses a target that became %s before the switch', async (_label, options, expected) => {
+    const { harness, handoff } = await storedSessionHarness(options)
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/resume session-other')
+
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(expected) })
+    expect(handoff.calls).toEqual([])
+  })
+
+  it('uses the live projection title for a listed live Session', async () => {
+    const { harness } = await storedSessionHarness()
+    const titled = harness.ctx.sessions.create(SessionId('session-live'), {
+      meta: { cwd: process.cwd(), agentPreset: 'standard' },
+    })
+    const untitled = harness.ctx.sessions.create(SessionId('session-untitled'), {
+      meta: { cwd: process.cwd(), agentPreset: 'standard' },
+    })
+    harness.query.listed.push(
+      { header: titled.header, live: false, persisted: true, formatStatus: 'current' },
+      { header: untitled.header, live: false, persisted: true, formatStatus: 'current' },
+    )
+    vi.spyOn(harness.projections.service, 'snapshot').mockImplementation(session => ({
+      asOfSeq: 0,
+      values: { title: session.id === titled.id ? 'Live title' : '' },
+    }))
+    harness.start()
+    await harness.awaitStarted()
+
+    submitCommand(harness, '/sessions')
+    const list = bottomListOf(harness.app)
+    await vi.waitFor(() => { expect(list.active).toBe(true) })
+    const rendered = list.render(200).join('\n')
+    expect(rendered).toContain('Live title')
+    expect(rendered).toContain('session-untitled')
+  })
+})
+
+/** Options for {@link storedSessionHarness}. */
+interface StoredSessionOptions {
+  /** Additional lifecycle values. */
+  readonly lifecycle?: LifecycleOptions
+  /** Header fields replaced on the stored target. */
+  readonly overrides?: Partial<SessionHeader>
+  /** Full-header transform applied after {@link overrides}. */
+  readonly header?: (base: SessionHeader) => SessionHeader
+  /** Full-header transform applied to the re-read preflight observation. */
+  readonly observed?: (base: SessionHeader) => SessionHeader
+  /** Whether the target is already live in this runtime. */
+  readonly live?: boolean
+  /** Persistence format status reported for the target. */
+  readonly formatStatus?: SessionRecord['formatStatus']
+  /** Rejection the handoff reports. */
+  readonly handoffFailure?: Error
+  /** Rejection the preflight observation reports for the target. */
+  readonly readFailure?: Error
+  /** Whether the composition omits the app-shell handoff. */
+  readonly withoutHandoff?: boolean
+}
+
+/**
+ * Mark a Session header as a subagent child.
+ * @param header - source header.
+ * @returns a detached header with the subagent origin.
+ */
+function asSubagent(header: SessionHeader): SessionHeader {
+  return { ...header, origin: 'subagent' }
+}
+
+/**
+ * Remove the recorded working directory from a Session header.
+ * @param header - source header.
+ * @returns a detached header without `cwd`.
+ */
+function withoutCwd(header: SessionHeader): SessionHeader {
+  const next = { ...header }
+  delete next.cwd
+  return next
+}
+
+/**
+ * Remove the recorded agent preset from a Session header.
+ * @param header - source header.
+ * @returns a detached header without `agentPreset`.
+ */
+function withoutPreset(header: SessionHeader): SessionHeader {
+  const next = { ...header }
+  delete next.agentPreset
+  return next
+}
+
+/**
+ * Build one terminal over a current Session plus one stored target Session.
+ * @param options - target header, handoff outcome, and lifecycle values.
+ * @returns the harness, listed target, and handoff double.
+ */
+async function storedSessionHarness(options: StoredSessionOptions = {}): Promise<{
+  harness: LifecycleHarness
+  target: SessionRecord
+  handoff: SessionHandoffDouble
+}> {
+  const headers = new Map<SessionId, SessionHeader>()
+  const handoff = sessionHandoffDouble(options.handoffFailure)
+  const targetId = SessionId('session-other')
+  const harness = await lifecycleHarness({
+    ...options.lifecycle,
+    ...(options.withoutHandoff === true ? {} : { handoff: handoff.service }),
+    read: async (id) => {
+      if (id === targetId && options.readFailure !== undefined) throw options.readFailure
+      return observation([], headers.get(id))
+    },
+  })
+  headers.set(harness.session.id, harness.session.header)
+  const baseHeader: SessionHeader = {
+    ...harness.session.header,
+    id: targetId,
+    cwd: process.cwd(),
+    agentPreset: 'standard',
+    ...options.overrides,
+  }
+  const header = options.header?.(baseHeader) ?? baseHeader
+  const target: SessionRecord = {
+    header,
+    live: options.live ?? false,
+    persisted: true,
+    ...(options.formatStatus === undefined ? {} : { formatStatus: options.formatStatus }),
+  }
+  headers.set(target.header.id, options.observed?.(header) ?? header)
+  harness.query.listed.push(target)
+  return { harness, target, handoff }
+}
 
 describe('TerminalApp reasoning visibility', () => {
   it('sets and cycles the reasoning level through the command', async () => {

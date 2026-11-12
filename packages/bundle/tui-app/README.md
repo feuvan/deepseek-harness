@@ -37,6 +37,8 @@ The first launch initializes the `tui` profile under `$DSH_HOME/profiles/tui` fr
 
 `dsh tui --help` prints the app's own help and exits without claiming the terminal. Non-interactive launches fail before the screen is entered and name `dsh --profile headless "<task>"`.
 
+Inside the terminal, `/sessions` lists stored top-level Sessions and `/resume <id>` re-opens one exact identity; both use the same startup path as `--resume`. `tui-startup` publishes `terminalSessionHandoff` when the launcher supplies `ctx.appRelaunch`; the handoff keeps the launcher's profile, patch overlays, and environment, drops the previous `--resume`/`--preset` arguments, and re-executes the same invocation in the target Session's recorded workspace. A launcher without in-place relaunch provides no handoff, and the terminal reports that the Session remains resumable from the command line.
+
 The profile inherits `dsh-base`'s host plane and replaces its agent plane with the same four preset declarations the Web profile ships, so a preset Session created in either surface can be resumed in the other. Only the deployment persona and the terminal rows differ from base.
 
 The [Agent Teams UI](../../tui/agent-team/README.md) loads with this bundle. Team mode is a saved per-root-Session switch and defaults to off; the root Session's **Use Agent Teams** switch in the `/config` Model & effort section turns collaboration on without changing the profile. With Team mode on, `/team` opens the read-only Members and Shared tasks dock, and the strip above the composer appears once the Session has teammates or tasks.
@@ -47,13 +49,13 @@ The [Agent Teams UI](../../tui/agent-team/README.md) loads with this bundle. Tea
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The patch inserts five surface rows in order. `tui-startup` (the `./startup` entry) parses the app's arguments and publishes `tuiStartup` with the Session identity a fresh launch mints or the identity to resume. `tui-session` (the package entry) waits for the complete application, resolves provider, model, and reasoning effort from the composed default-model service, and creates or resumes the Agent; it disposes that Agent with the application and reports creation failures on stderr with a failing exit. `terminal-ui` mounts the terminal plugin with the same Session identity. `tui-agent-team` mounts the terminal Agent Teams surface over `ctx.terminalUi`; the base layer supplies the Team service and task tools. `file-reference-local` provides the workspace file index behind the composer's `@` completion and the matching model guidance. The `standard`, `ptc`, and `cordis` preset declarations mount `ask_user_question`, because base deliberately leaves the model-facing question tool to the compositions whose surface registers an answerer.
+The patch inserts five surface rows in order. `tui-startup` (the `./startup` entry) parses the app's arguments, publishes `tuiStartup` with the Session identity a fresh launch mints or the identity to resume, and publishes the `/sessions` handoff when the launcher can replace its process. `tui-session` (the package entry) waits for the complete application, resolves provider, model, and reasoning effort from the composed default-model service, and creates or resumes the Agent; it disposes that Agent with the application and reports creation failures on stderr with a failing exit. `terminal-ui` mounts the terminal plugin with the same Session identity. `tui-agent-team` mounts the terminal Agent Teams surface over `ctx.terminalUi`; the base layer supplies the Team service and task tools. `file-reference-local` provides the workspace file index behind the composer's `@` completion and the matching model guidance. The `standard`, `ptc`, and `cordis` preset declarations mount `ask_user_question`, because base deliberately leaves the model-facing question tool to the compositions whose surface registers an answerer.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/startup.ts`](src/startup.ts) | `tui-startup`: `--resume`, `--help`, and the `tuiStartup` provider |
+| [`src/startup.ts`](src/startup.ts) | `tui-startup`: `--resume`, `--help`, the `tuiStartup` provider, and the Session handoff |
 | [`src/index.ts`](src/index.ts) | `tui-session`: create or resume the presented Agent |
 | [`cordis.patch.yml`](cordis.patch.yml) | The terminal patch over `dsh-base` |
 
@@ -94,7 +96,7 @@ The section is stable across requests in one composition, so it does not invalid
 - **Schedule tools need the Web host.** The preset declarations are copied verbatim from Web, whose `schedule` host row depends on the API session controller; the terminal does not compose that controller, so the preset's `tool-schedule` row registers no tools here.
 - **Preset composition is a copy.** The four declarations under `presets/` are byte-identical copies of the Web bundle's files; a parity test fails when they drift.
 - **Live terminal configuration.** Profile patches and plugin toggles apply through HMR; volatile terminal settings (`color`, `animation`, `previewLines`, `windowBlocks`, `title`, `locale`, `busyEnter`) edit from `/config` and update the running terminal, while `screen` remains read-only and remounts the surface when changed in the profile.
-- **No automatic session picker.** Resume requires the exact Session identity.
+- **Resume replaces the process.** `/sessions` and `/resume` rely on the launcher's `ctx.appRelaunch`; without it the terminal lists Sessions but directs the user to the command line. Each switch re-runs the same profile invocation, so runtime-only state (open panels, in-flight diagnostics) restarts while logged Session state replays.
 - **Windows is unverified by the shipped acceptance lane.** The PTY profile acceptance runs on POSIX hosts.
 
 -----

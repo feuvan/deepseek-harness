@@ -47,6 +47,10 @@ export interface LocalCommands {
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
   preset(argument: string | undefined): void | Promise<void>
+  /** Browse stored Sessions and resume the chosen one. */
+  sessions(): void | Promise<void>
+  /** Resume a stored Session by id, or browse when no id is given. */
+  resume(argument: string | undefined): void | Promise<void>
   /** Show terminal, input, and rendering diagnostics. */
   terminal(): void
   /** Close the terminal. */
@@ -122,6 +126,8 @@ export class Composer {
       login: { description: copy.commands.login, run: () => { deps.local.login() } },
       account: { description: copy.commands.account, run: () => { deps.local.account() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
+      sessions: { description: copy.commands.sessions, run: () => { void deps.local.sessions() } },
+      resume: { description: copy.commands.resume, run: (argument) => { void deps.local.resume(argument) } },
       terminal: { description: copy.commands.terminal, run: () => { deps.local.terminal() } },
       exit: { description: copy.commands.exit, run: () => { deps.local.exit() } },
       quit: { description: copy.commands.quit, run: () => { deps.local.exit() } },
@@ -246,6 +252,8 @@ export class Composer {
         argument = { argumentHint: '<mode>', getArgumentCompletions: (prefix: string) => this.cardChoices(prefix) }
       } else if (name === 'permission' && permissions !== undefined) {
         argument = { argumentHint: '<preset>', getArgumentCompletions: (prefix: string) => this.argumentChoices(() => Promise.resolve(permissions()), prefix) }
+      } else if (name === 'resume') {
+        argument = { argumentHint: '<id>' }
       }
       return { name, description: entry.description, ...argument }
     })

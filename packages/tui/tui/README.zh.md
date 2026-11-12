@@ -37,7 +37,7 @@ kind: "package-reference"
 |---|---|---|
 | `sessionId` | 必填 | 本终端呈现的活动根 Agent 的精确会话标识 |
 | `color` | `true` | 输出 ANSI 样式；`false` 时渲染无样式文本 |
-| `animation` | `true` | 运行中页脚时钟每秒推进一次 |
+| `animation` | `true` | 让运行中状态滚动换色并推进计时 |
 | `previewLines` | `10` | 折叠工具卡展示的正文行数 |
 | `windowBlocks` | `200` | 保留渲染的 transcript 块上限 |
 | `title` | `DeepSeek Harness` | 终端标题后缀；会话标题显示在其前面 |
@@ -65,7 +65,9 @@ kind: "package-reference"
 
 Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，[`@deepseek-ai/dsh-tui-agent-team`](../agent-team/README.zh.md) 插件通过 seam 添加终端视图。Team 模式开启后，一旦会话拥有 teammate 或共享任务，编辑器上方就会出现一行 Team 状态；`/team` 在 dock 中打开只读的 Members / Shared tasks 面板（Tab/←/→ 切换，↑/↓ 与 PgUp/PgDn 移动，Esc 关闭）。该面板读取根会话的 `agentTeam` projection，并与 native 智能体团队面板展示同一套事实：teammate 运行/未运行状态、模型，以及任务状态、可开始/阻塞、owner、依赖、写入范围与警告。Enter 打开选中 teammate 的 transcript，或展开选中任务的完整描述；任务与消息变更仍由 Team 工具和会话完成。`/config` 的模型与推理强度分区提供**使用智能体团队**开关，按根会话保存且默认关闭；subagent 会话与没有 Team 服务的组合不显示该开关，会话运行后再关闭会先请求确认。没有 Team 服务的组合既没有状态行也没有开关，`/team` 会说明 Agent Teams 不可用。Enter 发送空闲提示，Agent 运行时排队到下一轮；Ctrl+Enter 使用相反投递方式，编辑器为空时插话全部排队消息。`/queue <text>` 显式排队，`/queue` 打开队列面板（↑/↓、Enter 插话、`e` 移回编辑器、`x` 删除、Esc 关闭），`/steer <text>` 直接插话。编辑器为空时 Esc 中断运行中的轮次；Ctrl+C 关闭活动面板、取消运行中的轮次，或空闲时退出。Ctrl+O 在收缩、展开与隐藏工具卡之间循环；Ctrl+R 切换推理显示；Ctrl+L 重绘；Ctrl+V 从宿主剪贴板附加图片；Shift+Tab 推进当前模型的推理强度。PgUp/PgDn 滚动，鼠标滚轮滚动，拖拽选择通过 OSC 52 复制，Ctrl+Shift+F 打开 transcript 搜索。编辑器上方的一条暗色提示行显示 Agent 尚未消费的 steering 与排队消息，终端通过 OSC 9;4 与 OSC 7501 报告 working/blocked/idle。
 
-已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/team`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
+已注册命令（`/compact`、`/goal`、`/plan`、`/permission`、`/skill:...`）通过 `ctx.commands` 派发并渲染其记录结果；终端专属控制（`/help`、`/status`、`/model`、`/preset`、`/sessions`、`/resume`、`/team`、`/effort`、`/permission`、`/queue`、`/steer`、`/config`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`）由终端自身处理。
+
+`/sessions` 在底部 dock 中打开已存会话选择器，按创建时间从新到旧列出所有工作区的顶层会话；有 projection 或其持久缓存时显示记录的标题，并列出会话 id、工作区与 agent preset。Enter 恢复选中的会话；`/resume <id>` 恢复精确标识，裸 `/resume` 打开同一选择器。无法接管的行会显示原因：当前正在展示的会话、另一个活动会话、subagent 或分叉会话、需要格式迁移的会话、缺少工作目录或 agent preset 的会话，以及不可访问的工作区。切换会先刷写并复查当前会话，运行中拒绝切换，然后停止终端并把进程交给应用外壳；外壳在工作区重新执行同一条 `dsh tui` 命令。启动器没有提供交接能力时，终端仍可列出会话，但会说明可从命令行恢复。
 
 输入 `/` 或 `@` 会在编辑器下方打开补全 dock，显示每条命令的描述或文件类型；↑/↓ 移动，Tab 插入，Enter 运行已接受的命令（或在提及/参数补全时插入），Esc 关闭。普通文字与裸路径不会打开补全——输入空格不会列出工作区，本地文件需要显式用 `@` 引用；编辑器原有的内联下拉已移除。命令参数同样可补全：`/effort ` 提供当前模型声明的强度，`/permission ` 提供组合的权限预设及其描述。不带参数的 `/effort` 会打开同组强度的带标题选择器；`/effort <level>` 直接应用，所选（或适配器默认）强度会立即显示在页脚中模型名之后。不带参数的 `/permission` 在编辑器下方打开选择 dock，逐项列出组合的权限预设及说明并标记当前值；选中后交给已注册命令执行，`/permission <preset>` 直接派发。不带参数的 `/effort` 使用同一 dock。接受的 `@` 提及通常保留为字面提示文本；当它指向受支持的图片文件时，终端会从工作区读取该图片、经附件存储准入后附到发出的用户消息。任何准入失败都会变成 transcript 通知，同时文本仍照常发送。Shift+Tab 在当前模型适配器声明的强度之间循环，并通过与选择器相同的模型选择把选择记入会话日志；页脚始终显示实际生效的强度，包括用户未显式选择的默认值。带 `plan-review` 标记的问题会以专用评审呈现：带边框的计划文档、批准/拒绝标记，且不提供自由文本答案行。
 
@@ -100,6 +102,7 @@ Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，
 | [`src/components/`](src/components) | 横幅、页脚、编辑器、transcript 块、对话框 |
 | [`src/interactions.ts`](src/interactions.ts) | 在底部 dock 中呈现的问题与审批应答者 |
 | [`src/commands.ts`](src/commands.ts) | 编辑器提交、终端本地命令、命令目录 |
+| [`src/handoff.ts`](src/handoff.ts) | `/resume` 与 `/sessions` 使用的应用外壳会话交接契约 |
 | [`src/model-selector.ts`](src/model-selector.ts) | 建议性模型目录与选择器 |
 | [`src/status.ts`](src/status.ts) | 来自会话投影的页脚数值 |
 | [`src/autocomplete.ts`](src/autocomplete.ts) | `/` 命令与 `@` 提及补全 |
@@ -138,7 +141,7 @@ Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，
 - **Agent Teams 视图是终端本地视图。** teammate transcript 只读（不能驱动对话），任务板没有变更控件；创建、更新任务与发消息仍由 Team 工具和会话完成，`/config` 开关只保存根会话的模式。把 teammate 作为主会话打开仍属于 Web/Desktop 流程。
 - **preset 由组合包提供。** 终端本身只读取并切换已组装的 preset 注册表；随附的 `@deepseek-ai/dsh-tui-app` 组合包声明四个内置 preset，默认 `standard`。
 - **没有剪贴板图片粘贴，也没有内联图片渲染。** 图片通过 `@` 提及命名后附加；已附加或收到的图片块渲染为带标签的占位符，而不是像素。随附组合包不选择 PTC 模式。
-- **没有会话选择器。** 恢复使用精确的 `--resume <id>`；终端内没有已存会话浏览器。
+- **恢复需要启动器交接。** `/sessions` 与 `/resume` 通过应用外壳的 `terminalSessionHandoff` 替换进程；没有该能力的组合仍可列出会话，但不能切换，并会提示使用命令行。选择器显示记录的标题、工作区与 preset，不显示逐轮结果，也不提供全文搜索。
 - **贡献 seam，单一 dock。** 插件可通过 `ctx.terminalUi` 注册紧凑状态行、slash 命令，并打开一个底部 dock 组件；布局、输入路由与单一 dock 所有权仍由终端持有（问题、审批、`/config` 等内建界面共用该槽位）。
 - **默认使用 inline 渲染。** 历史位于终端 scrollback，滚轮滚动与文本选择由终端负责；应用侧的翻页键、回到底部提示与 transcript 搜索仅适用于 `fullscreen` 模式。
 - **Fullscreen 的 transcript 历史按需载入。** `windowBlocks` 限制挂载到滚动视图的块数；在顶部继续 PgUp、滚轮或 Ctrl+Home 会把归档块重新插入当前视口上方，而不是丢弃。

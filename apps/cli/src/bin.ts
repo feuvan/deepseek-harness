@@ -8,7 +8,9 @@
 
 import { getDshRuntimeVersion, loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { parseDshArgs } from './args.ts'
+import { resolve } from 'node:path'
+import { parseDshArgs, type DshInvocation } from './args.ts'
+import { absolutizePatchArgs } from './relaunch.ts'
 import { reportStartupFailure } from './startup-diagnostics.ts'
 import type { RunProfileOptions } from './profile-boot.ts'
 
@@ -16,6 +18,30 @@ import type { RunProfileOptions } from './profile-boot.ts'
 export type RunCliOptions = Pick<RunProfileOptions, 'packageManager'> & {
   /** Permit plugin commands for Desktop's existing profile; reserved for its installed carrier. */
   manageDesktopProfile?: boolean
+}
+
+/**
+ * Build the in-place relaunch callback for this invocation. The launcher keeps
+ * its own flags and app arguments separate, so the replacement reuses the
+ * original launcher prefix and substitutes only the app's argument family.
+ * @param invocation - the resolved profile invocation.
+ * @returns the callback, or undefined on a platform without `process.execve`.
+ */
+function createRelaunch(
+  invocation: Extract<DshInvocation, { mode: 'profile' }>,
+): ((args: readonly string[]) => never) | undefined {
+  if (typeof process.execve !== 'function') return undefined
+  const entry = process.argv[1]
+  if (entry === undefined) return undefined
+  const launcherArgs = absolutizePatchArgs(process.argv.slice(2, process.argv.length - invocation.args.length))
+  return (args) => {
+    process.execve?.(
+      process.execPath,
+      [process.execPath, ...process.execArgv, resolve(entry), ...launcherArgs, ...args],
+      process.env,
+    )
+    throw new Error('dsh: process replacement returned unexpectedly')
+  }
 }
 
 /**
@@ -32,12 +58,14 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
     case 'profile': {
       const { runProfile } = await import('./profile-boot.ts')
       try {
+        const relaunch = createRelaunch(invocation)
         await runProfile({
           environment: loadLayeredEnv('dsh'),
           profile: invocation.profile,
           fromDefaultProfile: invocation.fromDefaultProfile,
           patchFiles: invocation.patches,
           args: invocation.args,
+          ...(relaunch === undefined ? {} : { relaunch }),
           ...profileOptions,
         })
       } catch (error) {

@@ -94,11 +94,21 @@ describe('Footer', () => {
     expect(lines[1]).toBe(' deepseek/deepseek-chat · reasoning standard · ↑1200 ↓345 · idle')
   })
 
-  it('highlights the running status and dims the idle status', () => {
+  it('highlights an unanimated running status and dims the idle status', () => {
     const running = footer(completeSnapshot({ status: copy.status.running }), true).render(120)[1]
     expect(running).toContain(`${ESC}[33mrunning${ESC}[39m`)
     const idle = footer(completeSnapshot(), true).render(120)[1]
     expect(idle).toContain(`${ESC}[2midle${ESC}[22m`)
+  })
+
+  it('sweeps the running status through the palette when a phase is present', () => {
+    const first = footer(completeSnapshot({ status: copy.status.running, statusPhase: 0 }), true).render(120)[1]
+    const next = footer(completeSnapshot({ status: copy.status.running, statusPhase: 1 }), true).render(120)[1]
+
+    expect(first).toContain(`${ESC}[36mr${ESC}[39m${ESC}[34mu${ESC}[39m`)
+    expect(first).toContain(`${ESC}[35mn${ESC}[39m${ESC}[31mn${ESC}[39m`)
+    expect(next).not.toBe(first)
+    expect(next).toContain(`${ESC}[34mr${ESC}[39m${ESC}[35mu${ESC}[39m`)
   })
 
   it('rounds cache and context percentages', () => {

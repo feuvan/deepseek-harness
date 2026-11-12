@@ -35,7 +35,7 @@ import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
+import { provideCmdline, type AppReady, type AppRelaunch } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
@@ -257,8 +257,40 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /**
+   * Execute the same launcher invocation with replacement app arguments. The
+   * host provides {@link AppRelaunch} only when this is supplied; a launcher
+   * that cannot replace its process omits it.
+   * @param args - replacement app arguments in argv order.
+   */
+  relaunch?: (args: readonly string[]) => never
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
+}
+
+/**
+ * Build the launcher's in-place relaunch capability. It enters the target
+ * directory before disposing the tree so an unreachable directory fails while
+ * the current application still owns its terminal; it then disposes the tree
+ * and executes the replacement.
+ * @param relaunch - executes the same invocation with replacement app arguments.
+ * @param dispose - tears down the current tree and launcher resources.
+ * @param chdir - directory switch, injectable for tests.
+ * @returns the relaunch capability provided as `ctx.appRelaunch`.
+ */
+export function createAppRelaunch(
+  relaunch: (args: readonly string[]) => never,
+  dispose: () => Promise<void>,
+  chdir: (cwd: string) => void = (cwd) => { process.chdir(cwd) },
+): AppRelaunch {
+  return {
+    async relaunch(args, cwd) {
+      chdir(cwd)
+      await dispose()
+      relaunch(args)
+      throw new Error('dsh: the launcher returned from process replacement')
+    },
+  }
 }
 
 /**
@@ -335,6 +367,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         args: options.args,
         exit: code => void shutdown.shutdown(code),
         ready: appReady.service,
+        ...(options.relaunch === undefined
+          ? {}
+          : { relaunch: createAppRelaunch(options.relaunch, dispose) }),
       })
     })
     app.current = ctx

@@ -1,12 +1,15 @@
 /** The TUI app's command-line provider: fresh identity, exact resume, help, and the launcher contract. */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { internals, provideCmdline, type AppRelaunch } from '@deepseek-ai/dsh-cmdline'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_HANDOFF_SERVICE, type SessionHandoff } from '@deepseek-ai/dsh-tui'
 import {
   apply,
   inject,
   name,
+  resumeArguments,
   TUI_STARTUP_SERVICE,
   type TuiStartupValues,
 } from '../src/startup.ts'
@@ -29,14 +32,17 @@ interface StartupRun {
   readonly err: () => string
   /** Exit codes the launcher requested. */
   readonly exits: readonly number[]
+  /** @returns the published Session handoff, when the launcher can relaunch. */
+  readonly handoff: () => SessionHandoff | undefined
 }
 
 /**
  * Mount the provider on a fresh Context with captured commander output and exits.
  * @param args - the invocation's inner arguments.
- * @returns the published identity, captured output, and requested exits.
+ * @param options - optional launcher relaunch capability.
+ * @returns the published identity, handoff, captured output, and requested exits.
  */
-function runStartup(args: readonly string[]): StartupRun {
+function runStartup(args: readonly string[], options: { relaunch?: AppRelaunch } = {}): StartupRun {
   let out = ''
   let err = ''
   internals.stdout = { write: (chunk: string) => { out += chunk; return true } }
@@ -44,13 +50,18 @@ function runStartup(args: readonly string[]): StartupRun {
   const ctx = new Context()
   contexts.push(ctx)
   const exits: number[] = []
-  provideCmdline(ctx, { args: [...args], exit: code => void exits.push(code) })
+  provideCmdline(ctx, {
+    args: [...args],
+    exit: code => void exits.push(code),
+    ...(options.relaunch === undefined ? {} : { relaunch: options.relaunch }),
+  })
   apply(ctx)
   return {
     published: () => ctx.get(TUI_STARTUP_SERVICE),
     out: () => out,
     err: () => err,
     exits,
+    handoff: () => ctx.get(SESSION_HANDOFF_SERVICE),
   }
 }
 
@@ -127,6 +138,46 @@ describe('tui-startup', () => {
     expect(run.published()).toBeUndefined()
     expect(run.err()).toContain("option '--resume <id>' argument missing")
     expect(run.exits).toEqual([1])
+  })
+
+  it('publishes a Session handoff that rewrites only resume and preset arguments', async () => {
+    const calls: { args: readonly string[]; cwd: string }[] = []
+    const run = runStartup(['--resume', 'session-old', '--preset', 'ptc', '--unknown'], {
+      relaunch: {
+        async relaunch(args, cwd) {
+          calls.push({ args, cwd })
+          await new Promise<void>(() => {})
+        },
+      },
+    })
+    const handoff = run.handoff()
+    expect(handoff).toBeDefined()
+
+    void handoff?.resume(SessionId('session-new'), '/workspace')
+
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
+    expect(calls[0]).toEqual({ args: ['--unknown', '--resume', 'session-new'], cwd: '/workspace' })
+  })
+
+  it('reports a launcher that returns from process replacement', async () => {
+    const run = runStartup([], { relaunch: { async relaunch() {} } })
+    const handoff = run.handoff()
+    expect(handoff).toBeDefined()
+
+    await expect(handoff?.resume(SessionId('session-new'), '/workspace')).rejects.toThrow(
+      'tui-startup: the launcher returned from process replacement',
+    )
+  })
+
+  it('does not publish a handoff without a launcher relaunch capability', () => {
+    expect(runStartup([]).handoff()).toBeUndefined()
+  })
+
+  it('replaces both flag forms of resume and preset arguments', () => {
+    expect(resumeArguments(['--resume=old', '--preset=ptc', '--other'], SessionId('new')))
+      .toEqual(['--other', '--resume', 'new'])
+    expect(resumeArguments(['--resume', 'old', '--preset', 'ptc'], SessionId('new')))
+      .toEqual(['--resume', 'new'])
   })
 
   it('prints its own help and exits cleanly without publishing', () => {

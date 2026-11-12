@@ -29,11 +29,12 @@ kind: "package-library"
 
 ### 启动器提供的值
 
-启动器向你的应用提供三样东西：
+启动器向你的应用提供四样东西：
 
 - `ctx.cmdlineArgs`——本次调用的内层参数。读取它返回一份不可变快照，且绝不会消费或修改它们：`dsh --profile tui --resume abc` 给你的应用 `['--resume', 'abc']`。
 - `ctx.appExit`——在整棵树关闭后请求进程退出的方式，接到启动器的关停控制器上。
 - `ctx.appReady`——成功启动信号，只在 Loader 树与启动器自有设置成功后提交。
+- `ctx.appRelaunch`——可选的原地进程替换：沿用同一启动器调用，只替换应用参数。启动器先进入目标工作目录，dispose 整棵树，再执行替换，因此该调用只在失败时返回。能切换自身主体的应用（例如会话选择器）可在其上发布更窄的服务；无法替换进程的启动器不提供该能力。
 
 没有参数的启动会看到空列表——这是诚实的答案，而不是缺失的值。
 
@@ -83,7 +84,7 @@ kind: "package-library"
 
 ### 设计说明
 
-- **启动器事实，而非配置。** `cmdlineArgs` 与 `appExit` 在树挂载前提供到宿主上下文上；它们不是 Loader 行，因此没有任何组合持有或覆盖它们。
+- **启动器事实，而非配置。** `cmdlineArgs`、`appExit` 与可选的 `appRelaunch` 能力在树挂载前提供到宿主上下文上；它们不是 Loader 行，因此没有任何组合持有或覆盖它们。
 - **按位置切分。** 启动器不认识任何应用行：自身 flag 之后的第一个 token 就是应用参数的起点，因此 flag 家族、`--help` 文本与解析错误都由应用自己持有。
 - **结构化错误识别。** `isCommanderError` 读取 commander 的错误码前缀，而不是用 `instanceof`，因为树外插件会带来自己的一份 commander 副本，其 `CommanderError` 身份不同；`configureExitAndOutput` 会遍历每个子命令，因为 commander 只在注册时复制退出与输出设置。
 - **可注入的输出流。** `internals` 持有输出流，使测试无需触碰进程即可捕获 commander 的文本。
@@ -96,7 +97,7 @@ kind: "package-library"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `CmdlineArgs`/`AppExit` 类型、`provideCmdline`、`parseCmdline`、commander 退出／输出路由 |
+| [`src/index.ts`](src/index.ts) | `CmdlineArgs`/`AppExit`/`AppRelaunch` 类型、`provideCmdline`、`parseCmdline`、commander 退出／输出路由 |
 
 </details>
 

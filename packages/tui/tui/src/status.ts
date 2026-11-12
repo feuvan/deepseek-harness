@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-working-directory'
+import { RUNNING_ANIMATION_INTERVAL_MS } from './animation.ts'
 import { copy } from './copy.ts'
 import type { ModelSelectionRef } from './model-selection.ts'
 import type { ResolvedConfig } from './config.ts'
@@ -26,6 +27,8 @@ export interface StatusDeps {
   readonly selection: ModelSelectionRef
   /** Resolved terminal configuration. */
   readonly config: ResolvedConfig
+  /** @returns whether the running status sweep animates. */
+  readonly animation: () => boolean
   /** @returns the effort the next request uses, including an advertised default. */
   readonly effort: () => { readonly level: string | undefined; readonly implicit: boolean }
   /** @returns the active reasoning-visibility level. */
@@ -122,6 +125,9 @@ export class StatusModel {
       contextPercent,
       permission: permissions?.currentValue,
       status: agent.status === 'running' ? copy.status.running : copy.status.idle,
+      ...(agent.status === 'running' && this.deps.animation()
+        ? { statusPhase: Math.floor(Date.now() / RUNNING_ANIMATION_INTERVAL_MS) }
+        : {}),
       elapsedSeconds,
       pendingSteering: inbox?.['next-step'].length ?? 0,
       pendingQueued: inbox?.['next-turn'].length ?? 0,

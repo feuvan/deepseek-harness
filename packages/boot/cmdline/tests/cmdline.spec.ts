@@ -16,7 +16,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { exitOnStdinEnd, internals, parseCmdline, provideCmdline, type AppReady } from '../src/index.ts'
+import { exitOnStdinEnd, internals, parseCmdline, provideCmdline, type AppReady, type AppRelaunch } from '../src/index.ts'
 
 /** Every value one boot of the fixture tree observed. */
 interface Observed {
@@ -254,6 +254,21 @@ describe('provideCmdline', () => {
     const ctx = new Context()
     expect(() => { parseCmdline(ctx, demoCommand()) })
       .toThrow('the launcher must provide ctx.cmdlineArgs and ctx.appExit')
+  })
+
+  it('provides the launcher relaunch capability only when supplied', () => {
+    const relaunch: AppRelaunch = {
+      async relaunch() {
+        await new Promise<void>(() => {})
+      },
+    }
+    const ctx = new Context()
+    provideCmdline(ctx, { args: [], exit: () => {}, relaunch })
+    expect(ctx.appRelaunch).toBe(relaunch)
+
+    const without = new Context()
+    provideCmdline(without, { args: [], exit: () => {} })
+    expect(without.appRelaunch).toBeUndefined()
   })
 
   it('lets multiple parsers read the same immutable snapshot', () => {
