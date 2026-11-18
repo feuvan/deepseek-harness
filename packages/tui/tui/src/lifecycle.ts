@@ -967,6 +967,10 @@ export class TerminalApp {
         return { consume: true }
       }
       if (matchesKey(data, 'shift+tab')) {
+        this.cyclePermission()
+        return { consume: true }
+      }
+      if (matchesKey(data, 'ctrl+e')) {
         void this.cycleEffort()
         return { consume: true }
       }
@@ -2304,6 +2308,30 @@ export class TerminalApp {
     } catch (error: unknown) {
       this.transcript?.notice(copy.clipboard.failed(error instanceof Error ? error.message : String(error)))
     }
+  }
+
+  /** Advance to the next composed permission preset and report it. */
+  private cyclePermission(): void {
+    const presets = this.ctx.get('permissionPresets')
+    const agent = this.agent
+    if (presets === undefined || agent === undefined) {
+      this.transcript?.notice(copy.prompt.permissionUnavailable)
+      return
+    }
+    const choices = this.permissionChoices()
+    if (choices.length === 0) {
+      this.transcript?.notice(copy.prompt.permissionUnavailable)
+      return
+    }
+    const current = this.status?.snapshot().permission
+    const index = choices.findIndex(item => item.value === current)
+    const next = choices[(index + 1) % choices.length]
+    /* v8 ignore next -- a non-empty list always has a next entry */
+    if (next === undefined) return
+    presets.set(agent.session, next.value)
+    this.footer?.invalidate()
+    this.tui?.requestRender()
+    this.transcript?.notice(copy.prompt.permissionSwitched(next.label))
   }
 
   /** Advance the current model's reasoning effort and report the new level. */

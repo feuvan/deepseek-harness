@@ -173,7 +173,7 @@ describe('ModelSelectorPanel rendering', () => {
   it('renders the effort after it is cycled', () => {
     const { panel } = selector()
 
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
 
     expect(rendered(panel)).toContain('❯ alpha/a-1 Alpha One · high')
     expect(rendered(panel)).not.toContain('Alpha One · low')
@@ -235,9 +235,9 @@ describe('ModelSelectorPanel effort cycling', () => {
     const { panel, selected } = selector({ rows: [row] })
 
     expect(rendered(panel)).toContain('Gamma One · default')
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
     expect(rendered(panel)).toContain('Gamma One · low')
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
     panel.handleInput('\r')
     expect(selected).toEqual([{ provider: 'gamma', model: 'g-1', reasoningEffort: 'medium' }])
   })
@@ -245,7 +245,7 @@ describe('ModelSelectorPanel effort cycling', () => {
   it('ignores effort cycling without selectable efforts', () => {
     const { panel, selected } = selector({ rows: [BETA] })
 
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
     panel.handleInput('\r')
 
     expect(selected).toEqual([{ provider: 'beta', model: 'b-2' }])
@@ -254,7 +254,7 @@ describe('ModelSelectorPanel effort cycling', () => {
   it('ignores effort cycling when no row is visible', () => {
     const { panel, selected } = selector({ rows: [] })
 
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
     panel.handleInput('\r')
 
     expect(selected).toEqual([])
@@ -331,7 +331,7 @@ describe('ModelSelectorPanel filtering', () => {
     const { panel, selected } = selector()
     const branded = ReasoningEffortId('high')
 
-    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x05')
     panel.handleInput('\r')
 
     expect(selected[0]?.reasoningEffort).toBe(branded)

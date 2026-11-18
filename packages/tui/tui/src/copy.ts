@@ -106,6 +106,10 @@ const en = {
     presetCurrent: 'current',
     /** Description marking the current permission preset. */
     permissionCurrent: 'current',
+    /** Notice after cycling the permission preset. */
+    permissionSwitched: (label: string): string => `Permission mode: ${label}`,
+    /** Notice when no permission preset catalog is composed. */
+    permissionUnavailable: 'Permission presets are not composed.',
     /** Built-in explanations for the shipped permission presets, used when the catalog omits one. */
     permissionDescriptions: {
       'read-only': 'Read files only; no writes or state-changing commands.',
@@ -330,7 +334,8 @@ const en = {
       '  Ctrl+R             cycle reasoning visibility',
       '  Ctrl+L             repaint',
       '  Ctrl+V             attach an image from the clipboard',
-      '  Shift+Tab          cycle reasoning effort',
+      '  Shift+Tab          cycle permission mode',
+      '  Ctrl+E             cycle reasoning effort',
       '  PgUp/PgDn          scroll the transcript (fullscreen mode pages older history in)',
     ],
     /** Help panel command section title. */
@@ -522,7 +527,7 @@ const en = {
     /** Filter placeholder. */
     filter: 'Filter models',
     /** Hint line. */
-    hint: '↑/↓ move · Enter select · Shift+Tab reasoning effort · Esc cancel',
+    hint: '↑/↓ move · Enter select · Ctrl+E reasoning effort · Esc cancel',
     /** Model advertises no reasoning effort to cycle. */
     noEffort: 'This model exposes no reasoning effort.',
     /** Heading for the reasoning-effort chooser. */
@@ -784,6 +789,10 @@ export const chinese: Copy = {
     /** 标记当前 agent preset 的描述。 */
     presetCurrent: '当前',
     permissionCurrent: '当前',
+    /** 权限模式循环后的通知。 */
+    permissionSwitched: label => `权限模式：${label}`,
+    /** 未组合权限预设目录时的通知。 */
+    permissionUnavailable: '未组合权限预设。',
     permissionDescriptions: {
       'read-only': '只读取文件；不写入，也不执行改变状态的命令。',
       'workspace-write': '可在 workspace 内写入，并在沙箱中运行命令。',
@@ -873,7 +882,8 @@ export const chinese: Copy = {
       '  Ctrl+R             循环推理显示级别',
       '  Ctrl+L             重绘',
       '  Ctrl+V             从剪贴板附加图片',
-      '  Shift+Tab          循环推理强度',
+      '  Shift+Tab          循环权限模式',
+      '  Ctrl+E             循环推理强度',
       '  PgUp/PgDn          滚动 transcript（fullscreen 模式在顶部载入更早历史）',
     ],
     helpCommandsTitle: '命令',
@@ -1159,7 +1169,7 @@ export const chinese: Copy = {
   model: {
     title: '选择模型',
     filter: '筛选模型',
-    hint: '↑/↓ 移动 · Enter 选择 · Shift+Tab 推理强度 · Esc 取消',
+    hint: '↑/↓ 移动 · Enter 选择 · Ctrl+E 推理强度 · Esc 取消',
     noEffort: '该模型没有可用的推理强度。',
     effortTitle: '推理强度',
     effortCurrent: '当前',

@@ -196,7 +196,7 @@ export class ModelSelectorPanel implements Component {
       if (rows.length > 0) this.index = (this.index + 1) % rows.length
       return
     }
-    if (matchesKey(data, 'shift+tab')) {
+    if (matchesKey(data, 'ctrl+e')) {
       const row = rows[this.index]
       if (row !== undefined && row.efforts.length > 0) {
         this.efforts.set(this.key(row), nextEffort(row, this.efforts.get(this.key(row))))

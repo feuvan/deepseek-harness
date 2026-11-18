@@ -1947,17 +1947,59 @@ function effortsLlm(options: {
 }
 
 /**
- * Drive Shift+Tab with the catalog unloaded, which is the state before the
- * startup prefetch settles; this exercises the on-demand catalog load.
+ * Drive the effort cycle with the catalog unloaded, which is the state before
+ * the startup prefetch settles; this exercises the on-demand catalog load.
  * @param harness - the application harness.
  */
-function pressShiftTab(harness: LifecycleHarness): void {
+function pressEffortCycle(harness: LifecycleHarness): void {
   Reflect.set(harness.app, 'catalog', undefined)
-  harness.terminal.headless.press('\x1b[Z')
+  harness.terminal.headless.press('\x05')
 }
 
+describe('TerminalApp permission cycling', () => {
+  it('cycles permission presets from Shift+Tab and reports the new mode', async () => {
+    const set = vi.fn()
+    const harness = await lifecycleHarness({
+      services: {
+        permissionPresets: {
+          catalog: () => ({
+            options: [
+              { value: 'read-only', name: 'Read only' },
+              { value: 'workspace-write', name: 'Workspace write' },
+            ],
+          }),
+          set,
+        },
+      },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('\x1b[Z')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.prompt.permissionSwitched('Read only')) })
+    expect(set).toHaveBeenCalledWith(harness.agent.agent.session, 'read-only')
+  })
+
+  it('reports unavailable permission presets from Shift+Tab', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('\x1b[Z')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.prompt.permissionUnavailable) })
+  })
+
+  it('reports an empty permission catalog from Shift+Tab', async () => {
+    const harness = await lifecycleHarness({
+      services: { permissionPresets: { catalog: () => ({ options: [] }), set: vi.fn() } },
+    })
+    harness.start()
+    await harness.awaitStarted()
+    harness.terminal.headless.press('\x1b[Z')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.prompt.permissionUnavailable) })
+  })
+})
+
 describe('TerminalApp reasoning effort cycling', () => {
-  it('cycles the advertised efforts from Shift+Tab and reports each level', async () => {
+  it('cycles the advertised efforts from Ctrl+E and reports each level', async () => {
     const harness = await lifecycleHarness({
       agentOptions: { provider: 'alpha', model: 'm-1' },
       llm: effortsLlm(),
@@ -1965,13 +2007,13 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('low')) })
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('high')) })
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('default')) })
   })
 
@@ -1983,9 +2025,9 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('high')) })
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('low')) })
   })
 
@@ -1994,7 +2036,7 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.noEffort) })
   })
@@ -2004,8 +2046,8 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    harness.terminal.headless.press('\x1b[Z')
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
+    harness.terminal.headless.press('\x05')
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.noEffort) })
   })
@@ -2024,7 +2066,7 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
 
     await vi.waitFor(() => {
       expect(harness.transcriptText()).toContain(copy.model.effortFailed(message))
@@ -2039,7 +2081,7 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('low')) })
   })
@@ -2077,9 +2119,9 @@ describe('TerminalApp reasoning effort cycling', () => {
     harness.start()
     await harness.awaitStarted()
 
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('low')) })
-    harness.terminal.headless.press('\x1b[Z')
+    harness.terminal.headless.press('\x05')
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('low')) })
 
     expect(enumerations).toBe(1)
@@ -2574,7 +2616,7 @@ describe('TerminalApp effort command', () => {
 })
 
 describe('TerminalApp effort seeding and status', () => {
-  it('seeds the Shift+Tab cycle at the advertised default effort', async () => {
+  it('seeds the Ctrl+E cycle at the advertised default effort', async () => {
     const harness = await lifecycleHarness({
       agentOptions: { provider: 'alpha', model: 'm-1' },
       llm: effortsLlm({
@@ -2590,7 +2632,7 @@ describe('TerminalApp effort seeding and status', () => {
     await harness.awaitStarted()
     await vi.waitFor(() => { expect(footerText(harness.app)).toContain('m-1 · medium') })
 
-    pressShiftTab(harness)
+    pressEffortCycle(harness)
 
     await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.model.effort('high')) })
     expect(harness.transcriptText()).not.toContain(copy.model.effort('low'))

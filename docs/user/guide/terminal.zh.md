@@ -43,7 +43,8 @@ dsh --profile headless "run the tests"
 | Ctrl+L | 重绘屏幕 |
 | Esc | 编辑器为空时中断运行中的轮次；`fullscreen` 模式下滚动时回到底部 |
 | Ctrl+V | 从剪贴板附加图片 |
-| Shift+Tab | 推进当前模型的推理强度 |
+| Shift+Tab | 循环权限模式 |
+| Ctrl+E | 推进当前模型的推理强度 |
 | PgUp / PgDn | `inline` 模式滚动终端 scrollback；`fullscreen` 模式翻动应用自管历史 |
 | 鼠标滚轮 / 拖拽 | `inline` 模式使用终端原生滚动与选择；`fullscreen` 模式为应用自管滚动 |
 | Ctrl+Home / Ctrl+End | `fullscreen` 模式：载入完整应用历史 / 跳到最新输出 |
@@ -67,7 +68,7 @@ dsh --profile headless "run the tests"
 
 ### 推理强度
 
-`Shift+Tab` 在当前模型声明的强度之间循环，并在 transcript 中报告新强度。也可以在 `/model` 中选择模型时做同样选择；两者都会把选择记入会话日志。
+`Ctrl+E` 在当前模型声明的强度之间循环，并在 transcript 中报告新强度。也可以在 `/model` 中选择模型时做同样选择；两者都会把选择记入会话日志。`Shift+Tab` 则在组合的权限预设之间循环，并报告选中的模式。
 
 ### 命令
 
@@ -75,7 +76,7 @@ dsh --profile headless "run the tests"
 
 已注册的 agent 命令也可从编辑器使用，包括 `/compact`、`/goal`、`/plan`、`/permission` 以及 skill 调用。它们记录的结果会像其他命令一样出现在 transcript 中。
 
-`/model` 打开模型列表。输入以过滤；`Shift+Tab` 循环高亮模型的推理强度；Enter 仅为当前会话选择它。该切换会记入会话日志，供后续读者查看。在编辑器中直接按 `Shift+Tab` 可不开列表切换强度。
+`/model` 打开模型列表。输入以过滤；`Ctrl+E` 循环高亮模型的推理强度；Enter 仅为当前会话选择它。该切换会记入会话日志，供后续读者查看。在编辑器中直接按 `Ctrl+E` 可不开列表切换强度；`Shift+Tab` 切换权限模式。
 
 `/effort` 在编辑器下方打开当前模型强度选择列表，`/effort high`（或任意已声明强度）直接应用。不带参数的 `/permission` 打开同类列表，逐项显示可用权限预设及说明并标记当前值；`/permission <preset>` 直接切换。两者都经过已注册命令，因此会话日志会记录切换。页脚始终在模型名之后显示实际生效的强度，包括你未显式选择的适配器默认值。
 

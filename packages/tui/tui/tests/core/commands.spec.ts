@@ -620,12 +620,13 @@ describe('Composer command arguments', () => {
     ])
   })
 
-  it('lists the Shift+Tab effort key in the help body', async () => {
+  it('lists the Shift+Tab permission and Ctrl+E effort keys in the help body', async () => {
     const harness = await composerHarness()
 
     const lines = harness.composer.helpLines()
 
-    expect(lines).toContain('  Shift+Tab          cycle reasoning effort')
+    expect(lines).toContain('  Shift+Tab          cycle permission mode')
+    expect(lines).toContain('  Ctrl+E             cycle reasoning effort')
     expect(lines).toContain('  /effort             Show or set the reasoning effort')
     expect(lines).toContain('  /permission         Show or switch the permission preset')
     expect(lines).toContain('  /config             Show and change the configuration')
