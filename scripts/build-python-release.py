@@ -235,7 +235,9 @@ def verify_wheel(
     version: str,
     platform: tuple[str, str] | None,
 ) -> None:
-    if wheel.stat().st_size > 100_000_000:
+    # Prebuilt GitHub Release assets are not PyPI uploads; the fork opts out
+    # locally so its larger bundled runtime can be archived.
+    if os.environ.get('DSH_ALLOW_OVERSIZE_WHEEL') != '1' and wheel.stat().st_size > 100_000_000:
         raise RuntimeError(f"{wheel} is {wheel.stat().st_size} bytes and exceeds the PyPI single-file limit of 100000000 bytes")
     expected_tag = "py3-none-any" if platform is None else f"py3-none-{platform[0]}"
     expected_distribution = SDK_DISTRIBUTION if package == "sdk" else RUNTIME_DISTRIBUTION

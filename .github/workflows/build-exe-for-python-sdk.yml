@@ -312,6 +312,9 @@ jobs:
           "wheel=$wheel" >> $env:GITHUB_OUTPUT
 
       - name: Build release-shaped runtime wheel
+        env:
+          # The fork publishes larger bundled runtimes as GitHub Release assets.
+          DSH_ALLOW_OVERSIZE_WHEEL: '1'
         run: >-
           python scripts/build-python-release.py
           --package runtime
