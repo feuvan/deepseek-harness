@@ -8,9 +8,8 @@
 
 import { getDshRuntimeVersion, loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { resolve } from 'node:path'
 import { parseDshArgs, type DshInvocation } from './args.ts'
-import { absolutizePatchArgs } from './relaunch.ts'
+import { absolutizePatchArgs, relaunchArgs } from './relaunch.ts'
 import { reportStartupFailure } from './startup-diagnostics.ts'
 import type { RunProfileOptions } from './profile-boot.ts'
 
@@ -34,10 +33,18 @@ function createRelaunch(
   const entry = process.argv[1]
   if (entry === undefined) return undefined
   const launcherArgs = absolutizePatchArgs(process.argv.slice(2, process.argv.length - invocation.args.length))
+  const standalone = /(?:^|[\\/])runtime-bootstrap\.mjs$/u.test(entry)
   return (args) => {
     process.execve?.(
       process.execPath,
-      [process.execPath, ...process.execArgv, resolve(entry), ...launcherArgs, ...args],
+      relaunchArgs({
+        execPath: process.execPath,
+        execArgv: process.execArgv,
+        entry,
+        launcherArgs,
+        args,
+        standalone,
+      }),
       process.env,
     )
     throw new Error('dsh: process replacement returned unexpectedly')

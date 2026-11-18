@@ -3,7 +3,7 @@
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createAppRelaunch } from '../src/profile-boot.ts'
-import { absolutizePatchArgs } from '../src/relaunch.ts'
+import { absolutizePatchArgs, relaunchArgs } from '../src/relaunch.ts'
 
 describe('createAppRelaunch', () => {
   it('enters the workspace, disposes the tree, and executes the replacement in order', async () => {
@@ -54,5 +54,24 @@ describe('absolutizePatchArgs', () => {
 
   it('leaves a trailing --patch without a value for the launcher parser', () => {
     expect(absolutizePatchArgs(['--patch'])).toEqual(['--patch'])
+  })
+})
+
+
+describe('relaunchArgs', () => {
+  it('keeps Node script entry and exec arguments for a source launcher', () => {
+    expect(relaunchArgs({
+      execPath: '/usr/bin/node', execArgv: ['--import', 'tsx/esm'], entry: 'apps/cli/src/bin.ts',
+      launcherArgs: ['tui'], args: ['--resume', 'session-next'], standalone: false,
+    })).toEqual([
+      '/usr/bin/node', '--import', 'tsx/esm', resolve('apps/cli/src/bin.ts'), 'tui', '--resume', 'session-next',
+    ])
+  })
+
+  it('omits the embedded SEA entry and exec arguments for a standalone runtime', () => {
+    expect(relaunchArgs({
+      execPath: '/Users/me/.local/share/dsh-tui/dsh-tui', execArgv: [], entry: '/snapshot/node/runtime-bootstrap.mjs',
+      launcherArgs: ['tui'], args: ['--resume', 'session-next'], standalone: true,
+    })).toEqual(['/Users/me/.local/share/dsh-tui/dsh-tui', 'tui', '--resume', 'session-next'])
   })
 })
