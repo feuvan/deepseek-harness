@@ -57,6 +57,10 @@ The terminal is claimed only when stdin and stdout are both TTYs. A piped launch
 
 When the profile has neither a usable API-key credential nor a stored account route, the terminal opens a full-screen setup flow above the normal interface. It offers **Sign in with DeepSeek** through the system browser, **Use an API key**, or **Skip for now**. Account sign-in reuses the Desktop/Web account provider and starts a loopback-only OAuth callback server for the duration of the attempt; it stores the resulting grant in the shared credential store. API-key entry is masked, stores the key through `credentials.set` rather than in the profile patch, and then lists the discovered routes so the chosen model becomes the Session selection and the default for later Sessions. Setup never appears when a model route is already usable or when the composition has no credential/account seam, and `/login` reopens it later.
 
+### Update notices
+
+A prebuilt Homebrew or GitHub installation checks the latest GitHub Release in the background at startup. When a newer release is available, the transcript names the channel-specific upgrade command and points to `/update` for the release notes; Homebrew installations use `brew upgrade dsh-tui`, while GitHub installs use the one-line installer. Source, manual, and unversioned installations skip the check. Set `DSH_TUI_UPDATE_CHECK=0` to disable it.
+
 ### Account and quota
 
 `/account` opens an interactive dock for the DeepSeek account: sign-in state, profile identity, recharge and bonus wallets, usage/top-up links, refresh, re-login, and confirmed sign-out. Profile and wallet commands have a 15-second terminal deadline; a failure of one section keeps the other section visible, and retry is available from the same dock. Signing out clears the shared credential and never touches the Desktop `desktop` profile.
@@ -98,6 +102,7 @@ The palette is one table of standard 16-color SGR pairs; `color: false` returns 
 | [`src/account-login.ts`](src/account-login.ts) | Browser account sign-in with a temporary loopback callback server |
 | [`src/components/onboarding.ts`](src/components/onboarding.ts) | Full-screen account/API-key/model setup panel |
 | [`src/components/account.ts`](src/components/account.ts) | `/account` identity, wallet, re-login, and sign-out dock |
+| [`src/update-check.ts`](src/update-check.ts) | Background release check, channel detection, version ordering, and `/update` notes |
 | [`src/transcript.ts`](src/transcript.ts) | Durable fold and live assistant frames into ordered blocks |
 | [`src/components/`](src/components) | Banner, footer, composer, transcript blocks, dialogs |
 | [`src/interactions.ts`](src/interactions.ts) | Question and approval answerers presented in the bottom dock |

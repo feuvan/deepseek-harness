@@ -57,6 +57,10 @@ kind: "package-reference"
 
 当 profile 既没有可用的 API Key 凭据，也没有已保存的账号模型路由时，终端会在正常界面之上打开全屏设置流程，提供 **使用 DeepSeek 账号登录**、**使用 API Key** 与 **暂时跳过**。账号登录复用 Desktop/Web 的账号 provider，只在登录尝试期间启动仅绑定 loopback 的 OAuth 回调服务，并把授权结果写入共享凭据库。API Key 输入会掩码显示，通过 `credentials.set` 保存而不是写入 profile patch，随后列出已发现的模型路由，选中的模型会同时成为当前 Session 选择和后续 Session 的默认值。已有可用模型路由，或组合中没有 credentials/account seam 时不会显示设置流程；之后可用 `/login` 重新打开。
 
+### 更新提示
+
+预构建的 Homebrew 或 GitHub 安装会在启动时后台检查最新 GitHub Release。发现新版本时，transcript 会显示对应渠道的升级命令，并提示用 `/update` 查看 release notes：Homebrew 使用 `brew upgrade dsh-tui`，GitHub 安装使用一键安装脚本。源码、手动解压和无法识别版本的安装会跳过检查。设置 `DSH_TUI_UPDATE_CHECK=0` 可关闭检查。
+
 ### 账号与额度
 
 `/account` 打开 DeepSeek 账号交互 dock：登录状态、账号资料、充值余额与赠送余额、用量/充值链接、刷新、重新登录和带确认的退出登录。资料与钱包查询有 15 秒终端超时；任一区块失败时另一区块仍可见，并可在同一 dock 中重试。退出登录会清除共享凭据，不会修改 Desktop 的 `desktop` profile。
@@ -98,6 +102,7 @@ Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，
 | [`src/account-login.ts`](src/account-login.ts) | 带临时 loopback 回调服务的浏览器账号登录 |
 | [`src/components/onboarding.ts`](src/components/onboarding.ts) | 全屏账号/API Key/模型设置面板 |
 | [`src/components/account.ts`](src/components/account.ts) | `/account` 账号资料、钱包、重新登录与退出登录 dock |
+| [`src/update-check.ts`](src/update-check.ts) | 后台 Release 检查、安装渠道识别、版本排序与 `/update` notes |
 | [`src/transcript.ts`](src/transcript.ts) | 将持久事件与实时助手帧折叠为有序块 |
 | [`src/components/`](src/components) | 横幅、页脚、编辑器、transcript 块、对话框 |
 | [`src/interactions.ts`](src/interactions.ts) | 在底部 dock 中呈现的问题与审批应答者 |

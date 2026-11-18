@@ -43,6 +43,8 @@ export interface LocalCommands {
   login(): void
   /** Show the DeepSeek account status and actions. */
   account(): void
+  /** Check for a newer prebuilt release and show its upgrade path. */
+  update(): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
@@ -125,6 +127,7 @@ export class Composer {
       config: { description: copy.commands.config, run: () => { deps.local.config() } },
       login: { description: copy.commands.login, run: () => { deps.local.login() } },
       account: { description: copy.commands.account, run: () => { deps.local.account() } },
+      update: { description: copy.commands.update, run: () => { void deps.local.update() } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       sessions: { description: copy.commands.sessions, run: () => { void deps.local.sessions() } },
       resume: { description: copy.commands.resume, run: (argument) => { void deps.local.resume(argument) } },

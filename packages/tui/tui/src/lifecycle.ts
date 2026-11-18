@@ -43,6 +43,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { signInWithAccount, AccountLoginError, accountClientMetadata, openBrowserUrl } from './account-login.ts'
 import { OnboardingPanel } from './components/onboarding.ts'
 import { AccountPanel } from './components/account.ts'
+import { checkForTuiUpdate, updateDetailLines, type TuiUpdateCheck } from './update-check.ts'
 import { bindModelSelection, type ModelSelectionRef } from './model-selection.ts'
 import { TerminalTranscript } from './transcript.ts'
 import { createMarkdownTheme, createSelectListTheme } from './markdown.ts'
@@ -101,6 +102,8 @@ export class TerminalApp {
   private accountQuery: AbortController | undefined
   private accountRequest = 0
   private accountTimeoutMs = ACCOUNT_QUERY_TIMEOUT_MS
+  private updateResult: TuiUpdateCheck | undefined
+  private updatePending: Promise<void> | undefined
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -366,6 +369,7 @@ export class TerminalApp {
     this.updateActivity()
     if (this.editor !== undefined) this.tui?.setFocus(this.editor)
     void this.maybeOnboard()
+    void this.checkForUpdates()
   }
 
   /**
@@ -450,6 +454,45 @@ export class TerminalApp {
     } catch {
       return false
     }
+  }
+
+  /** Check the release feed once in the background without blocking startup. */
+  private async checkForUpdates(): Promise<void> {
+    if (this.updateResult !== undefined || this.disposed) return
+    if (this.updatePending !== undefined) return this.updatePending
+    const pending = (async () => {
+      const result = await checkForTuiUpdate({ env: process.env })
+      if (this.disposed) return
+      this.updateResult = result
+      if (result.status === 'available') {
+        this.transcript?.notice(`${copy.update.available(result.update.release.version, result.update.command)} ${copy.update.detailsHint}`)
+      }
+    })().finally(() => { this.updatePending = undefined })
+    this.updatePending = pending
+    await pending
+  }
+
+  /** Show the newest release notes or the reason no update is available. */
+  private async showUpdate(): Promise<void> {
+    if (this.disposed) return
+    if (this.updateResult === undefined) {
+      this.transcript?.notice(copy.update.checking)
+      await this.checkForUpdates()
+    }
+    const result = this.updateResult
+    if (result?.status === 'available') {
+      this.showText(copy.update.title(result.update.release.version), updateDetailLines(result.update), 16)
+      return
+    }
+    if (result?.status === 'current') {
+      this.transcript?.notice(copy.update.upToDate)
+      return
+    }
+    if (result?.status === 'unsupported') {
+      this.transcript?.notice(copy.update.unsupported)
+      return
+    }
+    this.transcript?.notice(copy.update.unavailable)
   }
 
   /** Present the interactive account dock. */
@@ -804,6 +847,7 @@ export class TerminalApp {
         config: () => { void this.openConfigPanel() },
         login: () => { this.openOnboarding() },
         account: () => { this.openAccountPanel() },
+        update: () => { void this.showUpdate() },
         preset: (argument) => { void this.pickPreset(argument) },
         sessions: () => { void this.openSessionsPanel() },
         resume: (argument) => { void this.resumeCommand(argument) },

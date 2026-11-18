@@ -302,6 +302,7 @@ const en = {
     config: 'Show and change the configuration',
     login: 'Sign in or configure a model',
     account: 'Show DeepSeek account status',
+    update: 'Check for a newer dsh-tui release',
     preset: 'Show or switch the agent preset',
     sessions: 'Browse stored Sessions and resume one',
     resume: 'Resume a stored Session by id, or browse without an argument',
@@ -683,6 +684,23 @@ const en = {
     /** Action hint. */
     hint: '↑/↓ move · Enter select · Esc close',
   },
+  /** Prebuilt-release update notice and details. */
+  update: {
+    /** Startup notice for one available release. */
+    available: (version: string, command: string): string => `dsh-tui ${version} is available. Update with: ${command}`,
+    /** Hint that `/update` shows the release notes. */
+    detailsHint: 'Run /update for release notes.',
+    /** Details panel title. */
+    title: (version: string): string => `Update dsh-tui to ${version}`,
+    /** Check in progress. */
+    checking: 'Checking for a newer dsh-tui release…',
+    /** Current installation is current. */
+    upToDate: 'dsh-tui is up to date.',
+    /** Source or unversioned installations have no automatic update path. */
+    unsupported: 'Update checks are available for prebuilt Homebrew and GitHub installs.',
+    /** The release feed could not be read. */
+    unavailable: 'Could not check for a newer dsh-tui release.',
+  },
   /** Terminal-level program status messages. */
   activity: {
     /** One-line status while a turn runs. */
@@ -834,6 +852,7 @@ export const chinese: Copy = {
     config: '显示并修改配置',
     login: '登录或配置模型',
     account: '查看 DeepSeek 账号状态',
+    update: '检查 dsh-tui 新版本',
     preset: '显示或切换 agent preset',
     sessions: '浏览已存会话并恢复其中一个',
     resume: '按标识恢复已存会话；不带参数时浏览会话',
@@ -1104,6 +1123,16 @@ export const chinese: Copy = {
     loginCancel: 'Esc 取消登录',
     working: '处理中…',
     hint: '↑/↓ 移动 · Enter 选择 · Esc 关闭',
+  },
+  /** Prebuilt-release update notice and details. */
+  update: {
+    available: (version, command) => `dsh-tui ${version} 已发布。更新方式：${command}`,
+    detailsHint: '运行 /update 查看 release notes。',
+    title: version => `更新 dsh-tui 到 ${version}`,
+    checking: '正在检查 dsh-tui 新版本…',
+    upToDate: 'dsh-tui 已是最新版本。',
+    unsupported: '仅预构建的 Homebrew 和 GitHub 安装支持自动更新检查。',
+    unavailable: '无法检查 dsh-tui 新版本。',
   },
   /** 工具卡可见性文案。 */
   cards: {

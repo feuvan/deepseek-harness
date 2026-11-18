@@ -996,6 +996,47 @@ describe('TerminalApp account error copy', () => {
   })
 })
 
+describe('TerminalApp /update', () => {
+  it('shows channel-specific release notes for an available update', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'updateResult', {
+      status: 'available',
+      update: {
+        installation: { channel: 'homebrew', version: '0.2.2-rc.4-20261118.1' },
+        release: {
+          version: '0.2.2-rc.4-20261119.1',
+          tag: 'dsh-tui-v0.2.2-rc.4-20261119.1',
+          url: 'https://example.test',
+          notes: '## Changes\n\n- Fixed **logs**',
+        },
+        command: 'brew upgrade dsh-tui',
+      },
+    })
+    await submitLine(harness, '/update')
+    await waitForDock(harness, copy.update.title('0.2.2-rc.4-20261119.1'))
+    const text = dockText(harness.app)
+    expect(text).toContain('brew upgrade dsh-tui')
+    expect(text).toContain('Fixed logs')
+  })
+
+  it('reports an up-to-date or unsupported installation', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    Reflect.set(harness.app, 'updateResult', { status: 'current' })
+    await submitLine(harness, '/update')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.update.upToDate) })
+    Reflect.set(harness.app, 'updateResult', { status: 'unsupported' })
+    await submitLine(harness, '/update')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.update.unsupported) })
+    Reflect.set(harness.app, 'updateResult', { status: 'unavailable' })
+    await submitLine(harness, '/update')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.update.unavailable) })
+  })
+})
+
 describe('TerminalApp direct stderr capture', () => {
   it('routes plugin stderr lines into the transcript while the screen is owned', async () => {
     const harness = await lifecycleHarness({ screen: 'inline' })
