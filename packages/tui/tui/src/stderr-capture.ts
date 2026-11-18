@@ -13,6 +13,13 @@
 /** Maximum buffered bytes before an unfinished line is emitted or truncated. */
 const MAX_BUFFER = 16 * 1024
 
+/**
+ * Routine provider success diagnostics repeat on every model-listing refresh.
+ * Keep failures and skipped-entry warnings visible, but do not turn each
+ * successful refresh into a transcript notice.
+ */
+const ROUTINE_MODEL_LISTING = /^\[[^\]]+\] model listing from .+ loaded \d+ model\(s\), skipped \d+ row\(s\)$/u
+
 /** One installed standard-error redirect. */
 export class StderrCapture {
   private original: typeof process.stderr.write | undefined
@@ -83,6 +90,8 @@ export class StderrCapture {
    * @param line - complete line.
    */
   private emit(line: string): void {
-    if (line.trim() !== '') this.onLine(line)
+    if (line.trim() === '') return
+    if (ROUTINE_MODEL_LISTING.test(line)) return
+    this.onLine(line)
   }
 }

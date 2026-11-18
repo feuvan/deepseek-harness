@@ -47,7 +47,7 @@ Mount this plugin in a profile whose composition already creates the root Agent.
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tui) is the exhaustive source for every accepted field and its JSDoc.
 
-The terminal is claimed only when stdin and stdout are both TTYs. A piped launch fails before the screen is entered and names the one-shot alternative, `dsh --profile headless "<task>"`. While the screen is owned, direct writes to standard error, such as provider model-listing diagnostics, become dim transcript notices instead of overwriting the composer.
+The terminal is claimed only when stdin and stdout are both TTYs. A piped launch fails before the screen is entered and names the one-shot alternative, `dsh --profile headless "<task>"`. While the screen is owned, direct writes to standard error, such as provider model-listing failures, become dim transcript notices instead of overwriting the composer; routine successful model-listing refresh lines are dropped.
 
 ### Screen modes
 
