@@ -84,8 +84,9 @@ function openExternalBrowser(url: string): void {
     const child = spawn(command, args, { detached: true, stdio: 'ignore' })
     child.on('error', () => {})
     child.unref()
-  } catch {
+  } catch (error: unknown) {
     // The URL remains visible in the onboarding panel when the platform has no opener.
+    void error
   }
 }
 /* v8 ignore stop */

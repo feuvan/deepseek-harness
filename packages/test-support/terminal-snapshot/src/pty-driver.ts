@@ -153,8 +153,9 @@ export class PtyProcess {
     this.disposed = true
     try {
       this.pty.kill()
-    } catch {
+    } catch (error: unknown) {
       // The child may already have exited; disposal then only releases the emulator.
+      void error
     }
     this.emulator.dispose()
   }

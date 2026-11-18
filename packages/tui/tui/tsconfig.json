@@ -18,7 +18,7 @@
       "path": "../../../packages/credentials/credentials"
     },
     {
-      "path": "../../../packages/credentials/deepseek-account"
+      "path": "../../../packages/account/deepseek-account"
     },
     {
       "path": "../../../packages/host/webserver"

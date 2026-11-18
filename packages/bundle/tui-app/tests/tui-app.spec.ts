@@ -3,9 +3,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { parseEntryYaml } from '@deepseek-ai/cordis-plugin-include'
 import { inject as sessionInject, name as sessionName } from '../src/index.ts'
 import { inject as startupInject, name as startupName, TUI_STARTUP_SERVICE } from '../src/startup.ts'
 
@@ -49,7 +48,7 @@ const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
  * @returns the patch entries.
  */
 function parsePatch(file: string): PatchEntry[] {
-  return yaml.load(readFileSync(file, 'utf8'), { schema: entryListSchema }) as PatchEntry[]
+  return parseEntryYaml(readFileSync(file, 'utf8')) as PatchEntry[]
 }
 
 /** Every patch file the bundle applies, in manifest order. */

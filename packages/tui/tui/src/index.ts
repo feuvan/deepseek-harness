@@ -18,8 +18,8 @@ import { TERMINAL_UI_SERVICE, type TerminalUi } from './contribution.ts'
 import { assertInteractiveTerminal } from './terminal.ts'
 
 export { Config } from './config.ts'
-export { TERMINAL_UI_SERVICE, type TerminalCommand, type TerminalDockComponent, type TerminalUi } from './contribution.ts'
-export { SESSION_HANDOFF_SERVICE, type SessionHandoff } from './handoff.ts'
+export type { TerminalCommand, TerminalDockComponent, TerminalUi } from './contribution.ts'
+export type { SessionHandoff } from './handoff.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'terminal-ui'

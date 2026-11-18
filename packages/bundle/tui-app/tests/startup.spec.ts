@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { internals, provideCmdline, type AppRelaunch } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { SESSION_HANDOFF_SERVICE, type SessionHandoff } from '@deepseek-ai/dsh-tui'
+import type { SessionHandoff } from '@deepseek-ai/dsh-tui'
+
+/** Stable handoff service key provided by the launcher. */
+const SESSION_HANDOFF_SERVICE = 'terminalSessionHandoff'
 import {
   apply,
   inject,

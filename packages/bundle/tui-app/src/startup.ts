@@ -12,7 +12,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { SESSION_HANDOFF_SERVICE, type SessionHandoff } from '@deepseek-ai/dsh-tui'
+import type { SessionHandoff } from '@deepseek-ai/dsh-tui'
+
+/** Stable service key provided by the launcher and consumed by the terminal. */
+const SESSION_HANDOFF_SERVICE = 'terminalSessionHandoff'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-startup'

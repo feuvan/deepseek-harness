@@ -418,15 +418,17 @@ export class TerminalApp {
     if (account !== undefined) {
       try {
         if ((await account.getState()).status === 'credential-stored' && await this.selectStoredAccountModel()) return
-      } catch {
+      } catch (error: unknown) {
         // The account view is advisory here; the flow reports the real failure.
+        void error
       }
     }
     if (credentials !== undefined) {
       try {
         if (await credentials.resolve(credentialRef('DEEPSEEK_API_KEY')) !== undefined) return
-      } catch {
+      } catch (error: unknown) {
         // A broken credential file is a setup problem; offer the flow instead of exiting.
+        void error
       }
     }
     const catalog = await this.ensureCatalog()
