@@ -24,7 +24,7 @@ dsh --profile headless "run the tests"
 
 ### 模型凭据
 
-终端使用组合的 `dsh-base` 凭据链：启动环境，然后是你启动目录中的 `.env`，最后是 Harness home 下的 `.env`。从 Web UI 保存的密钥或登录信息存放在受管理凭据库中，base 组合同样会读取它，因此已配置好的模型通常无需改动即可使用。没有可用凭据的新终端会打开首次启动设置：通过浏览器登录 DeepSeek 账号、粘贴 API Key，或暂时跳过并在之后使用 `/login`。`/account` 会显示已登录账号资料、充值余额与赠送余额、用量与充值链接，并提供刷新、重新登录和带确认的退出登录。预构建的 Homebrew 与 GitHub 安装会在启动时检查新版本，并用 `/update` 显示 release notes 和升级命令。
+终端使用组合的 `dsh-base` 凭据链：启动环境，然后是你启动目录中的 `.env`，最后是 Harness home 下的 `.env`。从 Web UI 保存的密钥或登录信息存放在受管理凭据库中，base 组合同样会读取它，因此已配置好的模型通常无需改动即可使用。没有可用凭据的新终端会打开首次启动设置：通过浏览器登录 DeepSeek 账号、粘贴 API Key，或暂时跳过并在之后使用 `/login`。`/account` 会显示已登录账号资料、充值余额与赠送余额、用量与充值链接，并提供刷新、重新登录和带确认的退出登录。预构建的 Homebrew 与 GitHub 安装会在启动时检查新版本，并用 `/update` 显示 release notes 和升级命令。预构建 wrapper 也会把 `dsh-tui plugin ...` 转交给共享的 profile 插件 CLI，默认操作 `tui` profile；需要 `pnpm` 在 `PATH` 中，且修改插件时应先退出终端。
 
 ## 界面
 

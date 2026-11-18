@@ -61,6 +61,19 @@ When the profile has neither a usable API-key credential nor a stored account ro
 
 A prebuilt Homebrew or GitHub installation checks the latest GitHub Release in the background at startup. When a newer release is available, the transcript names the channel-specific upgrade command and points to `/update` for the release notes; Homebrew installations use `brew upgrade dsh-tui`, while GitHub installs use the one-line installer. Source, manual, and unversioned installations skip the check. Set `DSH_TUI_UPDATE_CHECK=0` to disable it.
 
+### Plugin management
+
+The prebuilt `dsh-tui` wrapper forwards a leading `plugin` argument to the same profile plugin CLI as `dsh plugin`. The `tui` profile is the default; pass `--profile <name>` to manage another profile. Arguments after `plugin` are pnpm arguments forwarded verbatim:
+
+```sh
+dsh-tui plugin --help
+dsh-tui plugin add <package>
+dsh-tui plugin remove <package>
+dsh-tui plugin why <package>
+```
+
+`pnpm` must be available on `PATH`, as it is for `dsh plugin`. Stop the running terminal before installing or removing plugins so the profile is not changed under a live process; restart the terminal to load the new composition.
+
 ### Account and quota
 
 `/account` opens an interactive dock for the DeepSeek account: sign-in state, profile identity, recharge and bonus wallets, usage/top-up links, refresh, re-login, and confirmed sign-out. Profile and wallet commands have a 15-second terminal deadline; a failure of one section keeps the other section visible, and retry is available from the same dock. Signing out clears the shared credential and never touches the Desktop `desktop` profile.

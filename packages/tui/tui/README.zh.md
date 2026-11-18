@@ -61,6 +61,19 @@ kind: "package-reference"
 
 预构建的 Homebrew 或 GitHub 安装会在启动时后台检查最新 GitHub Release。发现新版本时，transcript 会显示对应渠道的升级命令，并提示用 `/update` 查看 release notes：Homebrew 使用 `brew upgrade dsh-tui`，GitHub 安装使用一键安装脚本。源码、手动解压和无法识别版本的安装会跳过检查。设置 `DSH_TUI_UPDATE_CHECK=0` 可关闭检查。
 
+### 插件管理
+
+预构建的 `dsh-tui` wrapper 会把首个参数为 `plugin` 的调用转交给与 `dsh plugin` 相同的 profile 插件 CLI。默认操作 `tui` profile；传 `--profile <name>` 可管理其他 profile。`plugin` 之后的参数会原样转发给 pnpm：
+
+```sh
+dsh-tui plugin --help
+dsh-tui plugin add <package>
+dsh-tui plugin remove <package>
+dsh-tui plugin why <package>
+```
+
+与 `dsh plugin` 一样，`pnpm` 必须位于 `PATH` 中。安装或移除插件前请先退出正在运行的终端，避免在活跃进程下修改 profile；重启终端后加载新组合。
+
 ### 账号与额度
 
 `/account` 打开 DeepSeek 账号交互 dock：登录状态、账号资料、充值余额与赠送余额、用量/充值链接、刷新、重新登录和带确认的退出登录。资料与钱包查询有 15 秒终端超时；任一区块失败时另一区块仍可见，并可在同一 dock 中重试。退出登录会清除共享凭据，不会修改 Desktop 的 `desktop` profile。
