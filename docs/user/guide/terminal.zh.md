@@ -72,7 +72,7 @@ dsh --profile headless "run the tests"
 
 ### 命令
 
-终端专属控制：`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/config`、`/terminal`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。`/terminal` 显示渲染器、终端环境、焦点、transcript 规模与收到的滚轮事件。
+终端专属控制：`/help`、`/status`、`/model`、`/preset`、`/effort`、`/permission`、`/queue`、`/config`、`/plugin`、`/terminal`、`/clear`、`/reasoning`、`/cards`、`/redraw`、`/exit`、`/quit`。`/terminal` 显示渲染器、终端环境、焦点、transcript 规模与收到的滚轮事件。
 
 已注册的 agent 命令也可从编辑器使用，包括 `/compact`、`/goal`、`/plan`、`/permission` 以及 skill 调用。它们记录的结果会像其他命令一样出现在 transcript 中。
 
@@ -82,7 +82,7 @@ dsh --profile headless "run the tests"
 
 ### 命令参数
 
-所有面板都在编辑器下方的 dock 中打开：`/help`、`/status`、`/model`、`/config`、问题、审批与各选择列表。`/help` 等长页面可用 ↑/↓ 或 PgUp/PgDn 滚动，Esc 关闭面板。面板占用 dock 时按键只作用于面板：既不会滚动 transcript，也不会编辑下方编辑器。
+所有面板都在编辑器下方的 dock 中打开：`/help`、`/status`、`/model`、`/config`、`/plugin`、问题、审批与各选择列表。`/help` 等长页面可用 ↑/↓ 或 PgUp/PgDn 滚动，Esc 关闭面板。面板占用 dock 时按键只作用于面板：既不会滚动 transcript，也不会编辑下方编辑器。
 
 命令参数可补全：输入 `/effort ` 后按 Tab 从模型强度中选择，或输入 `/permission ` 后按 Tab 从组合的权限预设中选择，每项都带描述。权限切换在命令完成后反映到页脚。
 
@@ -104,7 +104,9 @@ Ctrl+V 把系统剪贴板中的图片附加到下一条提示，前提是所选�
 
 ### 配置
 
-`/config` 在编辑器下方打开结构化配置 dock：标题/副标题、readiness 行（`就绪`、`降级` 或 `只读`）、每个分类一个 tab，以及 label/value/description 三列行；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 移动，Enter 打开或切换（只读行会解释原因），`/` 开始筛选（Esc 清除），Esc 关闭。footer 只列出当前行可用的动作。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。实验性能力列出本安装随附的可选组合包；切换会经 plugin manager 保存，并通过 profile HMR 应用；profile patch 无法修改的行会显示只读原因。终端显示值可编辑：样式与动画切换，语言与 busy-Enter 循环，卡片行数、transcript 窗口与标题使用行内输入。写入会持久化到 profile 的 volatile `terminal-ui` 字段并应用到运行中的终端；`screen` 保持只读，因为切换渲染模式会重新挂载终端表面。
+`/plugin` 打开插件 dock，分为**本会话**组件与**全局** profile 组合包；Tab 切换视图，Enter 切换选中项，`r` 重新加载；`/plugin add|remove|enable|disable` 可从命令行管理 profile。
+
+`/config` 在编辑器下方打开结构化配置 dock：标题/副标题、readiness 行（`就绪`、`降级` 或 `只读`）、每个分类一个 tab，以及 label/value/description 三列行；Tab 或 ←/→ 切换 tab，↑/↓ 与 PgUp/PgDn 移动，Enter 打开或切换（只读行会解释原因），`/` 开始筛选（Esc 清除），Esc 关闭。footer 只列出当前行可用的动作。面板按归属层分组显示设置。模型与推理强度会打开与 `/model`、`/effort` 相同的选择器；权限区切换当前会话的预设。终端显示值可编辑：样式与动画切换，语言与 busy-Enter 循环，卡片行数、transcript 窗口与标题使用行内输入。写入会持久化到 profile 的 volatile `terminal-ui` 字段并应用到运行中的终端；`screen` 保持只读，因为切换渲染模式会重新挂载终端表面。
 
 ### 界面语言
 

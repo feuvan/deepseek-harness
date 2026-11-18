@@ -15,7 +15,6 @@ import {
   loadConfigRows,
   type ConfigActionResult,
   type ConfigActionOutcome,
-  type ConfigBundleInfo,
   type ConfigDisplayState,
   type ConfigModelState,
   type ConfigPanelActions,
@@ -84,12 +83,6 @@ const PRESETS: readonly ConfigPermissionOption[] = [
 ]
 
 /** One enabled, one disabled, one read-only optional bundle, and a non-optional one. */
-const BUNDLES: readonly ConfigBundleInfo[] = [
-  { name: 'optional-bundle', optional: true, enabled: true },
-  { name: 'disabled-bundle', optional: true, enabled: false },
-  { name: 'locked-bundle', optional: true, enabled: true, readOnlyReason: 'management-required' },
-  { name: 'core-bundle', optional: false, enabled: true },
-]
 
 /** Recorded action calls and the actions service that produces them. */
 interface ActionRecorder {
@@ -111,7 +104,6 @@ function recordingActions(overrides: Partial<ConfigPanelActions> = {}): ActionRe
     pickEffort: () => { calls.push('pickEffort') },
     setTeamMode: (enabled: boolean) => { calls.push(`setTeamMode:${String(enabled)}`) },
     setPermission: (value: string) => { calls.push(`setPermission:${value}`) },
-    setBundle: (name: string, enabled: boolean) => { calls.push(`setBundle:${name}:${String(enabled)}`) },
     toggleCards: () => { calls.push('toggleCards') },
     toggleReasoning: () => { calls.push('toggleReasoning') },
     setDisplay: (field: string, value: string) => { calls.push(`setDisplay:${field}:${value}`) },
@@ -131,8 +123,6 @@ interface LoaderOptions {
   readonly teamMode?: ConfigTeamMode
   /** Permission catalog to provide; absent leaves the service unprovided. */
   readonly presets?: readonly ConfigPermissionOption[]
-  /** Bundles to provide; absent leaves the plugin manager unprovided. */
-  readonly bundles?: readonly ConfigBundleInfo[]
   /** Action implementations to replace. */
   readonly actions?: Partial<ConfigPanelActions>
 }
@@ -157,18 +147,13 @@ async function loadRows(options: LoaderOptions = {}): Promise<LoadedRows> {
     const presets = [...options.presets]
     services['permissionPresets'] = { catalog: () => ({ options: presets }) }
   }
-  if (options.bundles !== undefined) {
-    const bundles = [...options.bundles]
-    services['pluginManager'] = { listBundles: async () => bundles }
-  }
   const ctx = freshContext(services)
-  const rows = await loadConfigRows({
+  const rows = loadConfigRows({
     model: options.model ?? MODEL,
     permission: options.permission,
     display: options.display ?? DISPLAY,
     ...(options.teamMode === undefined ? {} : { teamMode: options.teamMode }),
     permissionPresets: ctx.get('permissionPresets'),
-    pluginManager: ctx.get('pluginManager'),
     actions: recorder.actions,
   })
   return { rows, calls: recorder.calls }
@@ -354,7 +339,6 @@ function heading(section: ConfigSection): string {
   switch (section) {
     case 'model': return copy.config.modelSection
     case 'permissions': return copy.config.permissionSection
-    case 'experimental': return copy.config.experimentalSection
     case 'display': return copy.config.displaySection
   }
 }
@@ -366,14 +350,13 @@ function heading(section: ConfigSection): string {
 function goToDisplay(panel: ConfigPanel): void {
   panel.handleInput(TAB)
   panel.handleInput(TAB)
-  panel.handleInput(TAB)
 }
 
 describe('loadConfigRows', () => {
   it('orders the four sections and reports the current model route', async () => {
-    const { rows, calls } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const { rows, calls } = await loadRows({ presets: PRESETS })
 
-    expect([...new Set(rows.map(row => row.section))]).toEqual(['model', 'permissions', 'experimental', 'display'])
+    expect([...new Set(rows.map(row => row.section))]).toEqual(['model', 'permissions', 'display'])
     expect(findRow(rows, 'model.current')).toMatchObject({
       label: copy.statusPanel.model,
       value: 'alpha/alpha-1',
@@ -509,30 +492,6 @@ describe('loadConfigRows', () => {
     expect(calls).toEqual(['setPermission:read-only'])
   })
 
-  it('lists optional bundles with the next activation state and the read-only reason', async () => {
-    const { rows, calls } = await loadRows({ bundles: BUNDLES })
-
-    expect(findRow(rows, 'bundle.optional-bundle')).toMatchObject({
-      label: 'optional-bundle',
-      value: copy.config.on,
-      scope: 'session',
-      readOnly: false,
-    })
-    expect(findRow(rows, 'bundle.disabled-bundle').value).toBe(copy.config.off)
-    expect(findRow(rows, 'bundle.optional-bundle').description).toBe(copy.config.descriptions.bundle)
-    expect(findRow(rows, 'bundle.locked-bundle')).toMatchObject({
-      readOnly: true,
-      marker: 'management-required',
-      description: 'management-required',
-    })
-    expect(findRow(rows, 'bundle.locked-bundle').activate).toBeUndefined()
-    expect(rows.some(row => row.id === 'bundle.core-bundle')).toBe(false)
-
-    await activator(rows, 'bundle.optional-bundle')()
-    await activator(rows, 'bundle.disabled-bundle')()
-    expect(calls).toEqual(['setBundle:optional-bundle:false', 'setBundle:disabled-bundle:true'])
-  })
-
   it('shows unavailable rows when the optional services are absent', async () => {
     const { rows } = await loadRows()
 
@@ -542,29 +501,24 @@ describe('loadConfigRows', () => {
       scope: undefined,
       readOnly: true,
     })
-    expect(findRow(rows, 'experimental.unavailable')).toMatchObject({
-      label: copy.config.unavailable('pluginManager'),
-      readOnly: true,
-    })
     expect(findRow(rows, 'permissions.unavailable').activate).toBeUndefined()
   })
 
   it('shows a placeholder row for an empty catalog', async () => {
-    const { rows } = await loadRows({ presets: [], bundles: [] })
+    const { rows } = await loadRows({ presets: [] })
 
     expect(findRow(rows, 'permissions.empty')).toMatchObject({ label: copy.config.none, readOnly: true })
-    expect(findRow(rows, 'experimental.empty')).toMatchObject({ label: copy.config.none, readOnly: true })
   })
 })
 
 describe('ConfigPanel tab bar', () => {
   it('renders one tab per section in fixed order with the active tab highlighted', async () => {
-    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const { rows } = await loadRows({ presets: PRESETS })
     const harness = panelFor({ rows, color: true })
 
     const line = harness.panel.render(200)[4] ?? ''
 
-    const positions = [heading('model'), heading('permissions'), heading('experimental'), heading('display')]
+    const positions = [heading('model'), heading('permissions'), heading('display')]
       .map(title => line.indexOf(title))
     expect(positions[0]).toBeGreaterThanOrEqual(0)
     expect([...positions].sort((left, right) => left - right)).toEqual(positions)
@@ -579,7 +533,7 @@ describe('ConfigPanel tab bar', () => {
   })
 
   it('cycles tabs with Tab/Shift+Tab and the left/right arrows', async () => {
-    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const { rows } = await loadRows({ presets: PRESETS })
     const harness = panelFor({ rows })
 
     expect(rendered(harness.panel)).toContain('alpha/alpha-1')
@@ -587,7 +541,7 @@ describe('ConfigPanel tab bar', () => {
     expect(rendered(harness.panel)).toContain('Read only')
     expect(rendered(harness.panel)).not.toContain('alpha/alpha-1')
     harness.panel.handleInput(RIGHT)
-    expect(rendered(harness.panel)).toContain('optional-bundle')
+    expect(rendered(harness.panel)).toContain('previewLines')
     harness.panel.handleInput(LEFT)
     expect(rendered(harness.panel)).toContain('Read only')
     harness.panel.handleInput(SHIFT_TAB)
@@ -596,13 +550,10 @@ describe('ConfigPanel tab bar', () => {
     harness.panel.handleInput(SHIFT_TAB)
     expect(rendered(harness.panel)).toContain('previewLines')
     harness.panel.handleInput(SHIFT_TAB)
-    expect(rendered(harness.panel)).toContain('optional-bundle')
-    harness.panel.handleInput(SHIFT_TAB)
     expect(rendered(harness.panel)).toContain('Read only')
     harness.panel.handleInput(SHIFT_TAB)
     expect(rendered(harness.panel)).toContain('alpha/alpha-1')
 
-    harness.panel.handleInput(TAB)
     harness.panel.handleInput(TAB)
     harness.panel.handleInput(TAB)
     expect(rendered(harness.panel)).toContain('previewLines')
@@ -693,7 +644,7 @@ describe('ConfigPanel scrolling', () => {
   })
 
   it('pads a short tab body to the configured height', async () => {
-    const { rows } = await loadRows({ presets: PRESETS, bundles: BUNDLES })
+    const { rows } = await loadRows({ presets: PRESETS })
     const harness = panelFor({ rows })
 
     const lines = harness.panel.render(100)
@@ -705,7 +656,7 @@ describe('ConfigPanel scrolling', () => {
 
 describe('ConfigPanel rendering', () => {
   it('renders row values and scope, read-only, and custom markers', async () => {
-    const { rows } = await loadRows({ presets: PRESETS, permission: 'read-only', bundles: BUNDLES })
+    const { rows } = await loadRows({ presets: PRESETS, permission: 'read-only' })
     const harness = panelFor({ rows })
 
     expect(rendered(harness.panel)).toContain('alpha/alpha-1')
@@ -714,10 +665,6 @@ describe('ConfigPanel rendering', () => {
 
     harness.panel.handleInput(TAB)
     expect(rendered(harness.panel)).toContain(copy.prompt.permissionCurrent)
-
-    harness.panel.handleInput(RIGHT)
-    expect(rendered(harness.panel)).toContain('locked-bundle')
-    expect(rendered(harness.panel)).toContain('management-required')
 
     harness.panel.handleInput(RIGHT)
     expect(rendered(harness.panel)).toContain(`(${copy.config.scopeProfile})`)
@@ -759,7 +706,6 @@ describe('ConfigPanel rendering', () => {
   it('truncates every line to the available width', async () => {
     const { rows } = await loadRows({
       presets: [{ value: 'a-very-long-preset-value', name: 'A permission preset with a very long display name' }],
-      bundles: [{ name: 'an-optional-bundle-with-a-very-long-package-name', optional: true, enabled: true }],
       display: { ...DISPLAY, title: 'A terminal title that is far wider than the panel' },
     })
     const harness = panelFor({ rows })

@@ -16,7 +16,7 @@ import type { LocaleConfig } from './locale.ts'
 import type { Palette } from './palette.ts'
 
 /** The configuration categories the panel renders, in display order. */
-export type ConfigSection = 'model' | 'permissions' | 'experimental' | 'display'
+export type ConfigSection = 'model' | 'permissions' | 'display'
 
 /** The layer that owns one configuration value. */
 export type ConfigScope = 'session' | 'profile' | 'repository'
@@ -124,27 +124,6 @@ export interface ConfigPermissionService {
   catalog(): { readonly options: readonly ConfigPermissionOption[] }
 }
 
-/** One bundle the plugin manager reports. */
-export interface ConfigBundleInfo {
-  /** Package name of the bundle. */
-  readonly name: string
-  /** Whether the installation ships this bundle as an optional capability. */
-  readonly optional: boolean
-  /** Whether the profile manifest currently selects the bundle. */
-  readonly enabled: boolean
-  /** Why the profile patch cannot change the bundle; absent when it can. */
-  readonly readOnlyReason?: string
-}
-
-/** The plugin-manager face the row loader reads. */
-export interface ConfigBundleService {
-  /**
-   * Read every installed, shipped, and on-demand bundle.
-   * @returns the bundles the manager can see.
-   */
-  listBundles(): Promise<readonly ConfigBundleInfo[]>
-}
-
 /** The write actions the panel's actionable rows invoke. */
 export interface ConfigPanelActions {
   /**
@@ -169,13 +148,6 @@ export interface ConfigPanelActions {
    * @returns an optional result the panel reports.
    */
   setPermission(value: string): ConfigActionOutcome
-  /**
-   * Enable or disable one optional bundle.
-   * @param name - the bundle package name.
-   * @param enabled - the requested activation state.
-   * @returns an optional result the panel reports, including a restart notice.
-   */
-  setBundle(name: string, enabled: boolean): ConfigActionOutcome
   /**
    * Cycle the tool-card density.
    * @returns an optional result the panel reports.
@@ -207,8 +179,6 @@ export interface ConfigPanelDeps {
   readonly display: ConfigDisplayState
   /** Permission catalog; absent when the composition mounts no permission service. */
   readonly permissionPresets?: ConfigPermissionService | undefined
-  /** Plugin manager; absent when the composition mounts no plugin manager. */
-  readonly pluginManager?: ConfigBundleService | undefined
   /** Write actions for the actionable rows. */
   readonly actions: ConfigPanelActions
 }
@@ -243,7 +213,7 @@ export interface ConfigPanelOptions {
 }
 
 /** Section order shared by the loader and the panel. */
-const SECTION_ORDER: readonly ConfigSection[] = ['model', 'permissions', 'experimental', 'display']
+const SECTION_ORDER: readonly ConfigSection[] = ['model', 'permissions', 'display']
 
 /** Default number of body rows rendered below the tab bar. */
 const DEFAULT_VISIBLE_ROWS = 8
@@ -276,7 +246,6 @@ function sectionTitle(section: ConfigSection): string {
   const titles: Record<ConfigSection, string> = {
     model: copy.config.modelSection,
     permissions: copy.config.permissionSection,
-    experimental: copy.config.experimentalSection,
     display: copy.config.displaySection,
   }
   return titles[section]
@@ -304,9 +273,8 @@ function scopeLabel(scope: ConfigScope): string {
 function adjacentSection(section: ConfigSection, delta: 1 | -1): ConfigSection {
   switch (section) {
     case 'model': return delta === 1 ? 'permissions' : 'display'
-    case 'permissions': return delta === 1 ? 'experimental' : 'model'
-    case 'experimental': return delta === 1 ? 'display' : 'permissions'
-    case 'display': return delta === 1 ? 'model' : 'experimental'
+    case 'permissions': return delta === 1 ? 'display' : 'model'
+    case 'display': return delta === 1 ? 'model' : 'permissions'
   }
 }
 
@@ -441,38 +409,6 @@ function permissionRows(deps: ConfigPanelDeps): ConfigRow[] {
 }
 
 /**
- * Rows for the experimental-capability section.
- * @param deps - the values the loader reads.
- * @returns one row per optional bundle, or a fallback row.
- */
-async function experimentalRows(deps: ConfigPanelDeps): Promise<ConfigRow[]> {
-  const manager = deps.pluginManager
-  if (manager === undefined) {
-    return [fallbackRow('experimental', 'unavailable', copy.config.unavailable('pluginManager'))]
-  }
-  const bundles = (await manager.listBundles()).filter(bundle => bundle.optional)
-  if (bundles.length === 0) return [fallbackRow('experimental', 'empty', copy.config.none)]
-  return bundles.map(bundle => ({
-    id: `bundle.${bundle.name}`,
-    section: 'experimental',
-    label: bundle.name,
-    value: bundle.enabled ? copy.config.on : copy.config.off,
-    scope: 'session',
-    readOnly: bundle.readOnlyReason !== undefined,
-    description: bundle.readOnlyReason ?? copy.config.descriptions.bundle,
-    ...(bundle.readOnlyReason === undefined
-      ? {
-        toggle: true,
-        activate: (next?: string) => deps.actions.setBundle(
-          bundle.name,
-          (next ?? (bundle.enabled ? copy.config.off : copy.config.on)) === copy.config.on,
-        ),
-      }
-      : { marker: bundle.readOnlyReason }),
-  }))
-}
-
-/**
  * One read-only row for a display value the profile configuration owns.
  * @param field - the configuration key serving as the row label.
  * @param value - the current value rendered as text.
@@ -565,14 +501,13 @@ function displayRows(deps: ConfigPanelDeps): ConfigRow[] {
 
 /**
  * Read every configuration row from the composed services.
- * @param deps - the model, permission, display, service, and action values.
+ * @param deps - the model, permission, display, and action values.
  * @returns the rows in section order.
  */
-export async function loadConfigRows(deps: ConfigPanelDeps): Promise<ConfigRow[]> {
+export function loadConfigRows(deps: ConfigPanelDeps): ConfigRow[] {
   return [
     ...modelRows(deps),
     ...permissionRows(deps),
-    ...(await experimentalRows(deps)),
     ...displayRows(deps),
   ]
 }

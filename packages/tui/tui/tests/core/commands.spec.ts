@@ -86,6 +86,7 @@ async function composerHarness(options: {
     login: record('login'),
     account: record('account'),
     update: record('update'),
+    plugin: record('plugin'),
     preset: (argument) => { local.push('preset'); presetArgs.push(argument) },
     sessions: () => { local.push('sessions') },
     resume: (argument) => { local.push('resume'); resumeArgs.push(argument) },
@@ -399,7 +400,7 @@ describe('Composer.slashCommands', () => {
     const listed = harness.composer.slashCommands()
 
     expect(listed.map(command => command.name)).toEqual([
-      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'login', 'account', 'update', 'preset', 'sessions', 'resume', 'terminal', 'exit', 'quit',
+      'help', 'status', 'model', 'clear', 'reasoning', 'cards', 'redraw', 'effort', 'permission', 'queue', 'steer', 'config', 'login', 'account', 'update', 'plugin', 'preset', 'sessions', 'resume', 'terminal', 'exit', 'quit',
     ])
     expect(listed.every(command => command.description !== undefined && command.description.length > 0)).toBe(true)
   })
@@ -480,7 +481,7 @@ describe('Composer.statusLines', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {}, update: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {}, update: () => {}, plugin: () => {},
         preset: () => {}, sessions: () => {}, resume: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
@@ -779,7 +780,7 @@ describe('Composer.statusLines provider fallback', () => {
       local: {
         help: () => {}, status: () => {}, model: () => {}, clear: () => {},
         reasoning: () => {}, cards: () => {}, redraw: () => {}, effort: () => {}, permission: () => {},
-        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {}, update: () => {},
+        queue: () => {}, steer: () => {}, config: () => {}, login: () => {}, account: () => {}, update: () => {}, plugin: () => {},
         preset: () => {}, sessions: () => {}, resume: () => {}, terminal: () => {}, exit: () => {},
       },
       notice: () => {},
@@ -852,7 +853,7 @@ describe('Composer contributed commands', () => {
 
     expect(runs).toEqual([])
     expect(harness.composer.slashCommands().some(command => command.name === 'plug')).toBe(false)
-    expect(harness.composer.helpLines().some(line => line.includes('/plug'))).toBe(false)
+    expect(harness.composer.helpLines().some(line => /\/plug\s/u.test(line))).toBe(false)
     // A removed contribution falls through to the Agent-command path.
     expect(harness.commands.executed).toEqual([])
     expect(harness.notices).toEqual(['The agent is not ready yet.'])

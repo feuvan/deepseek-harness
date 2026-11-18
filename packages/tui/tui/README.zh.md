@@ -63,6 +63,8 @@ kind: "package-reference"
 
 ### 插件管理
 
+`/plugin` 打开插件 dock。**本会话** tab 列出当前会话挂载的插件组件，Enter 通过 profile 插件管理器切换；**全局** tab 列出已安装的 profile 组合包（包括随附的可选组合包），Enter 启用或停用。Tab 切换 tab，`r` 重新加载，Esc 关闭。`/plugin add <spec>`、`/plugin remove <name>`、`/plugin enable|disable <name>` 可从命令行管理 profile；需要重启的变更会明确提示。
+
 预构建的 `dsh-tui` wrapper 会把首个参数为 `plugin` 的调用转交给与 `dsh plugin` 相同的 profile 插件 CLI。默认操作 `tui` profile；传 `--profile <name>` 可管理其他 profile。`plugin` 之后的参数会原样转发给 pnpm：
 
 ```sh
@@ -90,7 +92,7 @@ Agent Teams 随终端组合提供：base 层提供 Team 服务与任务工具，
 
 `/terminal` 打开诊断面板，显示终端、TERM、复用器/SSH、渲染模式、键盘协议、焦点、transcript 统计与收到的滚轮事件，用于区分终端侧滚动与应用侧捕获。inline 模式下滚轮应当留在终端 scrollback，面板会显示 0 个捕获事件。
 
-插件扩展 seam（`ctx.terminalUi`，`src/contribution.ts`）允许插件在不引用应用内部的情况下添加状态行、命令与一个 dock 组件；每次注册都是 effect，disposer 随插件卸载。所有面板都在编辑器下方的 dock 中渲染——帮助/状态、模型选择器、问题、审批、各选择列表与 `/config`；不存在浮动 overlay，长页面可滚动，Esc 关闭面板。`/config` 在编辑器下方打开结构化配置面板：标题与“修改会自动保存”副标题、readiness 行（`就绪`、`降级` 或 `只读` 及动作/只读计数）、每个分类一个 tab（模型与推理强度、权限、实验性能力、终端显示），以及 label/value/description 三列行；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 移动，Enter 激活（只读行会解释原因），`/` 搜索，Esc 关闭。footer 只列出当前行可用的动作，选中行整行高亮。面板读取实时服务：模型与推理强度、按会话保存的智能体团队开关（读取 `agentTeam` projection；subagent 会话与没有 Team 服务的组合不显示；会话运行后再关闭会先请求确认）、本会话的权限预设、随附的可选组合包（切换经 plugin manager 写入，并提示重启后生效），以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
+插件扩展 seam（`ctx.terminalUi`，`src/contribution.ts`）允许插件在不引用应用内部的情况下添加状态行、命令与一个 dock 组件；每次注册都是 effect，disposer 随插件卸载。所有面板都在编辑器下方的 dock 中渲染——帮助/状态、模型选择器、问题、审批、各选择列表、`/config` 与 `/plugin`；不存在浮动 overlay，长页面可滚动，Esc 关闭面板。`/config` 在编辑器下方打开结构化配置面板：标题与“修改会自动保存”副标题、readiness 行（`就绪`、`降级` 或 `只读` 及动作/只读计数）、每个分类一个 tab（模型与推理强度、权限、终端显示），以及 label/value/description 三列行；Tab/←/→ 切换 tab，↑/↓ 与 PageUp/PageDown 移动，Enter 激活（只读行会解释原因），`/` 搜索，Esc 关闭。footer 只列出当前行可用的动作，选中行整行高亮。面板读取实时服务：模型与推理强度、按会话保存的智能体团队开关（读取 `agentTeam` projection；subagent 会话与没有 Team 服务的组合不显示；会话运行后再关闭会先请求确认）、本会话的权限预设以及由 profile 拥有的终端显示值（保持只读并标注归属层）。界面文案提供中英文。`locale` 可显式选择；`auto` 跟随启动环境。页脚、面板、通知、帮助与诊断都读取当前字典。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

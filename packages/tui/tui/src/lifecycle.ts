@@ -43,6 +43,9 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { signInWithAccount, AccountLoginError, accountClientMetadata, openBrowserUrl } from './account-login.ts'
 import { OnboardingPanel } from './components/onboarding.ts'
 import { AccountPanel } from './components/account.ts'
+import { PluginPanel, type PluginPanelRow, type PluginTab } from './components/plugins.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PluginEntryId } from '@deepseek-ai/dsh-plugin-manager'
 import { checkForTuiUpdate, updateDetailLines, type TuiUpdateCheck } from './update-check.ts'
 import { bindModelSelection, type ModelSelectionRef } from './model-selection.ts'
 import { TerminalTranscript } from './transcript.ts'
@@ -104,6 +107,9 @@ export class TerminalApp {
   private accountTimeoutMs = ACCOUNT_QUERY_TIMEOUT_MS
   private updateResult: TuiUpdateCheck | undefined
   private updatePending: Promise<void> | undefined
+  private pluginPanel: PluginPanel | undefined
+  private pluginTab: PluginTab = 'session'
+  private pluginRequest = 0
   private readonly appExit: AppExit
   private readonly palette: Palette
   private readonly modal = new ModalHost()
@@ -495,6 +501,217 @@ export class TerminalApp {
     this.transcript?.notice(copy.update.unavailable)
   }
 
+  /**
+   * Open plugin management or dispatch one plugin-management argument.
+   * @param argument - empty to open the dock, or `session`, `global`, `add`, `remove`, `enable`, `disable`.
+   */
+  private async pluginCommand(argument: string | undefined): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) {
+      this.transcript?.notice(copy.plugin.unavailable)
+      return
+    }
+    const text = argument?.trim() ?? ''
+    if (text === '') {
+      this.openPluginPanel('session')
+      return
+    }
+    const [verb = '', ...rest] = text.split(/\s+/u)
+    const target = rest.join(' ')
+    switch (verb.toLowerCase()) {
+      case 'session':
+        this.openPluginPanel('session')
+        return
+      case 'global':
+        this.openPluginPanel('global')
+        return
+      case 'add':
+      case 'install':
+        if (target === '') {
+          this.transcript?.notice(copy.plugin.usage)
+          return
+        }
+        await this.installPlugin(target)
+        return
+      case 'remove':
+        if (target === '') {
+          this.transcript?.notice(copy.plugin.usage)
+          return
+        }
+        await this.removePlugin(target)
+        return
+      case 'enable':
+      case 'disable':
+        if (target === '') {
+          this.transcript?.notice(copy.plugin.usage)
+          return
+        }
+        await this.setPluginBundleEnabled(target, verb.toLowerCase() === 'enable')
+        return
+      default:
+        this.transcript?.notice(copy.plugin.usage)
+    }
+  }
+
+  /**
+   * Open the plugin dock on one tab.
+   * @param tab - Session-mounted plugins or profile bundles.
+   */
+  private openPluginPanel(tab: PluginTab): void {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) {
+      this.transcript?.notice(copy.plugin.unavailable)
+      return
+    }
+    this.pluginTab = tab
+    const panel = new PluginPanel({
+      palette: this.palette,
+      actions: {
+        switchTab: (next) => { this.openPluginPanel(next) },
+        toggle: (row) => { void this.togglePluginRow(row) },
+        refresh: () => { void this.refreshPluginPanel() },
+        close: () => { this.closePluginPanel() },
+        requestRender: () => { this.tui?.requestRender() },
+      },
+    })
+    this.pluginPanel = panel
+    this.setDockOverlay({
+      component: panel,
+      handleInput: (data) => { panel.handleInput(data) },
+      close: () => { this.closePluginPanel() },
+    })
+    void this.refreshPluginPanel()
+  }
+
+  /** Close the plugin dock. */
+  private closePluginPanel(): void {
+    this.pluginPanel = undefined
+    this.setDockOverlay(undefined)
+  }
+
+  /** @param value - localized text or its English fallback. @returns the active-language string. */
+  private pluginText(value: string | { readonly en: string; readonly [locale: string]: string } | undefined): string | undefined {
+    if (value === undefined) return undefined
+    if (typeof value === 'string') return value
+    return value[resolveLocale(this.config.locale)] ?? value.en
+  }
+
+  /** Load the active plugin tab into the visible dock. */
+  private async refreshPluginPanel(): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    const panel = this.pluginPanel
+    if (manager === undefined || panel === undefined) return
+    const request = ++this.pluginRequest
+    panel.setView({ tab: this.pluginTab, rows: [], status: copy.plugin.loading })
+    try {
+      const rows: PluginPanelRow[] = this.pluginTab === 'session'
+        ? (await manager.listPlugins()).map((plugin) => {
+          const description = this.pluginText(plugin.meta?.description)
+          return {
+            id: `plugin:${plugin.entryId}`,
+            kind: 'plugin',
+            target: plugin.entryId,
+            label: this.pluginText(plugin.meta?.title) ?? plugin.moduleName,
+            enabled: plugin.enabled,
+            readOnly: plugin.readOnlyReason !== undefined,
+            value: plugin.enabled ? copy.plugin.on : copy.plugin.off,
+            ...(description === undefined ? {} : { description }),
+            ...(plugin.fiberPhase === 'failed' ? { marker: 'failed' } : {}),
+          }
+        })
+        : (await manager.listBundles())
+          .filter(bundle => bundle.installed || bundle.enabled || bundle.optional)
+          .map((bundle) => {
+            const description = bundle.description
+            return {
+              id: `bundle:${bundle.name}`,
+              kind: 'bundle',
+              target: bundle.name,
+              label: this.pluginText(bundle.meta?.title) ?? bundle.name,
+              enabled: bundle.enabled,
+              readOnly: bundle.readOnlyReason !== undefined,
+              value: bundle.enabled ? copy.plugin.on : copy.plugin.off,
+              ...(description === undefined ? {} : { description }),
+              ...(bundle.optional ? { marker: copy.plugin.optional } : {}),
+            }
+          })
+      if (request !== this.pluginRequest || this.pluginPanel !== panel) return
+      panel.setView({ tab: this.pluginTab, rows })
+    } catch (error: unknown) {
+      if (request !== this.pluginRequest || this.pluginPanel !== panel) return
+      panel.setView({ tab: this.pluginTab, rows: [], error: copy.plugin.failed(error instanceof Error ? error.message : String(error)) })
+    }
+  }
+
+  /**
+   * Toggle one plugin entry or profile bundle.
+   * @param row - selected plugin dock row.
+   */
+  private async togglePluginRow(row: PluginPanelRow): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) return
+    try {
+      const result = row.kind === 'plugin'
+        ? await manager.setPluginEnabled(brandString<PluginEntryId>(row.target), !row.enabled)
+        : await manager.setBundleEnabled(row.target, !row.enabled)
+      if (result.application === 'restart-required') this.transcript?.notice(copy.plugin.restartRequired)
+      else if (result.application === 'applied') this.transcript?.notice(copy.plugin.applied(row.label))
+      else this.transcript?.notice(copy.plugin.failed(result.application))
+      await this.refreshPluginPanel()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.plugin.failed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /** @param spec - package spec forwarded by `/plugin add`. */
+  private async installPlugin(spec: string): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) return
+    try {
+      const result = await manager.installBundle(spec)
+      if (result.application === 'restart-required') this.transcript?.notice(copy.plugin.restartRequired)
+      else if (result.application === 'applied') this.transcript?.notice(copy.plugin.installed(spec))
+      else this.transcript?.notice(copy.plugin.failed(result.application))
+      await this.refreshPluginPanel()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.plugin.failed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /** @param name - bundle package name removed by `/plugin remove`. */
+  private async removePlugin(name: string): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) return
+    try {
+      const result = await manager.removeBundle(name)
+      if (result.application === 'restart-required') this.transcript?.notice(copy.plugin.restartRequired)
+      else if (result.application === 'applied') this.transcript?.notice(copy.plugin.removed(name))
+      else this.transcript?.notice(copy.plugin.failed(result.application))
+      await this.refreshPluginPanel()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.plugin.failed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /**
+   * Enable or disable one profile bundle by name.
+   * @param name - bundle package name.
+   * @param enabled - requested activation state.
+   */
+  private async setPluginBundleEnabled(name: string, enabled: boolean): Promise<void> {
+    const manager = this.ctx.get('pluginManager')
+    if (manager === undefined) return
+    try {
+      const result = await manager.setBundleEnabled(name, enabled)
+      if (result.application === 'restart-required') this.transcript?.notice(copy.plugin.restartRequired)
+      else if (result.application === 'applied') this.transcript?.notice(copy.plugin.applied(name))
+      else this.transcript?.notice(copy.plugin.failed(result.application))
+      await this.refreshPluginPanel()
+    } catch (error: unknown) {
+      this.transcript?.notice(copy.plugin.failed(error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   /** Present the interactive account dock. */
   private openAccountPanel(): void {
     const account = this.ctx.get('deepseekAccount')
@@ -848,6 +1065,7 @@ export class TerminalApp {
         login: () => { this.openOnboarding() },
         account: () => { this.openAccountPanel() },
         update: () => { void this.showUpdate() },
+        plugin: (argument) => { void this.pluginCommand(argument) },
         preset: (argument) => { void this.pickPreset(argument) },
         sessions: () => { void this.openSessionsPanel() },
         resume: (argument) => { void this.resumeCommand(argument) },
@@ -1746,7 +1964,6 @@ export class TerminalApp {
       return
     }
     const permissionPresets = this.ctx.get('permissionPresets')
-    const pluginManager = this.ctx.get('pluginManager')
     const teamMode = this.teamMode()
     const actions: ConfigPanelActions = {
       pickModel: () => { this.closeConfigPanel(); void this.openModelSelector(); return undefined },
@@ -1766,18 +1983,6 @@ export class TerminalApp {
         }
       },
       setPermission: (value) => { this.dispatchCommand(`/permission ${value}`) },
-      setBundle: async (name, enabled) => {
-        /* v8 ignore next -- the bundle rows exist only when the manager was passed to the loader */
-        if (pluginManager === undefined) return { notice: copy.config.failed(copy.config.unavailable('pluginManager')) }
-        try {
-          const result = await pluginManager.setBundleEnabled(name, enabled)
-          if (result.application === 'restart-required') return { restartRequired: true }
-          if (result.application === 'applied') return undefined
-          return { failed: true, notice: copy.config.writeFailed(result.application) }
-        } catch (error: unknown) {
-          return { failed: true, notice: copy.config.writeFailed(error instanceof Error ? error.message : String(error)) }
-        }
-      },
       toggleCards: () => { this.setCardsMode(undefined); return undefined },
       toggleReasoning: () => { this.setReasoningVisibility(undefined); return undefined },
       setDisplay: async (field, value) => {
@@ -1803,7 +2008,7 @@ export class TerminalApp {
       busyEnter: this.config.busyEnter,
       screen: this.config.screen,
     }
-    const rows = await loadConfigRows({
+    const rows = loadConfigRows({
       model: {
         provider: selection.provider,
         model: selection.model,
@@ -1825,7 +2030,6 @@ export class TerminalApp {
             }),
           },
         }),
-      ...(pluginManager === undefined ? {} : { pluginManager }),
       actions,
     })
 

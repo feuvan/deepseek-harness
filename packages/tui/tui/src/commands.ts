@@ -45,6 +45,8 @@ export interface LocalCommands {
   account(): void
   /** Check for a newer prebuilt release and show its upgrade path. */
   update(): void | Promise<void>
+  /** Open plugin management, or run one management argument. */
+  plugin(argument: string | undefined): void | Promise<void>
   /** Show the configuration panel. */
   config(): void
   /** Choose or switch the agent preset; an absent argument opens the chooser. */
@@ -128,6 +130,7 @@ export class Composer {
       login: { description: copy.commands.login, run: () => { deps.local.login() } },
       account: { description: copy.commands.account, run: () => { deps.local.account() } },
       update: { description: copy.commands.update, run: () => { void deps.local.update() } },
+      plugin: { description: copy.commands.plugin, run: (argument) => { void deps.local.plugin(argument) } },
       preset: { description: copy.commands.preset, run: (argument) => { void deps.local.preset(argument) } },
       sessions: { description: copy.commands.sessions, run: () => { void deps.local.sessions() } },
       resume: { description: copy.commands.resume, run: (argument) => { void deps.local.resume(argument) } },

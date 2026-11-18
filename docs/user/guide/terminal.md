@@ -72,7 +72,7 @@ A question tagged as a plan review renders its own panel: the plan document is f
 
 ### Commands
 
-Terminal-only controls: `/help`, `/status`, `/model`, `/preset`, `/effort`, `/permission`, `/queue`, `/config`, `/terminal`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`. `/terminal` reports the renderer, terminal environment, focus, transcript size, and received wheel events.
+Terminal-only controls: `/help`, `/status`, `/model`, `/preset`, `/effort`, `/permission`, `/queue`, `/config`, `/plugin`, `/terminal`, `/clear`, `/reasoning`, `/cards`, `/redraw`, `/exit`, `/quit`. `/terminal` reports the renderer, terminal environment, focus, transcript size, and received wheel events.
 
 Registered agent commands also work from the composer, including `/compact`, `/goal`, `/plan`, `/permission`, and skill invocations. Their recorded outcome appears in the transcript like any other command.
 
@@ -82,7 +82,7 @@ Registered agent commands also work from the composer, including `/compact`, `/g
 
 ### Command arguments
 
-Every panel opens in the dock below the composer: `/help`, `/status`, `/model`, `/config`, questions, approvals, and the choosers. Long pages such as `/help` scroll with ↑/↓ or PgUp/PgDn, and Esc closes the panel. While a panel owns the dock, keys go to it: they neither scroll the transcript nor edit the composer behind it.
+Every panel opens in the dock below the composer: `/help`, `/status`, `/model`, `/config`, `/plugin`, questions, approvals, and the choosers. Long pages such as `/help` scroll with ↑/↓ or PgUp/PgDn, and Esc closes the panel. While a panel owns the dock, keys go to it: they neither scroll the transcript nor edit the composer behind it.
 
 Command arguments complete: type `/effort ` and press Tab to pick from the model's levels, or type `/permission ` and press Tab to pick from the composed permission presets, each with its description. The footer reflects a permission switch after the command completes.
 
@@ -104,7 +104,9 @@ Tool-card bodies render in one of three visibility modes: `collapsed` (a preview
 
 ### Configuration
 
-`/config` opens a structured configuration dock below the composer with a title/subtitle, a readiness line (`Ready`, `Degraded`, or `Read only`), one tab per category, and label/value/description rows; Tab or Left/Right switches tabs, Up/Down and PgUp/PgDn move, Enter opens or toggles (read-only rows explain why), `/` starts a filter (Esc clears it), and Esc closes. The footer lists only actions available for the selected row. The selected row is highlighted across the full width; closing the dock redraws the terminal so the composer returns to the bottom. It shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Experimental capabilities list the optional bundles this installation ships; On/Off toggles flip immediately, show a `saving` marker while the plugin manager writes, apply through HMR when the profile supports it, and revert with an error notice when the write fails. Terminal display values are editable: styling and animation toggle, language and busy-Enter cycle, and card lines, transcript window, and title use an inline prompt. Writes persist to the profile's volatile `terminal-ui` fields and apply to the running terminal; `screen` remains read-only because changing the renderer mode remounts the terminal surface.
+`/plugin` opens a plugin dock with **Session** components and **Global** profile bundles; Tab switches views, Enter toggles the selected entry, `r` reloads, and `/plugin add|remove|enable|disable` manage the profile from the command line.
+
+`/config` opens a structured configuration dock below the composer with a title/subtitle, a readiness line (`Ready`, `Degraded`, or `Read only`), one tab per category, and label/value/description rows; Tab or Left/Right switches tabs, Up/Down and PgUp/PgDn move, Enter opens or toggles (read-only rows explain why), `/` starts a filter (Esc clears it), and Esc closes. The footer lists only actions available for the selected row. The selected row is highlighted across the full width; closing the dock redraws the terminal so the composer returns to the bottom. It shows the settings grouped by scope. Model and reasoning effort open the same selector and chooser as `/model` and `/effort`. The permission section switches the current session's preset. Terminal display values are editable: styling and animation toggle, language and busy-Enter cycle, and card lines, transcript window, and title use an inline prompt. Writes persist to the profile's volatile `terminal-ui` fields and apply to the running terminal; `screen` remains read-only because changing the renderer mode remounts the terminal surface.
 
 ### Interface language
 

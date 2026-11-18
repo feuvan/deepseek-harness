@@ -307,6 +307,7 @@ const en = {
     login: 'Sign in or configure a model',
     account: 'Show DeepSeek account status',
     update: 'Check for a newer dsh-tui release',
+    plugin: 'Manage Session and profile plugins',
     preset: 'Show or switch the agent preset',
     sessions: 'Browse stored Sessions and resume one',
     resume: 'Resume a stored Session by id, or browse without an argument',
@@ -437,7 +438,6 @@ const en = {
       effortChange: 'Choose how much reasoning the model shows',
       teamMode: 'Coordinate subagents through shared tasks for this Session tree',
       permission: 'Choose what the Agent may do in this workspace',
-      bundle: 'Optional experimental capability; applies through profile HMR',
       cards: 'Cycle collapsed, expanded, and hidden tool cards',
       reasoning: 'Cycle compact, standard, detailed, and verbose reasoning',
       display: {
@@ -477,8 +477,6 @@ const en = {
     modelSection: 'Model & effort',
     /** Heading for the permissions category. */
     permissionSection: 'Permissions',
-    /** Heading for the experimental-capability category. */
-    experimentalSection: 'Experimental capabilities',
     /** Heading for the display category. */
     displaySection: 'Terminal display',
     /** Row suffix naming the affected scope. */
@@ -689,6 +687,45 @@ const en = {
     /** Action hint. */
     hint: '↑/↓ move · Enter select · Esc close',
   },
+  /** Plugin management dock. */
+  plugin: {
+    /** Dock heading. */
+    title: 'Plugins',
+    /** Tab label for plugins mounted in this Session. */
+    sessionTab: 'Session',
+    /** Tab label for profile/global plugins. */
+    globalTab: 'Global',
+    /** Loading value. */
+    loading: 'Loading plugins…',
+    /** Empty Session list. */
+    emptySession: 'No plugins are mounted in this Session.',
+    /** Empty global list. */
+    emptyGlobal: 'No profile plugins are installed.',
+    /** Enabled value. */
+    on: 'on',
+    /** Disabled value. */
+    off: 'off',
+    /** Read-only marker. */
+    readOnly: 'read only',
+    /** Optional profile bundle marker. */
+    optional: 'optional',
+    /** Toggle success. */
+    applied: (label: string): string => `Plugin updated: ${label}`,
+    /** Change requires restart. */
+    restartRequired: 'Saved. Restart the terminal to load the change.',
+    /** Install success. */
+    installed: (name: string): string => `Installed plugin bundle: ${name}`,
+    /** Remove success. */
+    removed: (name: string): string => `Removed plugin bundle: ${name}`,
+    /** Service unavailable. */
+    unavailable: 'Plugin management is not composed in this terminal.',
+    /** Operation failure. */
+    failed: (message: string): string => `Plugin change failed: ${message}`,
+    /** Usage for an unknown argument. */
+    usage: 'Usage: /plugin [session|global|add <spec>|remove <name>|enable <name>|disable <name>]',
+    /** Key hint. */
+    hint: 'Tab switch · ↑/↓ move · Enter toggle · r refresh · Esc close',
+  },
   /** Prebuilt-release update notice and details. */
   update: {
     /** Startup notice for one available release. */
@@ -862,6 +899,7 @@ export const chinese: Copy = {
     login: '登录或配置模型',
     account: '查看 DeepSeek 账号状态',
     update: '检查 dsh-tui 新版本',
+    plugin: '管理会话与全局插件',
     preset: '显示或切换 agent preset',
     sessions: '浏览已存会话并恢复其中一个',
     resume: '按标识恢复已存会话；不带参数时浏览会话',
@@ -955,7 +993,6 @@ export const chinese: Copy = {
       effortChange: '选择模型展示多少推理',
       teamMode: '让本会话树通过共享任务协调子代理',
       permission: '选择 Agent 在此工作区可以做什么',
-      bundle: '可选的实验性能力；通过 profile HMR 应用',
       cards: '循环折叠、展开与隐藏工具卡',
       reasoning: '循环 compact、standard、detailed、verbose 推理显示',
       display: {
@@ -983,7 +1020,6 @@ export const chinese: Copy = {
     unavailable: service => `${service} 不可用`,
     modelSection: '模型与推理强度',
     permissionSection: '权限',
-    experimentalSection: '实验性能力',
     displaySection: '终端显示',
     scopeSession: '会话',
     scopeProfile: 'profile',
@@ -1133,6 +1169,27 @@ export const chinese: Copy = {
     loginCancel: 'Esc 取消登录',
     working: '处理中…',
     hint: '↑/↓ 移动 · Enter 选择 · Esc 关闭',
+  },
+  /** Plugin management dock. */
+  plugin: {
+    title: '插件',
+    sessionTab: '本会话',
+    globalTab: '全局',
+    loading: '正在读取插件…',
+    emptySession: '当前会话没有挂载插件。',
+    emptyGlobal: '当前 profile 没有安装插件。',
+    on: '开',
+    off: '关',
+    readOnly: '只读',
+    optional: '可选',
+    applied: label => `插件已更新：${label}`,
+    restartRequired: '已保存，请重启终端以加载更改。',
+    installed: name => `已安装插件包：${name}`,
+    removed: name => `已移除插件包：${name}`,
+    unavailable: '当前终端未组合插件管理服务。',
+    failed: message => `插件变更失败：${message}`,
+    usage: '用法：/plugin [session|global|add <spec>|remove <name>|enable <name>|disable <name>]',
+    hint: 'Tab 切换 · ↑/↓ 移动 · Enter 切换 · r 刷新 · Esc 关闭',
   },
   /** Prebuilt-release update notice and details. */
   update: {

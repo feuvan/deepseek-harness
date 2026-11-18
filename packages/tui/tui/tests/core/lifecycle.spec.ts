@@ -1037,6 +1037,80 @@ describe('TerminalApp /update', () => {
   })
 })
 
+describe('TerminalApp /plugin', () => {
+  function pluginManager(): {
+    listPlugins: ReturnType<typeof vi.fn>
+    listBundles: ReturnType<typeof vi.fn>
+    setPluginEnabled: ReturnType<typeof vi.fn>
+    setBundleEnabled: ReturnType<typeof vi.fn>
+    installBundle: ReturnType<typeof vi.fn>
+    removeBundle: ReturnType<typeof vi.fn>
+  } {
+    return {
+      listPlugins: vi.fn(async () => [
+        { entryId: 'entry-a', moduleName: '@scope/plugin-a', enabled: true, fiberPhase: 'active', patchId: 'row-a' },
+        { entryId: 'entry-b', moduleName: '@scope/plugin-b', enabled: false, fiberPhase: null, readOnlyReason: 'management-required' },
+      ]),
+      listBundles: vi.fn(async () => [
+        { name: 'optional-bundle', optional: true, installed: true, enabled: false, removable: false, rows: [], overrides: [] },
+      ]),
+      setPluginEnabled: vi.fn(async () => ({ application: 'applied' })),
+      setBundleEnabled: vi.fn(async () => ({ application: 'restart-required' })),
+      installBundle: vi.fn(async () => ({ application: 'applied' })),
+      removeBundle: vi.fn(async () => ({ application: 'applied' })),
+    }
+  }
+
+  it('lists session and global plugins and toggles them', async () => {
+    const manager = pluginManager()
+    const harness = await lifecycleHarness({ services: { pluginManager: manager } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/plugin')
+    await waitForDock(harness, '@scope/plugin-a')
+    expect(dockText(harness.app)).toContain('@scope/plugin-b')
+    harness.terminal.headless.press('\r')
+    await vi.waitFor(() => { expect(manager.setPluginEnabled).toHaveBeenCalledOnce() })
+
+    harness.terminal.headless.press('\t')
+    await waitForDock(harness, 'optional-bundle')
+    expect(dockText(harness.app)).toContain(copy.plugin.optional)
+    harness.terminal.headless.press('\r')
+    await vi.waitFor(() => { expect(manager.setBundleEnabled).toHaveBeenCalledWith('optional-bundle', true) })
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.plugin.restartRequired) })
+  })
+
+  it('manages bundles by command arguments', async () => {
+    const manager = pluginManager()
+    const harness = await lifecycleHarness({ services: { pluginManager: manager } })
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/plugin add pkg@1.2.3')
+    await vi.waitFor(() => { expect(manager.installBundle).toHaveBeenCalledWith('pkg@1.2.3') })
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.plugin.installed('pkg@1.2.3')) })
+    await submitLine(harness, '/plugin remove pkg')
+    await vi.waitFor(() => { expect(manager.removeBundle).toHaveBeenCalledWith('pkg') })
+    await submitLine(harness, '/plugin enable optional-bundle')
+    await vi.waitFor(() => { expect(manager.setBundleEnabled).toHaveBeenCalledWith('optional-bundle', true) })
+    await submitLine(harness, '/plugin disable optional-bundle')
+    await vi.waitFor(() => { expect(manager.setBundleEnabled).toHaveBeenCalledWith('optional-bundle', false) })
+  })
+
+  it('reports unavailable plugin management and usage errors', async () => {
+    const harness = await lifecycleHarness()
+    harness.start()
+    await harness.awaitStarted()
+    await submitLine(harness, '/plugin')
+    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.plugin.unavailable) })
+
+    const managed = await lifecycleHarness({ services: { pluginManager: pluginManager() } })
+    managed.start()
+    await managed.awaitStarted()
+    await submitLine(managed, '/plugin unknown')
+    await vi.waitFor(() => { expect(managed.transcriptText()).toContain(copy.plugin.usage) })
+  })
+})
+
 describe('TerminalApp direct stderr capture', () => {
   it('routes plugin stderr lines into the transcript while the screen is owned', async () => {
     const harness = await lifecycleHarness({ screen: 'inline' })
@@ -3440,36 +3514,6 @@ describe('TerminalApp shutdown ordering', () => {
   })
 })
 
-/** One plugin-manager double used by the configuration panel tests. */
-interface PluginManagerDouble {
-  listBundles(): Promise<readonly { name: string; optional: boolean; enabled: boolean; readOnlyReason?: string }[]>
-  setBundleEnabled(name: string, enabled: boolean): Promise<{ application: string }>
-}
-
-/**
- * Build a plugin-manager double recording every bundle switch.
- * @param bundles - bundles reported to the panel.
- * @param outcomes - result per bundle name, or a thrown value.
- * @returns the service and its recordings.
- */
-function pluginManagerDouble(
-  bundles: readonly { name: string; optional: boolean; enabled: boolean; readOnlyReason?: string }[],
-  outcomes: Record<string, { application: string } | (() => never)> = {},
-): { service: PluginManagerDouble; switched: { name: string; enabled: boolean }[] } {
-  const switched: { name: string; enabled: boolean }[] = []
-  const service: PluginManagerDouble = {
-    listBundles: async () => bundles,
-    setBundleEnabled: async (name, enabled) => {
-      switched.push({ name, enabled })
-      const outcome = outcomes[name]
-      if (outcome === undefined) return { application: 'applied' }
-      if (typeof outcome === 'function') return outcome()
-      return outcome
-    },
-  }
-  return { service, switched }
-}
-
 /** The permission catalog the configuration panel lists. */
 const CONFIG_PRESETS = {
   catalog: () => ({
@@ -3535,28 +3579,10 @@ describe('TerminalApp /config dock', () => {
   })
 
   it('activates rows and closes the dock before nested selectors', async () => {
-    const manager = pluginManagerDouble(
-      [
-        { name: 'bundle-a', optional: true, enabled: false },
-        { name: 'bundle-b', optional: true, enabled: true },
-        { name: 'bundle-c', optional: true, enabled: false },
-        { name: 'bundle-err', optional: true, enabled: false },
-        { name: 'bundle-string', optional: true, enabled: false },
-        { name: 'bundle-ro', optional: true, enabled: false, readOnlyReason: 'owned by policy' },
-        { name: 'bundle-core', optional: false, enabled: true },
-      ],
-      {
-        'bundle-a': { application: 'applied' },
-        'bundle-b': { application: 'restart-required' },
-        'bundle-c': { application: 'refused' },
-        'bundle-err': () => { throw new Error('write failed') },
-        'bundle-string': () => { throw 'write failed' },
-      },
-    )
     const harness = await lifecycleHarness({
       agentOptions: { provider: 'alpha', model: 'm-1' },
       llm: effortsLlm({ defaultEffort: ReasoningEffortId('low') }),
-      services: { permissionPresets: CONFIG_PRESETS, pluginManager: manager.service },
+      services: { permissionPresets: CONFIG_PRESETS },
       execute: async () => ({ commandId: CommandId('command-1'), result: { kind: 'success' } }),
       values: { permissions: { currentValue: 'workspace-write' } },
     })
@@ -3569,29 +3595,6 @@ describe('TerminalApp /config dock', () => {
 
     await pressConfigRow(harness, panel, 'permissions', 'permission.workspace-write')
     await vi.waitFor(() => { expect(harness.commands.executed).toEqual(['/permission workspace-write']) })
-
-    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-a')
-    await vi.waitFor(() => { expect(manager.switched).toEqual([{ name: 'bundle-a', enabled: true }]) })
-
-    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-b')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.restartRequired) })
-    expect(harness.transcriptText().split(copy.config.restartRequired)).toHaveLength(2)
-    await vi.waitFor(() => { expect(dockText(harness.app)).toContain(copy.config.restartMarker) })
-
-    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-c')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('refused')) })
-
-    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-err')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed')) })
-
-    await pressConfigRow(harness, panel, 'experimental', 'bundle.bundle-string')
-    await vi.waitFor(() => { expect(harness.transcriptText()).toContain(copy.config.writeFailed('write failed')) })
-
-    focusConfigRow(panel, 'experimental', 'bundle.bundle-ro')
-    expect(dockText(harness.app)).toContain('owned by policy')
-    await vi.waitFor(() => { expect(Reflect.get(panel, 'busy')).toBe(false) })
-    harness.terminal.headless.press('\r')
-    expect(manager.switched.map(entry => entry.name)).not.toContain('bundle-ro')
 
     await pressConfigRow(harness, panel, 'display', 'display.cards')
     const transcript = privateValue(harness.app, 'transcript') as TerminalTranscript
@@ -3647,21 +3650,6 @@ describe('TerminalApp /config dock', () => {
     expect(harness.transcriptText()).toContain(copy.commands.agentNotReady)
   })
 
-  it('propagates a bundle enumeration failure', async () => {
-    const harness = await lifecycleHarness({
-      services: {
-        pluginManager: {
-          listBundles: async () => { throw new Error('bundle load failed') },
-          setBundleEnabled: async () => ({ application: 'applied' }),
-        },
-      },
-    })
-    harness.start()
-    await harness.awaitStarted()
-    const open = privateValue(harness.app, 'openConfigPanel') as () => Promise<void>
-
-    await expect(open.call(harness.app)).rejects.toThrow('bundle load failed')
-  })
 })
 
 describe('TerminalApp /config Agent Teams switch', () => {
